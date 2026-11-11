@@ -1,6 +1,6 @@
 {
   "project": "Post Sheet | Ability & Purpose Crew Network (H4H-PS1)",
-  "generatedAt": "2026-11-11T09:23:53.537Z",
+  "generatedAt": "2026-11-11T09:51:03.606Z",
   "fileCount": 71,
   "files": [
     {
@@ -35,8 +35,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 1763,
-      "sha256": "37a7f17e6330732233bc1d7d8e8c7b4a91e4826a49bb59b9fd32c287337987c7"
+      "bytes": 1808,
+      "sha256": "6813682f343a31cda0cd325afe6e47039a1b2a9ab5f89c851e2db1005ee5af60"
     },
     {
       "path": "docs/DECISION_AND_EXPERIMENT_LEDGER.md",
@@ -265,8 +265,8 @@
     },
     {
       "path": "web/src/App.jsx",
-      "bytes": 128151,
-      "sha256": "9a3d098f5b467d5dc6cb084b864d2219ebe52c315e8f4fa21db96a0d36d0d2f0"
+      "bytes": 128233,
+      "sha256": "db75758f2e651ae18e5cdf67a49b45db60fbe701d023bf70c3581617c51fa779"
     },
     {
       "path": "web/src/claim-operation.js",
@@ -325,8 +325,8 @@
     },
     {
       "path": "web/src/presets-and-catalog.js",
-      "bytes": 37201,
-      "sha256": "67f8da4767ec8e9a179b6021c6c974865a8d721412c6756057b3ec03a8c5ccd2"
+      "bytes": 37436,
+      "sha256": "52b03751ff6a7c84a15f9744d4d92cad197f59ed437ef8a011beb9831f96beb8"
     },
     {
       "path": "web/src/style.css",

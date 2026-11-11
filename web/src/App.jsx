@@ -2034,7 +2034,11 @@ export default function App() {
       })
     );
     const finalMemberCount = Array.isArray(detail.members) ? detail.members.length : 0;
-    const hasLeaderMember = Array.isArray(detail.members) && detail.members.some(m => m.user_id === detail.leader);
+    const hasLeaderMember =
+      Array.isArray(detail.members) &&
+      detail.members.some(
+        m => m.isLeader === true || m.userId === detail.leader || m.user_id === detail.leader
+      );
 
     return {
       eventId: raceEv,
@@ -2047,7 +2051,7 @@ export default function App() {
       invariants: {
         oversize: finalMemberCount > Number(detail.maxSize || 2) ? 1 : 0,
         orphanLeader: hasLeaderMember ? 0 : 1,
-        eventMismatch: detail.eventId === raceEv ? 0 : 1
+        eventMismatch: detail.teamId === raceTeam ? 0 : 1
       },
       elapsedMs
     };

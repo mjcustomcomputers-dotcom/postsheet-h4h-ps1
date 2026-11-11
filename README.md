@@ -11,7 +11,7 @@ A race-safe, goal-conditioned team formation engine built on Node.js 24 (`node:s
     # 2. Seed 10,000 users / 2,000 teams & launch server on http://127.0.0.1:8788
     bash scripts/start-local.sh
 
-Open `http://127.0.0.1:8788` in your browser. Use the **Quick Persona** bar (`leader-aurora`, `builder-kai`, `builder-priya`) or register an account directly in the top bar.
+Open `http://127.0.0.1:8788` in your browser. Use the **Acting as: Aurora** menu (`leader-aurora`, `builder-kai`, `builder-priya`, or account login/registration) and **Display & A11y** controls directly in the top bar.
 
 ## Run Complete Verification Suite
 

@@ -625,40 +625,45 @@ export function deriveCrewProfile(team, verifiedCrewMap = {}, customCrewMap = {}
 export const WALKTHROUGH_STEPS = [
   {
     time: '0:00 - 0:45',
-    title: '1. Live Split Teammates Studio & Product Lens Switcher',
-    detail: 'Compare Purpose-First Glass (PS1) vs Legacy Profile-Only View on View 1, simulate Priya (UTC+5:30) right inside the Live Crew Dock, and watch the critical-path witness light up in place.',
+    title: '1. Find teammates & test schedule fit in place',
+    detail:
+      'Open "1. Find teammates", toggle Purpose + Time Fit vs Profile-Only Board, then click "+ Try in plan" on Priya Nair (UTC+5:30) to watch "Plan incomplete: 2 of 3 tasks covered" turn into "Plan works: all tasks and hours line up" in Column 2.',
     targetView: 'discover',
-    actionLabel: 'Open Teammates & Crews'
+    actionLabel: 'Open 1. Find teammates'
   },
   {
     time: '0:45 - 1:45',
-    title: '2. Async UTC Baton-Pass & Before/After DAG Split-Wipe',
-    detail: 'Inspect Scenario A in Mission Planner: 0m simultaneous overlap between Arkansas and India, flipping Blocked to Verified Ready to Ship with an interactive Before/After SVG DAG wipe.',
+    title: '2. Cross-timezone handoff & Compare Before / After Wipe',
+    detail:
+      'Open "2. Plan the work" on example "1. Cross-timezone handoff", add Priya so Arkansas (UTC-6) hands off cleanly to India (UTC+5:30) with 0m live overlap, then click "Compare Before / After Wipe" to drag the timeline comparison.',
     targetView: 'architect',
     scenarioKey: 'baton',
-    actionLabel: 'Load Scenario A (Baton-Pass)'
+    actionLabel: 'Open 2. Plan the work (Handoff)'
   },
   {
     time: '1:45 - 2:35',
-    title: '3. Hall Capacity Contention & Wildcard Omega Zero-Question Gate',
-    detail: 'Load Scenario B ({Aurora, Kai} simultaneous backend+database overload -> 0-displacement repair adding Mateo) and Scenario C (Zero-Question robust cover vs Shannon VOI prompt).',
+    title: '3. Schedule overload fix & zero-question skill check',
+    detail:
+      'Try example "2. Two tasks at the same time" (adds Mateo without replacing current teammates) and example "3. Unverified skill check" in "2. Plan the work" to see when 1 quick check is needed vs 0 questions when backup is verified.',
     targetView: 'architect',
     scenarioKey: 'hall',
-    actionLabel: 'Load Scenario B (Hall Deficit)'
+    actionLabel: 'Open 2. Plan the work (Overload)'
   },
   {
     time: '2:35 - 3:45',
-    title: '4. WAN-Drop Outbox -> Signed Peer Relay -> Idempotent Replay',
-    detail: 'Simulate direct WAN drop on active builder, queue SHA-256 opId in Local Durable Outbox (not yet admitted), forward via relay-mateo to Layer A, then reconnect and verify replayed: true.',
+    title: '4. Offline outbox -> Send through Mateo -> Reconnect check',
+    detail:
+      'Open "3. Manage your team", click "Prepare example team", then run Step 1 ("Save join request on device"), Step 2 ("Send through Mateo"), and Step 3 ("Reconnect & check request") to confirm zero duplicate spots.',
     targetView: 'authority',
-    actionLabel: 'Open WAN-Drop & Peer Theater'
+    actionLabel: 'Open 3. Manage your team'
   },
   {
     time: '3:45 - 5:00',
-    title: '5. 50-Claimant Final-Seat Contention & 10k-User Scale Proof',
-    detail: 'Fire 50 simultaneous claimants at 1 open seat on a 2-seat crew -> verify 1 HTTP 200 winner, 49 HTTP 409 rejections, oversize=0, orphanLeader=0, and sub-50ms exact p95 latency.',
+    title: '5. 50-person last-spot test & 10,000-person speed proof',
+    detail:
+      'Open "4. Test the last spot" and click "Run 50-person last-spot test" to watch 50 simultaneous requests hit 1 open spot: 1 joined, 49 turned away cleanly at 2/2, with oversize=0, orphanLeader=0, and eventMismatch=0.',
     targetView: 'arena',
-    actionLabel: 'Open 50-Way Race Arena'
+    actionLabel: 'Open 4. Test the last spot'
   }
 ];
 
