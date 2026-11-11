@@ -152,6 +152,127 @@ export function computeTaskScheduleMeta(goal) {
   };
 }
 
+export function maxSchedulableTaskSubset(goal, people, maxNodes = 800) {
+  const { orderedTasks, metaById } = computeTaskScheduleMeta(goal);
+  const goalSkillSet = new Set(orderedTasks.map(t => t.skill));
+  const consenting = (people || []).filter(p => p && p.consent === true);
+  if (orderedTasks.length === 0 || consenting.length === 0) {
+    return { supportedCount: 0, coveredCount: 0, assignments: [] };
+  }
+
+  const versatility = new Map(
+    consenting.map(p => [
+      p.id,
+      Object.keys(p.abilities || {}).filter(
+        sk => goalSkillSet.has(sk) && stateOfEvidence(p.abilities[sk]) === 'supported'
+      ).length
+    ])
+  );
+
+  function solveMaxSubset(allowUnknown) {
+    let best = [];
+    let bestSupCount = -1;
+    let bestFinish = Infinity;
+    let nodes = 0;
+    const completed = new Map();
+    const current = [];
+    const visited = new Set();
+
+    function dfs(idx) {
+      if (nodes++ >= maxNodes) return;
+      const curSup = current.reduce((acc, a) => acc + (a.evidence === 'supported' ? 1 : 0), 0);
+      const curFin = current.length > 0 ? Math.max(...current.map(a => a.endMin)) : 0;
+      if (
+        current.length > best.length ||
+        (current.length === best.length && curSup > bestSupCount) ||
+        (current.length === best.length && curSup === bestSupCount && curFin < bestFinish)
+      ) {
+        best = [...current];
+        bestSupCount = curSup;
+        bestFinish = curFin;
+      }
+      if (best.length === orderedTasks.length && (!allowUnknown || bestSupCount === orderedTasks.length)) {
+        return;
+      }
+      if (idx >= orderedTasks.length) return;
+      if (current.length + (orderedTasks.length - idx) < best.length) return;
+
+      const sig = `${idx}|` + current
+        .map(a => `${a.taskId}@${a.personId}:${a.startMin}-${a.endMin}:${a.evidence[0]}`)
+        .sort()
+        .join(';');
+      if (visited.has(sig)) return;
+      visited.add(sig);
+
+      const task = orderedTasks[idx];
+      const deps = task.after || [];
+      let ready = goal.startMin;
+      const lag = Math.max(0, task.lagMin || 0);
+      for (const dep of deps) {
+        const depEnd = completed.has(dep)
+          ? completed.get(dep)
+          : (metaById.get(dep)?.earliestFinishMin ?? goal.startMin);
+        ready = Math.max(ready, depEnd + lag);
+      }
+
+      const deadline = Math.min(
+        goal.deadlineMin,
+        Number.isSafeInteger(task.deadlineMin) && task.deadlineMin >= 0
+          ? task.deadlineMin
+          : goal.deadlineMin
+      );
+      const eligible = consenting
+        .filter(p => Object.hasOwn(p.abilities || {}, task.skill))
+        .map(p => ({ p, state: stateOfEvidence(p.abilities[task.skill]) }))
+        .filter(x => x.state === 'supported' || (allowUnknown && x.state === 'unknown'))
+        .sort(
+          (a, b) =>
+            (a.state === 'supported' ? 0 : 1) - (b.state === 'supported' ? 0 : 1) ||
+            (versatility.get(a.p.id) || 0) - (versatility.get(b.p.id) || 0) ||
+            a.p.id.localeCompare(b.p.id)
+        );
+
+      for (const { p, state } of eligible) {
+        const starts = candidateEventStarts(p, ready, task.durationMin, deadline, current);
+        for (const start of starts) {
+          const end = start + task.durationMin;
+          current.push({
+            taskId: task.id,
+            personId: p.id,
+            skill: task.skill,
+            startMin: start,
+            endMin: end,
+            evidence: state
+          });
+          completed.set(task.id, end);
+          dfs(idx + 1);
+          completed.delete(task.id);
+          current.pop();
+          if (nodes >= maxNodes) return;
+          if (best.length === orderedTasks.length && (!allowUnknown || bestSupCount === orderedTasks.length)) {
+            return;
+          }
+        }
+      }
+
+      // Option to leave `task` uncovered so independent parallel/downstream tasks can still be scheduled
+      dfs(idx + 1);
+    }
+
+    dfs(0);
+    return best;
+  }
+
+  const supBest = solveMaxSubset(false);
+  const covBest = solveMaxSubset(true);
+  const chosen = covBest.length > supBest.length ? covBest : supBest;
+  return {
+    supportedCount: supBest.length,
+    coveredCount: Math.max(supBest.length, covBest.length),
+    assignments: chosen
+  };
+}
+
 function findSupportedWitness(goal, people, maxNodes = 1500) {
   const { orderedTasks } = computeTaskScheduleMeta(goal);
   const goalSkillSet = new Set(orderedTasks.map(t => t.skill));
@@ -302,9 +423,21 @@ export function evaluateWildcardFrontier({
   const completed = new Map();
   const assignments = [];
   const guards = [];
+  const visitedFrontierStates = new Set();
   let nodes = 0;
   let nodesExhausted = false;
   let maxWitnessesHit = false;
+
+  function frontierStateSig() {
+    const asgPart = assignments
+      .map(a => `${a.taskId}@${a.personId}:${a.startMin}-${a.endMin}`)
+      .sort()
+      .join(';');
+    const guardPart = [...new Set(guards.map(g => `${g.personId}::${g.skill}`))]
+      .sort()
+      .join('|');
+    return `${asgPart}#${guardPart}`;
+  }
 
   function dfsCollect() {
     if (witnesses.length >= maxWitnesses) {
@@ -336,13 +469,18 @@ export function evaluateWildcardFrontier({
       return true;
     }
 
+    const stateKey = frontierStateSig();
+    if (visitedFrontierStates.has(stateKey)) {
+      return false;
+    }
+    visitedFrontierStates.add(stateKey);
+
     const readyTasks = orderedTasks.filter(
       t => !completed.has(t.id) && (t.after || []).every(dep => completed.has(dep))
     );
 
     let anyCompleteUnderReady = false;
     for (let rIdx = 0; rIdx < readyTasks.length; rIdx++) {
-      if (rIdx > 0 && anyCompleteUnderReady) break;
       const task = readyTasks[rIdx];
       let ready = goal.startMin;
       for (const dep of task.after || []) {
@@ -366,9 +504,7 @@ export function evaluateWildcardFrontier({
 
       for (const { p, state } of eligible) {
         const starts = candidateEventStarts(p, ready, task.durationMin, deadline, assignments);
-        let personCompleted = false;
         for (let sIdx = 0; sIdx < starts.length; sIdx++) {
-          if (sIdx > 0 && personCompleted) break;
           const start = starts[sIdx];
           const end = start + task.durationMin;
           assignments.push({
@@ -382,7 +518,6 @@ export function evaluateWildcardFrontier({
           completed.set(task.id, end);
           if (state === 'unknown') guards.push({ taskId: task.id, personId: p.id, skill: task.skill });
           if (dfsCollect()) {
-            personCompleted = true;
             anyCompleteUnderReady = true;
           }
           if (state === 'unknown') guards.pop();
@@ -599,6 +734,73 @@ export function diagnoseAndRepair({ goal, people, committedIds = [], alreadyFeas
       }
     }
 
+    // Higher-order (k >= 3) Hall marriage subset check when pairwise (k = 2) checks all pass
+    // (e.g., 3 parallel 60m tasks across 2 qualified people in [0..60m]: every pair is solvable, but k=3 fails!)
+    if (contendedTaskIds.size === 0 && orderedTasks.length >= 3) {
+      let bestHallDeficit = 0;
+      let bestHallSubset = null;
+      let bestHallUnion = null;
+
+      const totalMasks = 1 << orderedTasks.length;
+      for (let mask = 0; mask < totalMasks; mask++) {
+        const subset = [];
+        for (let b = 0; b < orderedTasks.length; b++) {
+          if ((mask >> b) & 1) subset.push(orderedTasks[b]);
+        }
+        if (subset.length < 3) continue;
+
+        let mutuallyConcurrent = true;
+        for (let i = 0; i < subset.length && mutuallyConcurrent; i++) {
+          for (let j = i + 1; j < subset.length; j++) {
+            if (
+              ancestors.get(subset[i].id).has(subset[j].id) ||
+              ancestors.get(subset[j].id).has(subset[i].id)
+            ) {
+              mutuallyConcurrent = false;
+              break;
+            }
+          }
+        }
+        if (!mutuallyConcurrent) continue;
+
+        const unionSup = new Set();
+        for (const t of subset) {
+          for (const pid of soloCapable.get(t.id).sup) unionSup.add(pid);
+        }
+        if (unionSup.size >= subset.length) continue;
+
+        const subGoal = {
+          id: 'hall-subset-check',
+          startMin: goal.startMin,
+          deadlineMin: Math.min(
+            goal.deadlineMin,
+            Math.max(...subset.map(t => metaById.get(t.id).latestFinishMin))
+          ),
+          tasks: subset.map(t => ({
+            ...t,
+            after: [],
+            deadlineMin: metaById.get(t.id).latestFinishMin
+          }))
+        };
+        if (!findSupportedWitness(subGoal, people, 250)) {
+          const deficit = subset.length - unionSup.size;
+          if (
+            deficit > bestHallDeficit ||
+            (deficit === bestHallDeficit && bestHallSubset && subset.length < bestHallSubset.length)
+          ) {
+            bestHallDeficit = deficit;
+            bestHallSubset = subset;
+            bestHallUnion = unionSup;
+          }
+        }
+      }
+
+      if (bestHallSubset && bestHallUnion) {
+        for (const t of bestHallSubset) contendedTaskIds.add(t.id);
+        for (const pid of bestHallUnion) overloadedIds.add(pid);
+      }
+    }
+
     if (contendedTaskIds.size > 0 && overloadedIds.size < contendedTaskIds.size) {
       const contendedList = orderedTasks.filter(t => contendedTaskIds.has(t.id));
       const contendedSkills = [...new Set(contendedList.map(t => t.skill))];
@@ -611,9 +813,10 @@ export function diagnoseAndRepair({ goal, people, committedIds = [], alreadyFeas
         contendedSkills,
         hallDeficitRoles: deficit,
         displacedCommittedMembers: [...committedSet].filter(() => false).length,
-        explanation: `Hall capacity deficit: ${overloaded.join(', ')} covers [${contendedSkills.join(', ')}] individually, but overlapping task deadlines prevent one contributor from executing simultaneous roles. Add ${deficit} consenting contributor in [${contendedSkills.join(' or ')}] while keeping current members intact.`
+        explanation: `Hall capacity deficit: ${overloaded.join(', ')} covers [${contendedSkills.join(', ')}] individually, but overlapping task deadlines prevent ${overloaded.length === 1 ? 'one contributor' : `${overloaded.length} contributors`} from executing ${contendedList.length} simultaneous roles. Add ${deficit} consenting contributor in [${contendedSkills.join(' or ')}] while keeping current members intact.`
       });
     } else {
+      const hasDependencyChain = orderedTasks.some(t => (t.after || []).length > 0);
       const lastTask = orderedTasks[orderedTasks.length - 1];
       const mLast = metaById.get(lastTask.id);
       repairs.push({
@@ -623,7 +826,9 @@ export function diagnoseAndRepair({ goal, people, committedIds = [], alreadyFeas
         personId: soloCapable.get(lastTask.id).sup[0],
         neededWindow: [mLast.earliestStartMin, mLast.latestFinishMin],
         displacedCommittedMembers: 0,
-        explanation: `Sequential dependency chain shifts '${lastTask.id}' past available contributor window; extend availability to [${mLast.earliestStartMin}..${mLast.latestFinishMin}m] or add a late-window '${lastTask.skill}' handoff contributor.`
+        explanation: hasDependencyChain
+          ? `Sequential dependency chain shifts '${lastTask.id}' past available contributor window; extend availability to [${mLast.earliestStartMin}..${mLast.latestFinishMin}m] or add a late-window '${lastTask.skill}' handoff contributor.`
+          : `Cumulative task durations exceed available contributor window before [${mLast.earliestStartMin}..${mLast.latestFinishMin}m]; extend availability or add a '${lastTask.skill}' contributor.`
       });
     }
   }
@@ -638,6 +843,8 @@ export function recommendComplementary({ goal, teamPeople, candidates, planFn })
     ? Math.max(...baseline.witness.assignments.map(a => a.endMin))
     : goal.deadlineMin;
   const teamIds = new Set(teamPeople.map(p => p.id));
+  const totalGoalTasks = Array.isArray(goal.tasks) ? goal.tasks.length : 0;
+  const basePartial = !baselineFeasible ? maxSchedulableTaskSubset(goal, teamPeople) : null;
 
   // Merged interval-union wall-clock overlap guarantees syncOverlapMin <= horizonMin and preserves asyncBatonPass
   const mergedTeamWindows = mergeIntervals(teamPeople.flatMap(p => p.windows || []));
@@ -661,7 +868,36 @@ export function recommendComplementary({ goal, teamPeople, candidates, planFn })
     const nextPlan = planFn({ goal, people: combined, maxNodes: 2500 });
     const restoresFeasibility = !baselineFeasible && nextPlan.status === 'FEASIBLE_WITNESS';
     const upgradesToConditional = baseline.status === 'SEARCH_INCOMPLETE' && nextPlan.status === 'CONDITIONAL_WITNESS';
-    const candTasks = (nextPlan.witness?.assignments || []).filter(a => a.personId === cand.id);
+
+    let candTasks = (nextPlan.witness?.assignments || []).filter(a => a.personId === cand.id);
+    let partialTaskGain = 0;
+    let supportedTaskGain = 0;
+    let nextPartial = null;
+
+    if (restoresFeasibility && basePartial) {
+      partialTaskGain = Math.max(0, totalGoalTasks - basePartial.coveredCount);
+      supportedTaskGain = Math.max(0, totalGoalTasks - basePartial.supportedCount);
+    } else if (upgradesToConditional && basePartial) {
+      partialTaskGain = Math.max(0, totalGoalTasks - basePartial.coveredCount);
+      const witnessSup = (nextPlan.witness?.assignments || []).reduce(
+        (acc, a) => acc + (a.evidence === 'supported' ? 1 : 0),
+        0
+      );
+      supportedTaskGain = Math.max(0, witnessSup - basePartial.supportedCount);
+    } else if (!nextPlan.witness && basePartial) {
+      nextPartial = maxSchedulableTaskSubset(goal, combined);
+      partialTaskGain = Math.max(0, nextPartial.coveredCount - basePartial.coveredCount);
+      supportedTaskGain = Math.max(0, nextPartial.supportedCount - basePartial.supportedCount);
+      if (partialTaskGain > 0 || supportedTaskGain > 0) {
+        candTasks = nextPartial.assignments.filter(a => a.personId === cand.id);
+      }
+    }
+
+    const advancesPartialPlan =
+      !restoresFeasibility &&
+      !upgradesToConditional &&
+      (supportedTaskGain > 0 || partialTaskGain > 0);
+
     const nextFinish = nextPlan.witness
       ? Math.max(...nextPlan.witness.assignments.map(a => a.endMin))
       : goal.deadlineMin;
@@ -670,10 +906,20 @@ export function recommendComplementary({ goal, teamPeople, candidates, planFn })
     const asyncBatonPass = candTasks.length > 0 && syncOverlapMin === 0;
 
     const reasons = [];
-    if (restoresFeasibility) reasons.push(`Restores full goal feasibility by covering [${candTasks.map(t => `${t.taskId}(${t.skill})`).join(', ')}]`);
-    else if (upgradesToConditional) reasons.push(`Unlocks conditional feasibility via [${candTasks.map(t => `${t.taskId}(?${t.skill})`).join(', ')}]`);
-    else if (candTasks.length > 0) reasons.push(`Covers [${candTasks.map(t => t.taskId).join(', ')}] with +${Math.max(0, slackGainMin)}m deadline slack`);
-    else reasons.push('Provides standby skill redundancy without critical-path task takeover');
+    if (restoresFeasibility) {
+      reasons.push(`Restores full goal feasibility by covering [${candTasks.map(t => `${t.taskId}(${t.skill})`).join(', ')}]`);
+    } else if (upgradesToConditional) {
+      reasons.push(`Unlocks conditional feasibility via [${candTasks.map(t => `${t.taskId}(?${t.skill})`).join(', ')}]`);
+    } else if (advancesPartialPlan && basePartial && nextPartial) {
+      const fromCnt = partialTaskGain > 0 ? basePartial.coveredCount : basePartial.supportedCount;
+      const toCnt = partialTaskGain > 0 ? nextPartial.coveredCount : nextPartial.supportedCount;
+      const taskLabels = candTasks.map(t => `${t.taskId}(${t.evidence === 'unknown' ? '?' : ''}${t.skill})`).join(', ');
+      reasons.push(`Advances schedule from ${fromCnt}/${totalGoalTasks} to ${toCnt}/${totalGoalTasks} tasks by covering [${taskLabels}]`);
+    } else if (candTasks.length > 0) {
+      reasons.push(`Covers [${candTasks.map(t => t.taskId).join(', ')}] with +${Math.max(0, slackGainMin)}m deadline slack`);
+    } else {
+      reasons.push('Provides standby skill redundancy without critical-path task takeover');
+    }
 
     if (asyncBatonPass) {
       reasons.push('Executes directed asynchronous UTC baton-pass (0m simultaneous overlap needed; handoff window aligns)');
@@ -686,6 +932,9 @@ export function recommendComplementary({ goal, teamPeople, candidates, planFn })
       timezoneLabel: cand.timezone || 'UTC-window',
       restoresFeasibility,
       upgradesToConditional,
+      advancesPartialPlan,
+      partialTaskGain,
+      supportedTaskGain,
       assignedTasks: candTasks.map(t => ({ taskId: t.taskId, skill: t.skill, startMin: t.startMin, endMin: t.endMin, evidence: t.evidence })),
       syncOverlapMin,
       asyncBatonPass,
@@ -698,6 +947,8 @@ export function recommendComplementary({ goal, teamPeople, candidates, planFn })
   results.sort((a, b) =>
     Number(b.restoresFeasibility) - Number(a.restoresFeasibility) ||
     Number(b.upgradesToConditional) - Number(a.upgradesToConditional) ||
+    Number(b.advancesPartialPlan || false) - Number(a.advancesPartialPlan || false) ||
+    (b.supportedTaskGain || 0) - (a.supportedTaskGain || 0) ||
     b.assignedTasks.length - a.assignedTasks.length ||
     Number(b.asyncBatonPass) - Number(a.asyncBatonPass) ||
     b.slackGainMin - a.slackGainMin ||

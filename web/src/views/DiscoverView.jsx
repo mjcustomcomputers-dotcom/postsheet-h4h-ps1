@@ -268,19 +268,6 @@ export default function DiscoverView({
     return candidatesList.slice(0, 4);
   }, [pinnedById, enrichedCrews, verifiedCrewMap, customCrewMap, eventId, matchesCrewFilters, selectedTeam]);
 
-  const filteredBuilders = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    return BUILDER_DIRECTORY.filter(b => {
-      const bSkills = Object.keys(b.skills);
-      if (q) {
-        const hay = `${b.id} ${b.displayName || ''} ${b.role} ${b.bio} ${b.timezone} ${bSkills.join(' ')} ${b.secondaryContext}`.toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      if (selectedSkill !== 'all' && !bSkills.includes(selectedSkill)) return false;
-      return true;
-    });
-  }, [searchQuery, selectedSkill]);
-
   const recById = useMemo(() => {
     const map = new Map();
     for (const r of recs?.recommendations || []) {
@@ -289,6 +276,56 @@ export default function DiscoverView({
     }
     return map;
   }, [recs]);
+
+  const filteredBuilders = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    const matched = BUILDER_DIRECTORY.filter(b => {
+      const bSkills = Object.keys(b.skills);
+      if (q) {
+        const hay = `${b.id} ${b.displayName || ''} ${b.role} ${b.bio} ${b.timezone} ${bSkills.join(' ')} ${b.secondaryContext}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      if (selectedSkill !== 'all' && !bSkills.includes(selectedSkill)) return false;
+      return true;
+    });
+
+    if (legacyMode) return matched;
+
+    return [...matched].sort((a, b) => {
+      const aIn = isBuilderInActiveCrew(a, teamPeople) ? 1 : 0;
+      const bIn = isBuilderInActiveCrew(b, teamPeople) ? 1 : 0;
+      if (aIn !== bIn) return bIn - aIn;
+
+      const ra = recById.get(a.plannerId) || recById.get(a.id) || null;
+      const rb = recById.get(b.plannerId) || recById.get(b.id) || null;
+
+      const aRestores = ra?.restoresFeasibility ? 1 : 0;
+      const bRestores = rb?.restoresFeasibility ? 1 : 0;
+      if (aRestores !== bRestores) return bRestores - aRestores;
+
+      const aCond = ra?.upgradesToConditional ? 1 : 0;
+      const bCond = rb?.upgradesToConditional ? 1 : 0;
+      if (aCond !== bCond) return bCond - aCond;
+
+      const aAdv = ra?.advancesPartialPlan ? 1 : 0;
+      const bAdv = rb?.advancesPartialPlan ? 1 : 0;
+      if (aAdv !== bAdv) return bAdv - aAdv;
+
+      const aSupGain = ra?.supportedTaskGain || 0;
+      const bSupGain = rb?.supportedTaskGain || 0;
+      if (aSupGain !== bSupGain) return bSupGain - aSupGain;
+
+      const aTasks = ra?.assignedTasks?.length || 0;
+      const bTasks = rb?.assignedTasks?.length || 0;
+      if (aTasks !== bTasks) return bTasks - aTasks;
+
+      const aBaton = ra?.asyncBatonPass ? 1 : 0;
+      const bBaton = rb?.asyncBatonPass ? 1 : 0;
+      if (aBaton !== bBaton) return bBaton - aBaton;
+
+      return 0;
+    });
+  }, [searchQuery, selectedSkill, legacyMode, teamPeople, recById]);
 
   const effectiveTotal =
     totalTeams !== null
@@ -335,7 +372,7 @@ export default function DiscoverView({
   const topRecEntry = useMemo(
     () =>
       (recs?.recommendations || []).find(
-        r => r.restoresFeasibility || r.upgradesToConditional
+        r => r.restoresFeasibility || r.upgradesToConditional || r.advancesPartialPlan
       ) || null,
     [recs]
   );
@@ -660,6 +697,11 @@ export default function DiscoverView({
                     const inCrew = isBuilderInActiveCrew(b, teamPeople);
                     const rec = recById.get(b.plannerId) || recById.get(b.id);
                     const restores = Boolean(rec?.restoresFeasibility);
+                    const upgradesCond = Boolean(rec?.upgradesToConditional);
+                    const advancesPartial = Boolean(rec?.advancesPartialPlan);
+                    const totalTasks = Math.max(1, tasks.length);
+                    const baseCov = plainVerdict.coveredCount;
+                    const nextCov = Math.min(totalTasks, baseCov + Math.max(1, rec?.partialTaskGain || rec?.supportedTaskGain || 1));
                     const isLinked = activeLinkId && normalizeBuilderId(activeLinkId) === normalizeBuilderId(b.id);
                     const winStartPct = Math.round((b.startMin / 480) * 100);
                     const winWidthPct = Math.max(8, Math.round(((b.endMin - b.startMin) / 480) * 100));
@@ -673,7 +715,7 @@ export default function DiscoverView({
                         onMouseLeave={() => onLinkHover?.(null)}
                         onFocus={() => onLinkHover?.(b.id)}
                         className={`crew-card builder-card ${inCrew ? 'card-in-crew' : ''} ${
-                          restores && !inCrew && !legacyMode ? 'card-top-match' : ''
+                          (restores || advancesPartial) && !inCrew && !legacyMode ? 'card-top-match' : ''
                         } ${isLinked ? 'is-linked-ridge' : ''}`}
                         aria-label={`Teammate ${b.displayName || b.id}`}
                       >
@@ -698,12 +740,28 @@ export default function DiscoverView({
 
                           {!legacyMode && (
                             <div className="pill-row">
-                              {restores && !inCrew && (
-                                <span className="status-chip chip-ok" title="Completes all uncovered tasks in your active plan">
-                                  ★ Completes plan
+                              {inCrew ? (
+                                <span className="status-chip chip-ok" title="Currently included in your local plan preview">
+                                  ✓ In plan
                                 </span>
-                              )}
-                              {b.batonReady && !restores && (
+                              ) : restores ? (
+                                <span className="status-chip chip-ok" title="Completes all uncovered tasks in your active plan">
+                                  ★ Completes {totalTasks}/{totalTasks} plan
+                                </span>
+                              ) : upgradesCond ? (
+                                <span className="status-chip chip-warn" title="Covers missing task window with 1 quick skill check">
+                                  Needs 1 skill check
+                                </span>
+                              ) : advancesPartial ? (
+                                <span className="status-chip chip-ok" title={rec?.explanation || 'Advances task coverage'}>
+                                  Advances {baseCov}/{totalTasks} -&gt; {nextCov}/{totalTasks}
+                                </span>
+                              ) : rec ? (
+                                <span className="status-chip chip-neutral" title={rec?.explanation || 'Provides standby skill backup'}>
+                                  Backup coverage
+                                </span>
+                              ) : null}
+                              {(rec?.asyncBatonPass || (b.batonReady && !restores && !advancesPartial && !inCrew)) && (
                                 <span className="baton-pill">Handoff ready</span>
                               )}
                             </div>

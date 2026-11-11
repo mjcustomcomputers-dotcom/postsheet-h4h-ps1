@@ -873,7 +873,7 @@ export default function MissionArchitectView({
                     onMouseEnter={() => onLinkHover?.(r.candidateId)}
                     onMouseLeave={() => onLinkHover?.(null)}
                     onFocus={() => onLinkHover?.(r.candidateId)}
-                    className={`rec-card ${r.restoresFeasibility ? 'rec-featured' : ''} ${
+                    className={`rec-card ${r.restoresFeasibility || r.advancesPartialPlan ? 'rec-featured' : ''} ${
                       isLinked ? 'is-linked-ridge' : ''
                     }`}
                   >
@@ -885,7 +885,7 @@ export default function MissionArchitectView({
                       </div>
                       <button
                         type="button"
-                        className={`btn btn-compact ${r.restoresFeasibility ? 'btn-primary' : 'btn-secondary'}`}
+                        className={`btn btn-compact ${r.restoresFeasibility || r.advancesPartialPlan ? 'btn-primary' : 'btn-secondary'}`}
                         onClick={() => {
                           onTriggerPulse?.();
                           onAddCandidateToTeam(r.candidateId);
@@ -901,6 +901,11 @@ export default function MissionArchitectView({
                       )}
                       {r.upgradesToConditional && (
                         <span className="status-chip chip-warn">Covers hours (needs 1 skill check)</span>
+                      )}
+                      {r.advancesPartialPlan && (
+                        <span className="status-chip chip-ok">
+                          ✓ Advances +{Math.max(1, r.partialTaskGain || r.supportedTaskGain || 1)} task
+                        </span>
                       )}
                       {r.asyncBatonPass ? (
                         <span className="baton-pill">Clean time-zone handoff (0m overlap)</span>

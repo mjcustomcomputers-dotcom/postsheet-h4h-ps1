@@ -240,9 +240,9 @@ All verification suites run locally without external cloud accounts or network d
 #    - Independent Oracle: 12 direct Python sqlite3 relational & audit queries (12)
 bash scripts/run-gates.sh scripts/baseline.sh scripts/adversarial.sh scripts/independent.sh
 
-# 2. Complete Node Test Suite (111 subtests across 9 test files):
+# 2. Complete Node Test Suite (117 subtests across 10 test files):
 #    Covers Layer-B AES-256-GCM / P-256 envelopes, WITHOUT ROWID durable receipts,
-#    loopback HTTP peer relay, browser SHA-256 retry storage, R5/R12 solver edge cases,
+#    loopback HTTP peer relay, browser SHA-256 retry storage, R5/R12/R15 solver & matcher labs,
 #    and SEC01..SEC12 security & wire-level path-traversal hardening
 node --test tests/*.test.mjs
 
@@ -310,7 +310,7 @@ kill "$SRV_PID"
 - [`PREEXISTING_WORK.md`](./PREEXISTING_WORK.md): Attribution of prior Post Sheet / Synchronicity concepts vs. clean-room Hack4Hack PS1 implementation, ownership notice, and AI collaboration disclosure.
 - [`docs/ENGINE_SOLVER_ADVERSARIAL_REVIEW.md`](./docs/ENGINE_SOLVER_ADVERSARIAL_REVIEW.md): Formal adversarial verification of scheduler completeness, Wildcard Omega frontiers, and parallel Hall contention (`R6_EXP01..14`).
 - [`docs/PSS-H4H-CRR-01.R1-SUPPLEMENT.md`](./docs/PSS-H4H-CRR-01.R1-SUPPLEMENT.md): Visual perception, contrast tokens, and cognitive ergonomics engineering packet.
-- [`docs/DECISION_AND_EXPERIMENT_LEDGER.md`](./docs/DECISION_AND_EXPERIMENT_LEDGER.md): Chronological engineering ledger preserving accepted, rejected-by-test, and superseded design experiments (`LED-01..LED-20`).
+- [`docs/DECISION_AND_EXPERIMENT_LEDGER.md`](./docs/DECISION_AND_EXPERIMENT_LEDGER.md): Chronological engineering ledger preserving accepted, rejected-by-test, and superseded design experiments (`LED-01..LED-21`).
 - [`SOURCE_MANIFEST.json`](./SOURCE_MANIFEST.json): SHA-256 integrity manifest covering every tracked file in the submission repository.
 
 ---

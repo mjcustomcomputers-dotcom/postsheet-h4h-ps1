@@ -15,6 +15,8 @@ import {
   SKILLS_CATALOG,
   normalizeBuilderId,
   findBuilderById,
+  mergeCandidatePoolWithDirectory,
+  reconstructSeatedTeamPeople,
   computePartialTaskPreview,
   describePlainPlanVerdict,
   visualTasksToApi,
@@ -147,7 +149,12 @@ function computeLocalSolve({ goalDescription, horizonHours, tasks, teamPeople, c
     tasks: safeTasks
   };
   const apiTeam = visualPeopleToApi(teamPeople || [], horizonMin);
-  const apiCands = visualPeopleToApi(candidates || [], horizonMin);
+  const mergedCandidates = mergeCandidatePoolWithDirectory(
+    teamPeople || [],
+    candidates || [],
+    horizonMin
+  );
+  const apiCands = visualPeopleToApi(mergedCandidates, horizonMin);
 
   if (safeTasks.length === 0) {
     return {
@@ -317,6 +324,7 @@ export default function App() {
   const [recs, setRecs] = useState(() => INITIAL_BATON_SOLVE.recRes);
   const [solving, setSolving] = useState(false);
   const solveSeqRef = useRef(0);
+  const solveHttpDebounceRef = useRef(null);
   const [lockingPlan, setLockingPlan] = useState(false);
   const [evaluatingCrewId, setEvaluatingCrewId] = useState(null);
   const [lockedPlanTeamId, setLockedPlanTeamId] = useState(null);
@@ -381,6 +389,7 @@ export default function App() {
   useEffect(() => {
     return () => {
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      if (solveHttpDebounceRef.current) clearTimeout(solveHttpDebounceRef.current);
       if (proxRafRef.current) cancelAnimationFrame(proxRafRef.current);
     };
   }, []);
@@ -1294,103 +1303,120 @@ export default function App() {
       }
 
       const seq = ++solveSeqRef.current;
-      setSolving(true);
-      try {
-        let activeTok = await ensureToken('');
-        if (!activeTok && !signedOutManuallyRef.current) {
-          try {
-            const refreshActor = DEMO_PERSONA_CLIENT_RE.test(actorRef.current)
-              ? actorRef.current
-              : 'leader-aurora';
-            const refreshed = await readApiJson(
-              await fetch('/api/auth/demo', {
-                method: 'POST',
-                headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({ actorId: refreshActor, eventId, maxSize: 5 })
-              })
-            );
-            activeTok = refreshed.token;
-            tokenRef.current = refreshed.token;
-            actorRef.current = refreshed.actorId;
-            setToken(refreshed.token);
-            setActorId(refreshed.actorId);
-          } catch {
-            // Keep instant local solve
-          }
-        }
-        if (!activeTok) return local;
+      if (solveHttpDebounceRef.current) {
+        clearTimeout(solveHttpDebounceRef.current);
+        solveHttpDebounceRef.current = null;
+      }
 
-        const callServerPair = async bearer =>
-          Promise.all([
-            readApiJson(
-              await fetch('/api/plan', {
-                method: 'POST',
-                headers: { 'content-type': 'application/json', authorization: 'Bearer ' + bearer },
-                body: JSON.stringify({
-                  goal: local.goalPayload,
-                  people: local.apiTeam,
-                  maxNodes: 5000
-                })
-              })
-            ),
-            readApiJson(
-              await fetch('/api/recommendations', {
-                method: 'POST',
-                headers: { 'content-type': 'application/json', authorization: 'Bearer ' + bearer },
-                body: JSON.stringify({
-                  goal: local.goalPayload,
-                  teamPeople: local.apiTeam,
-                  candidates: local.apiCands
-                })
-              })
-            )
-          ]);
-
-        let pair;
+      const syncWithServer = async () => {
+        if (seq !== solveSeqRef.current) return;
+        setSolving(true);
         try {
-          pair = await callServerPair(activeTok);
-        } catch (firstErr) {
-          if ((firstErr?.status === 401 || firstErr?.message === 'UNAUTHORIZED') && !signedOutManuallyRef.current) {
-            tokenRef.current = '';
-            const refreshActor = DEMO_PERSONA_CLIENT_RE.test(actorRef.current)
-              ? actorRef.current
-              : 'leader-aurora';
-            const refreshed = await readApiJson(
-              await fetch('/api/auth/demo', {
-                method: 'POST',
-                headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({ actorId: refreshActor, eventId, maxSize: 5 })
-              })
-            );
-            tokenRef.current = refreshed.token;
-            actorRef.current = refreshed.actorId;
-            setToken(refreshed.token);
-            setActorId(refreshed.actorId);
-            pair = await callServerPair(refreshed.token);
-          } else {
-            throw firstErr;
+          let activeTok = await ensureToken('');
+          if (!activeTok && !signedOutManuallyRef.current) {
+            try {
+              const refreshActor = DEMO_PERSONA_CLIENT_RE.test(actorRef.current)
+                ? actorRef.current
+                : 'leader-aurora';
+              const refreshed = await readApiJson(
+                await fetch('/api/auth/demo', {
+                  method: 'POST',
+                  headers: { 'content-type': 'application/json' },
+                  body: JSON.stringify({ actorId: refreshActor, eventId, maxSize: 5 })
+                })
+              );
+              activeTok = refreshed.token;
+              tokenRef.current = refreshed.token;
+              actorRef.current = refreshed.actorId;
+              setToken(refreshed.token);
+              setActorId(refreshed.actorId);
+            } catch {
+              // Keep instant local solve
+            }
           }
-        }
+          if (!activeTok || seq !== solveSeqRef.current) return;
 
-        if (seq === solveSeqRef.current && pair) {
-          const [planRes, recRes] = pair;
-          setPlan(planRes);
-          setRecs(recRes);
-          if (useCrewTag) {
-            setVerifiedCrewMap(prev => ({
-              ...prev,
-              [`${eventId}::${useCrewTag}`]: planRes.status,
-              [useCrewTag]: planRes.status
-            }));
+          const callServerPair = async bearer =>
+            Promise.all([
+              readApiJson(
+                await fetch('/api/plan', {
+                  method: 'POST',
+                  headers: { 'content-type': 'application/json', authorization: 'Bearer ' + bearer },
+                  body: JSON.stringify({
+                    goal: local.goalPayload,
+                    people: local.apiTeam,
+                    maxNodes: 5000
+                  })
+                })
+              ),
+              readApiJson(
+                await fetch('/api/recommendations', {
+                  method: 'POST',
+                  headers: { 'content-type': 'application/json', authorization: 'Bearer ' + bearer },
+                  body: JSON.stringify({
+                    goal: local.goalPayload,
+                    teamPeople: local.apiTeam,
+                    candidates: local.apiCands
+                  })
+                })
+              )
+            ]);
+
+          let pair;
+          try {
+            pair = await callServerPair(activeTok);
+          } catch (firstErr) {
+            if ((firstErr?.status === 401 || firstErr?.message === 'UNAUTHORIZED') && !signedOutManuallyRef.current) {
+              tokenRef.current = '';
+              const refreshActor = DEMO_PERSONA_CLIENT_RE.test(actorRef.current)
+                ? actorRef.current
+                : 'leader-aurora';
+              const refreshed = await readApiJson(
+                await fetch('/api/auth/demo', {
+                  method: 'POST',
+                  headers: { 'content-type': 'application/json' },
+                  body: JSON.stringify({ actorId: refreshActor, eventId, maxSize: 5 })
+                })
+              );
+              tokenRef.current = refreshed.token;
+              actorRef.current = refreshed.actorId;
+              setToken(refreshed.token);
+              setActorId(refreshed.actorId);
+              pair = await callServerPair(refreshed.token);
+            } else {
+              throw firstErr;
+            }
           }
-          setAuthorityHealth('online');
+
+          if (seq === solveSeqRef.current && pair) {
+            const [planRes, recRes] = pair;
+            setPlan(planRes);
+            setRecs(recRes);
+            if (useCrewTag) {
+              setVerifiedCrewMap(prev => ({
+                ...prev,
+                [`${eventId}::${useCrewTag}`]: planRes.status,
+                [useCrewTag]: planRes.status
+              }));
+            }
+            setAuthorityHealth('online');
+          }
+        } catch {
+          // Keep instant local solve on transient network error
+        } finally {
+          if (seq === solveSeqRef.current) {
+            setSolving(false);
+          }
         }
-      } catch {
-        // Keep instant local solve on transient network error
-      } finally {
-        if (seq === solveSeqRef.current) {
-          setSolving(false);
-        }
+      };
+
+      if (overrides.explicitEvaluate) {
+        await syncWithServer();
+      } else {
+        solveHttpDebounceRef.current = setTimeout(() => {
+          solveHttpDebounceRef.current = null;
+          syncWithServer();
+        }, 180);
       }
       return local;
     },
@@ -1655,7 +1681,10 @@ export default function App() {
           skills: planSkills,
           utcLabel: activeScenarioKey === 'baton' ? 'UTC-6 <-> UTC+5:30 Baton' : 'Verified Schedule',
           utcBucket: activeScenarioKey === 'baton' ? 'baton' : 'americas',
-          scenarioKey: activeScenarioKey
+          scenarioKey: activeScenarioKey,
+          tasks,
+          horizonHours,
+          teamPeople
         });
         setCustomCrewMap(nextCustom);
         setVerifiedCrewMap(prev => ({
@@ -1705,28 +1734,79 @@ export default function App() {
     });
   }
 
-  function handleCheckFitCrew(crewProfile) {
+  async function handleCheckFitCrew(crewProfile) {
+    const tid = crewProfile.teamId;
     const sc = MISSION_SCENARIOS[crewProfile.scenarioKey] || MISSION_SCENARIOS.baton;
-    setEvaluatingCrewId(crewProfile.teamId);
+    const savedEntry =
+      customCrewMap[`${eventId}::${tid}`] ||
+      customCrewMap[tid] ||
+      null;
+
+    const useHours =
+      savedEntry && Number.isFinite(Number(savedEntry.horizonHours)) && Number(savedEntry.horizonHours) > 0
+        ? Number(savedEntry.horizonHours)
+        : sc.horizonHours;
+    const useHorizonMin = Math.max(60, Math.round(useHours * 60));
+    const useTasks =
+      Array.isArray(savedEntry?.tasks) && savedEntry.tasks.length > 0
+        ? savedEntry.tasks
+        : sc.tasks;
+
+    let liveDetail = selectedTeam?.teamId === tid ? selectedTeam : null;
+    if (!liveDetail && !wanOffline) {
+      try {
+        const res = await fetch(
+          `/api/events/${encodeURIComponent(eventId)}/teams/${encodeURIComponent(tid)}`,
+          { cache: 'no-store' }
+        );
+        if (res.ok) {
+          liveDetail = await res.json();
+          recordConfirmedTeamDetail(liveDetail, eventId);
+        }
+      } catch {
+        liveDetail = null;
+      }
+    }
+
+    const seatedPeople = liveDetail?.members?.length
+      ? reconstructSeatedTeamPeople(liveDetail.members, savedEntry?.teamPeople || sc.teamPeople, useHorizonMin)
+      : [];
+
+    const useTeam =
+      seatedPeople.length > 0
+        ? seatedPeople
+        : Array.isArray(savedEntry?.teamPeople) && savedEntry.teamPeople.length > 0
+          ? savedEntry.teamPeople
+          : sc.teamPeople;
+
+    const teamCanonSet = new Set(useTeam.map(p => normalizeBuilderId(p.plannerId || p.id)));
+    const useCands = (sc.candidates || []).filter(
+      c => !teamCanonSet.has(normalizeBuilderId(c.plannerId || c.id))
+    );
+
+    setEvaluatingCrewId(tid);
     setActiveScenarioKey(crewProfile.scenarioKey || 'baton');
-    const customGoal = `[${crewProfile.teamId}] ${crewProfile.mission}`;
+    const customGoal = `[${tid}] ${crewProfile.mission}`;
     setGoalDescription(customGoal);
-    setHorizonHours(sc.horizonHours);
-    setTasks(sc.tasks);
-    setTeamPeople(sc.teamPeople);
-    setCandidates(sc.candidates);
+    setHorizonHours(useHours);
+    setTasks(useTasks);
+    setTeamPeople(useTeam);
+    setCandidates(useCands);
     setBeforeSnapshot(null);
     setActiveView('architect');
     triggerHorizonPulse();
     runSolveAndRecommend({
       goalDescription: customGoal,
-      horizonHours: sc.horizonHours,
-      tasks: sc.tasks,
-      teamPeople: sc.teamPeople,
-      candidates: sc.candidates,
-      crewId: crewProfile.teamId,
+      horizonHours: useHours,
+      tasks: useTasks,
+      teamPeople: useTeam,
+      candidates: useCands,
+      crewId: tid,
       resetComparison: true,
-      toastMessage: `Previewing '${crewProfile.teamId}' in Step 2 (preview only - not joined yet)`
+      toastMessage:
+        seatedPeople.length > 0
+          ? `Checking schedule fit for '${tid}' (${seatedPeople.length} seated ${seatedPeople.length === 1 ? 'member' : 'members'} loaded)`
+          : `Previewing '${tid}' in Step 2 (preview only - not joined yet)`
     });
   }
 
@@ -1983,7 +2063,11 @@ export default function App() {
         if (customMeta && (customMeta.mission || customMeta.skills)) {
           const nextCustom = saveCustomCrewOverlayEntry(eventId, createdTeamId, {
             mission: customMeta.mission,
-            skills: customMeta.skills
+            skills: customMeta.skills,
+            scenarioKey: activeScenarioKey,
+            tasks,
+            horizonHours,
+            teamPeople
           });
           setCustomCrewMap(nextCustom);
         }
@@ -3716,7 +3800,7 @@ export default function App() {
   const topRecEntry = useMemo(
     () =>
       (recs?.recommendations || []).find(
-        r => r.restoresFeasibility || r.upgradesToConditional
+        r => r.restoresFeasibility || r.upgradesToConditional || r.advancesPartialPlan
       ) || null,
     [recs]
   );

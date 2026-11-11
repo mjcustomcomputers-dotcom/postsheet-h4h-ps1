@@ -1,6 +1,7 @@
 // H4H PS1 | Purpose-First Scenarios, Custom Crew Overlay, Builder Pool & DSL Helpers
 
 const CUSTOM_CREW_STORAGE_KEY = 'h4h-ps1:custom-crews:v1';
+let memoryCustomCrewStore = {};
 
 export const SKILLS_CATALOG = [
   { id: 'backend', label: 'Backend & API', short: 'backend' },
@@ -53,7 +54,9 @@ export function parseUtcOffsetHours(tzLabel, fallbackStartMin = 0, horizonMin = 
 }
 
 export function loadCustomCrewOverlay() {
-  if (typeof window === 'undefined') return {};
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return { ...memoryCustomCrewStore };
+  }
   try {
     const raw = window.localStorage.getItem(CUSTOM_CREW_STORAGE_KEY);
     if (!raw) return {};
@@ -67,18 +70,34 @@ export function loadCustomCrewOverlay() {
 export function saveCustomCrewOverlayEntry(eventId, teamId, entry) {
   const current = loadCustomCrewOverlay();
   const scopedKey = `${eventId}::${teamId}`;
+  const storedRecord = {
+    mission: String(entry.mission || '').trim() || 'Custom purpose-driven deliverable',
+    skills: Array.isArray(entry.skills) && entry.skills.length > 0 ? entry.skills : ['backend', 'frontend'],
+    utcLabel: entry.utcLabel || 'UTC-6 <-> UTC+5:30 Baton',
+    utcBucket: entry.utcBucket || 'baton',
+    secondaryContext: entry.secondaryContext || 'Open Global Mesh',
+    scenarioKey: entry.scenarioKey || 'baton',
+    ...(Array.isArray(entry.tasks) && entry.tasks.length > 0
+      ? { tasks: entry.tasks.map(t => ({ ...t, after: Array.isArray(t.after) ? [...t.after] : [] })) }
+      : {}),
+    ...(Number.isFinite(Number(entry.horizonHours)) && Number(entry.horizonHours) > 0
+      ? { horizonHours: Number(entry.horizonHours) }
+      : {}),
+    ...(Array.isArray(entry.teamPeople) && entry.teamPeople.length > 0
+      ? {
+          teamPeople: entry.teamPeople.map(p => ({
+            ...p,
+            skills: { ...(p.skills || {}) }
+          }))
+        }
+      : {})
+  };
   const next = {
     ...current,
-    [scopedKey]: {
-      mission: String(entry.mission || '').trim() || 'Custom purpose-driven deliverable',
-      skills: Array.isArray(entry.skills) && entry.skills.length > 0 ? entry.skills : ['backend', 'frontend'],
-      utcLabel: entry.utcLabel || 'UTC-6 <-> UTC+5:30 Baton',
-      utcBucket: entry.utcBucket || 'baton',
-      secondaryContext: entry.secondaryContext || 'Open Global Mesh',
-      scenarioKey: entry.scenarioKey || 'baton'
-    }
+    [scopedKey]: storedRecord
   };
-  if (typeof window !== 'undefined') {
+  memoryCustomCrewStore = next;
+  if (typeof window !== 'undefined' && window.localStorage) {
     try {
       window.localStorage.setItem(CUSTOM_CREW_STORAGE_KEY, JSON.stringify(next));
     } catch {
@@ -482,8 +501,161 @@ export const BUILDER_DIRECTORY = [
     legacyAffiliation: 'London · Imperial Cloud Guild',
     legacyHiddenFailure: 'Legacy boards miss preventive T+00:00..03:00 prerequisite unblocking for downstream crews.',
     bio: 'Unblocks crews early by provisioning reproducible containers and CI runners.'
+  },
+  {
+    id: 'devon',
+    plannerId: 'devon',
+    displayName: 'Devon Brooks',
+    initials: 'DB',
+    avatarTone: 'amber',
+    role: 'Full-Stack API & Emerging UI Engineer',
+    timezone: 'UTC-5 · NYC',
+    utcOffset: -5,
+    utcBucket: 'americas',
+    windowLabel: 'T+00:00 .. T+04:00',
+    startMin: 0,
+    endMin: 240,
+    skills: { frontend: 'unknown', backend: 'supported' },
+    batonReady: false,
+    secondaryContext: 'Systems University Guild',
+    legacyAffiliation: 'NYC · Brooklyn Civic Tech',
+    legacyHiddenFailure: 'Legacy profiles treat unverified ?frontend identically to confirmed work or drop him completely instead of prompting one 5-minute check.',
+    bio: 'Builds resilient APIs and accessible UI components with transparent skill verification.'
+  },
+  {
+    id: 'liam',
+    plannerId: 'liam',
+    displayName: 'Liam Ortiz',
+    initials: 'LO',
+    avatarTone: 'cyan',
+    role: 'Frontend Component & Keyboard Specialist',
+    timezone: 'UTC-6 · Austin',
+    utcOffset: -6,
+    utcBucket: 'americas',
+    windowLabel: 'T+00:00 .. T+03:00',
+    startMin: 0,
+    endMin: 180,
+    skills: { frontend: 'supported' },
+    batonReady: false,
+    secondaryContext: 'Regional Builder Collective',
+    legacyAffiliation: 'Austin · Open Web Guild',
+    legacyHiddenFailure: 'Legacy boards rank his high UTC-6 overlap above UTC+5:30 baton finishers even when UI is already covered!',
+    bio: 'Delivers crisp accessible React interfaces and zero-jank keyboard navigation.'
   }
 ];
+
+export function extractBaseHandleFromActorId(rawInput) {
+  const raw = String(rawInput || '').trim().toLowerCase();
+  if (!raw) return '';
+  if (raw === 'leader-aurora' || raw.startsWith('aurora-')) return 'aurora';
+  if (raw === 'builder-kai' || raw.startsWith('kai-')) return 'kai';
+  if (raw === 'builder-priya' || raw.startsWith('priya-')) return 'priya';
+  if (raw === 'relay-mateo' || raw.startsWith('mateo-')) return 'mateo';
+  const memMatch = /^mem-([a-z]{2,14})-/.exec(raw);
+  if (memMatch && !/^\d+$/.test(memMatch[1])) {
+    const slug = memMatch[1];
+    if (slug === 'sanjay' || slug === 'sanjaystew') return 'sanjay-steward';
+    return slug;
+  }
+  const normalized = normalizeBuilderId(raw);
+  if (normalized === 'sanjay') return 'sanjay-steward';
+  const stripped = normalized.replace(/^(leader|builder|relay|lead|mem|claimant)-/, '');
+  const seg = stripped.split(/[^a-z0-9]+/).find(part => part && !/^\d+$/.test(part));
+  if (seg === 'sanjay' || seg === 'sanjaystew') return 'sanjay-steward';
+  return seg || normalized;
+}
+
+export function reconstructSeatedTeamPeople(serverMembers = [], savedPeople = [], horizonMin = 480) {
+  const savedById = new Map(
+    (savedPeople || []).map(p => [normalizeBuilderId(p.plannerId || p.id), p])
+  );
+  const scaleRatio = horizonMin > 0 && horizonMin !== 480 ? horizonMin / 480 : 1;
+  const out = [];
+  const seen = new Set();
+
+  for (const m of serverMembers || []) {
+    const rawUserId = typeof m === 'string' ? m : m?.userId;
+    if (!rawUserId) continue;
+    const baseHandle = extractBaseHandleFromActorId(rawUserId);
+    const saved = savedById.get(baseHandle) || savedById.get(normalizeBuilderId(rawUserId));
+    if (saved) {
+      const cid = normalizeBuilderId(saved.plannerId || saved.id);
+      if (seen.has(cid)) continue;
+      seen.add(cid);
+      out.push({
+        id: cid,
+        timezone: saved.timezone || 'UTC-6 · Hot Springs',
+        startMin: saved.startMin ?? 0,
+        endMin: saved.endMin ?? horizonMin,
+        skills: { ...(saved.skills || {}) }
+      });
+      continue;
+    }
+
+    const dirMatch = BUILDER_DIRECTORY.find(
+      b =>
+        normalizeBuilderId(b.id) === baseHandle ||
+        normalizeBuilderId(b.plannerId) === baseHandle ||
+        b.id.startsWith(`${baseHandle}-`)
+    );
+    if (dirMatch) {
+      const cid = normalizeBuilderId(dirMatch.plannerId || dirMatch.id);
+      if (seen.has(cid)) continue;
+      seen.add(cid);
+      const scaledStart = Math.max(0, Math.min(horizonMin - 15, Math.round(dirMatch.startMin * scaleRatio)));
+      const scaledEnd = Math.max(scaledStart + 15, Math.min(horizonMin, Math.round(dirMatch.endMin * scaleRatio)));
+      out.push({
+        id: cid,
+        timezone: dirMatch.timezone,
+        startMin: scaledStart,
+        endMin: scaledEnd,
+        skills: { ...(dirMatch.skills || {}) }
+      });
+    }
+  }
+  return out;
+}
+
+export function mergeCandidatePoolWithDirectory(teamPeople = [], explicitCandidates = [], horizonMin = 480) {
+  const cap = Math.max(60, Math.round(Number(horizonMin) || 480));
+  const teamIds = new Set(
+    (teamPeople || []).map(p => normalizeBuilderId(p?.plannerId || p?.id)).filter(Boolean)
+  );
+  const merged = [];
+  const seen = new Set();
+
+  for (const c of explicitCandidates || []) {
+    if (!c) continue;
+    const cid = normalizeBuilderId(c.plannerId || c.id);
+    if (!cid || teamIds.has(cid) || seen.has(cid)) continue;
+    seen.add(cid);
+    merged.push({
+      ...c,
+      id: cid,
+      startMin: Math.max(0, Math.min(cap - 15, Math.round(Number(c.startMin) || 0))),
+      endMin: Math.max(15, Math.min(cap, Math.round(Number(c.endMin) || cap))),
+      skills: { ...(c.skills || {}) }
+    });
+  }
+
+  const scaleRatio = cap !== 480 ? cap / 480 : 1;
+  for (const b of BUILDER_DIRECTORY) {
+    const bid = normalizeBuilderId(b.plannerId || b.id);
+    if (!bid || teamIds.has(bid) || seen.has(bid)) continue;
+    seen.add(bid);
+    const scaledStart = Math.max(0, Math.min(cap - 15, Math.round(b.startMin * scaleRatio)));
+    const scaledEnd = Math.max(scaledStart + 15, Math.min(cap, Math.round(b.endMin * scaleRatio)));
+    merged.push({
+      id: bid,
+      timezone: b.timezone,
+      startMin: scaledStart,
+      endMin: scaledEnd,
+      skills: { ...(b.skills || {}) }
+    });
+  }
+
+  return merged.slice(0, Math.max(0, 24 - Math.max(1, teamPeople.length)));
+}
 
 const ARCHETYPES = [
   {
@@ -834,7 +1006,7 @@ export function computePartialTaskPreview(tasks = [], teamPeople = [], horizonMi
       skills: p.skills || {}
     }));
 
-  // Topological + EDD (tightest latestStartMin first) order so urgent tasks claim slots first
+  // Compute true backward latestFinishMin / latestStartMin when plan.criticalPath is absent
   const byId = new Map(tasks.map(t => [t.id, t]));
   const inDeg = new Map();
   const children = new Map();
@@ -850,11 +1022,54 @@ export function computePartialTaskPreview(tasks = [], teamPeople = [], horizonMi
     }
   }
 
+  // Quick DFS topological pass to derive backward deadlines when cpById is missing
+  const dfsVisited = new Set();
+  const dfsTopo = [];
+  function visitMeta(tid, stack = new Set()) {
+    if (dfsVisited.has(tid) || stack.has(tid) || !byId.has(tid)) return;
+    stack.add(tid);
+    const t = byId.get(tid);
+    for (const dep of t.after || []) {
+      if (dep !== tid && byId.has(dep)) visitMeta(dep, stack);
+    }
+    stack.delete(tid);
+    dfsVisited.add(tid);
+    dfsTopo.push(t);
+  }
+  for (const t of tasks) visitMeta(t.id);
+
+  const fallbackLf = new Map();
+  const fallbackLs = new Map();
+  for (let i = dfsTopo.length - 1; i >= 0; i--) {
+    const t = dfsTopo[i];
+    const dur = Math.max(1, Math.round(Number(t.durationMin) || 60));
+    const hasOwnDl =
+      t.deadlineMin !== undefined &&
+      t.deadlineMin !== null &&
+      t.deadlineMin !== '' &&
+      Number.isFinite(Number(t.deadlineMin));
+    let lFin = hasOwnDl ? Math.min(horizonMin, Math.round(Number(t.deadlineMin))) : horizonMin;
+    for (const chId of children.get(t.id) || []) {
+      if (fallbackLs.has(chId)) {
+        const ch = byId.get(chId);
+        const chLag = Math.max(0, Math.round(Number(ch?.lagMin) || 0));
+        lFin = Math.min(lFin, fallbackLs.get(chId) - chLag);
+      }
+    }
+    fallbackLf.set(t.id, lFin);
+    fallbackLs.set(t.id, lFin - dur);
+  }
+
   function eddKey(taskObj) {
     const cp = cpById.get(taskObj.id);
     const dur = Math.max(1, Math.round(Number(taskObj.durationMin) || 60));
-    const latestFin = cp ? Math.min(horizonMin, cp.latestFinishMin) : horizonMin;
-    const latestStart = cp && typeof cp.latestStartMin === 'number' ? cp.latestStartMin : latestFin - dur;
+    const latestFin = cp
+      ? Math.min(horizonMin, cp.latestFinishMin)
+      : (fallbackLf.get(taskObj.id) ?? horizonMin);
+    const latestStart =
+      cp && typeof cp.latestStartMin === 'number'
+        ? cp.latestStartMin
+        : (fallbackLs.get(taskObj.id) ?? latestFin - dur);
     return { latestStart, latestFin, dur };
   }
 
@@ -867,9 +1082,8 @@ export function computePartialTaskPreview(tasks = [], teamPeople = [], horizonMi
       const ka = eddKey(a);
       const kb = eddKey(b);
       return (
-        ka.latestStart - kb.latestStart ||
         ka.latestFin - kb.latestFin ||
-        kb.dur - ka.dur ||
+        ka.latestStart - kb.latestStart ||
         String(a.id).localeCompare(String(b.id))
       );
     });
@@ -887,6 +1101,16 @@ export function computePartialTaskPreview(tasks = [], teamPeople = [], horizonMi
   for (const t of tasks) {
     if (!queuedIds.has(t.id)) topo.push(t);
   }
+
+  const goalSkillSet = new Set(topo.map(t => t.skill));
+  const versatility = new Map(
+    normalizedPeople.map(p => [
+      p.id,
+      Object.keys(p.skills || {}).filter(
+        sk => goalSkillSet.has(sk) && p.skills[sk] === 'supported'
+      ).length
+    ])
+  );
 
   const busyByPerson = new Map();
   const completedEnd = new Map();
@@ -906,7 +1130,9 @@ export function computePartialTaskPreview(tasks = [], teamPeople = [], horizonMi
     if (!depsReady) continue;
 
     const cp = cpById.get(t.id);
-    const latestFin = cp ? Math.min(horizonMin, cp.latestFinishMin) : horizonMin;
+    const latestFin = cp
+      ? Math.min(horizonMin, cp.latestFinishMin)
+      : (fallbackLf.get(t.id) ?? horizonMin);
     const dur = Math.max(1, Math.round(Number(t.durationMin) || 60));
 
     const eligible = normalizedPeople
@@ -915,6 +1141,8 @@ export function computePartialTaskPreview(tasks = [], teamPeople = [], horizonMi
         const aSup = a.skills[t.skill] === 'supported' ? 0 : 1;
         const bSup = b.skills[t.skill] === 'supported' ? 0 : 1;
         if (aSup !== bSup) return aSup - bSup;
+        const vDiff = (versatility.get(a.id) || 0) - (versatility.get(b.id) || 0);
+        if (vDiff !== 0) return vDiff;
         return a.id.localeCompare(b.id);
       });
 

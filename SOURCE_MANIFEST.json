@@ -1,8 +1,7 @@
 {
   "project": "Post Sheet | Ability & Purpose Crew Network (H4H-PS1)",
-  "algorithm": "sha256",
-  "generatedAt": "2026-11-11T16:38:42.124Z",
-  "fileCount": 81,
+  "generatedAt": "2026-11-11T17:13:33.435Z",
+  "fileCount": 82,
   "files": [
     {
       "path": ".github/workflows/ci.yml",
@@ -36,8 +35,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 35751,
-      "sha256": "889ba13bc62f410112dd49752e75e9b33cd06009f84835a39f3be75a7cf3c901"
+      "bytes": 35760,
+      "sha256": "639dd218b871791b1d96d20a7a2bdd5c04d87dc6e1179fc531b8a39fc25aa6f8"
     },
     {
       "path": "SECURITY.md",
@@ -51,8 +50,8 @@
     },
     {
       "path": "docs/DECISION_AND_EXPERIMENT_LEDGER.md",
-      "bytes": 20229,
-      "sha256": "41ca45e3ee3c9cf2d05c3f6eae1ce9f14d358646eaa03b0f93a89c7d7e3c1bf1"
+      "bytes": 22520,
+      "sha256": "7cd0d71a3138618ac4a1e388e8abbf606fb5ca242ffe8fb95aca77c652d35734"
     },
     {
       "path": "docs/ENGINE_SOLVER_ADVERSARIAL_REVIEW.md",
@@ -231,8 +230,8 @@
     },
     {
       "path": "src/synchronicity-solvers.mjs",
-      "bytes": 28448,
-      "sha256": "39b491fc666dae5ffd356790d971017c578058b63676e9469e995ad8b3fbee2c"
+      "bytes": 38057,
+      "sha256": "bebf4f21e22d8bbe25c83f923d6490b4792b4ca6697448be11cdca167a94ce83"
     },
     {
       "path": "tests/api-adversarial.test.mjs",
@@ -280,6 +279,11 @@
       "sha256": "d961193ecf8a0ff31cc6afde01cb74037db49faf69bd61b58abd260baad1d1f7"
     },
     {
+      "path": "tests/solver-matcher-labs-r15.test.mjs",
+      "bytes": 26963,
+      "sha256": "449970781ba2e40d2e094431038859b9971821647fe035af40d1e5d3d3a61e64"
+    },
+    {
       "path": "tests/sql-independent.py",
       "bytes": 2009,
       "sha256": "e6b9815e73e4e47b3e075c444a38aecc301b0e13881cfafbdeaa70b62e041400"
@@ -311,8 +315,8 @@
     },
     {
       "path": "web/src/App.jsx",
-      "bytes": 194579,
-      "sha256": "e223eb81ccf5f6dabde964721d98e973c76313dccf1a522b4adb46c082a0be74"
+      "bytes": 197548,
+      "sha256": "3e8874d33dcb4ce01e933bba4667f1a52100258fc86216fd7c9f4775debab684"
     },
     {
       "path": "web/src/charter-whitepaper.js",
@@ -376,8 +380,8 @@
     },
     {
       "path": "web/src/presets-and-catalog.js",
-      "bytes": 41477,
-      "sha256": "ea0c7890f9b4c58a25d91aea0e71248b7d8d41a79918172fcc19e8277559c364"
+      "bytes": 49893,
+      "sha256": "b491e5d4ef47de338c0c0df38dceb826871df66c8a13d8dde0827b87554e72d2"
     },
     {
       "path": "web/src/style.css",
@@ -386,13 +390,13 @@
     },
     {
       "path": "web/src/views/DiscoverView.jsx",
-      "bytes": 57706,
-      "sha256": "db6b65483b72d5c99b00ef25b6879cf92310ff287ebd8ef33f3647996cb029af"
+      "bytes": 60792,
+      "sha256": "adf6a0cab3bbc133a724c5a732ff863072c335b424234bed12a8fe1f8f0a7706"
     },
     {
       "path": "web/src/views/MissionArchitectView.jsx",
-      "bytes": 44141,
-      "sha256": "dd5e7b3f46a675d38da674b973f16f0b15260a53d104331cad31823603c05da6"
+      "bytes": 44467,
+      "sha256": "fce16c6f2bccb4244dea4bd68fd296d65aba8bb839f05b1a6025634217c9961c"
     },
     {
       "path": "web/src/views/ProofArenaView.jsx",
