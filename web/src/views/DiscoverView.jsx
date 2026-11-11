@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import SolarBatonHorizon from '../components/SolarBatonHorizon.jsx';
 import {
   SKILLS_CATALOG,
@@ -23,7 +23,8 @@ import {
   EyeIcon,
   ArrowRightIcon,
   ShieldCheckIcon,
-  SplitWipeIcon
+  SplitWipeIcon,
+  HelpIcon
 } from '../icons.jsx';
 
 function LifecycleBadge({ lifecycle, label, legacyMode, openSeats, members, maxSize }) {
@@ -134,6 +135,9 @@ export default function DiscoverView({
   onVerifyPersonSkill,
   onLockPlanAndMintInvite,
   onInspectDagWipe,
+  onOpenPalette,
+  onOpenHelp,
+  externalFilterRequest,
   onNotify
 }) {
   const [directoryTab, setDirectoryTab] = useState('featured'); // 'featured' | 'builders' | 'crews'
@@ -147,6 +151,26 @@ export default function DiscoverView({
   const [actionHint, setActionHint] = useState(
     'Action preview: "Try in plan" tests schedule fit locally (preview only). "Invite / Join team" manages real server spots.'
   );
+  const searchInputRef = useRef(null);
+
+  useEffect(() => {
+    if (!externalFilterRequest || !externalFilterRequest.seq) return;
+    if (typeof externalFilterRequest.query === 'string') {
+      setSearchQuery(externalFilterRequest.query);
+    }
+    if (typeof externalFilterRequest.skill === 'string') {
+      setSelectedSkill(externalFilterRequest.skill);
+    }
+    if (typeof externalFilterRequest.tab === 'string') {
+      setDirectoryTab(externalFilterRequest.tab);
+    }
+    if (externalFilterRequest.focus) {
+      requestAnimationFrame(() => {
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select?.();
+      });
+    }
+  }, [externalFilterRequest]);
 
   const horizonMin = Math.max(60, Math.round(Number(horizonHours || 8) * 60));
   const legacyMode = lensMode === 'legacy';
@@ -329,13 +353,41 @@ export default function DiscoverView({
           <div className="search-box compact-search-box">
             <SearchIcon size={15} className="search-box-icon" />
             <input
+              ref={searchInputRef}
+              id="discover-filter-input"
               type="search"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Search name, city, skill, or team..."
+              placeholder="Filter name, city, skill, or team (f)..."
               aria-label="Search people and teams"
             />
           </div>
+
+          {onOpenPalette && (
+            <button
+              type="button"
+              data-reactive-surface=""
+              className="btn btn-secondary btn-compact discover-cmd-btn"
+              onClick={onOpenPalette}
+              title="Open full Command Search across teammates, scenarios, and actions (click, /, or Ctrl+K)"
+            >
+              <SearchIcon size={14} />
+              <span>Command Search</span>
+            </button>
+          )}
+
+          {onOpenHelp && (
+            <button
+              type="button"
+              data-reactive-surface=""
+              className="btn btn-secondary btn-compact discover-guide-btn"
+              onClick={onOpenHelp}
+              title="Open Purpose-First Guide & Keyboard Shortcuts (?)"
+            >
+              <HelpIcon size={14} />
+              <span>Start Guide</span>
+            </button>
+          )}
 
           <div className="tab-strip compact-tab-strip" role="tablist" aria-label="Show people or teams">
             {[

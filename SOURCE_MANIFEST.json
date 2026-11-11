@@ -1,6 +1,6 @@
 {
   "project": "Post Sheet | Ability & Purpose Crew Network (H4H-PS1)",
-  "generatedAt": "2026-11-11T13:41:22.019Z",
+  "generatedAt": "2026-11-11T14:21:21.449Z",
   "fileCount": 81,
   "files": [
     {
@@ -310,8 +310,8 @@
     },
     {
       "path": "web/src/App.jsx",
-      "bytes": 157734,
-      "sha256": "14328402c0aef1350047b92c5f2086af6f6f9ef16ff726754ea586d26d67b7ac"
+      "bytes": 165044,
+      "sha256": "db4d39b7cdfb06037e845b1f7c332353c0aae0353b341ec3121f79eb9f432a95"
     },
     {
       "path": "web/src/charter-whitepaper.js",
@@ -335,8 +335,8 @@
     },
     {
       "path": "web/src/components/KeyboardLightRibbon.jsx",
-      "bytes": 5149,
-      "sha256": "627dbed2d7ab54daea352fc06411c0d85b3898ae5a4d5bfc5cc31de3512d0575"
+      "bytes": 10955,
+      "sha256": "150882a3f00198359e276d82282d69dab36a5b5f3b10f144ba36277488a9a64f"
     },
     {
       "path": "web/src/components/ModalDialog.jsx",
@@ -345,8 +345,8 @@
     },
     {
       "path": "web/src/components/Overlays.jsx",
-      "bytes": 30722,
-      "sha256": "6a12e48088d080d904457290f6bea2ef0abfe8df7336fa70047ed67ee6070d2b"
+      "bytes": 34911,
+      "sha256": "520853f3268aeb11585cc50a0a80d73605f4c0140dd791e031d44092104210b8"
     },
     {
       "path": "web/src/components/SolarBatonHorizon.jsx",
@@ -360,8 +360,8 @@
     },
     {
       "path": "web/src/ergonomics.js",
-      "bytes": 7992,
-      "sha256": "d613d1009a9b15d01f2d8b65fb02456df90080a6a5d0959ccf2ff5e4cbd10161"
+      "bytes": 8142,
+      "sha256": "49130803fcf7bced25ada387ba37f953bdd0725e40a3a6267bdbc69a2f313ede"
     },
     {
       "path": "web/src/icons.jsx",
@@ -380,13 +380,13 @@
     },
     {
       "path": "web/src/style.css",
-      "bytes": 85412,
-      "sha256": "8962588b8b1430818f33cff01b405fe974dc3383cde34fab93d948dbf25d51ce"
+      "bytes": 93284,
+      "sha256": "1ae0e3d407f00e7cc914a64b1a32f5e2ee4387701b9da202ebf88d9751b3e083"
     },
     {
       "path": "web/src/views/DiscoverView.jsx",
-      "bytes": 53613,
-      "sha256": "b4ad5584052a2c3dca26e4cc2d112dafd91499c128cb06b922033e79a1320a34"
+      "bytes": 55355,
+      "sha256": "21dc18bcdb8e2d5bdee124f5bba3a530d0d8bc136edd04f2fe25a11b28c8a177"
     },
     {
       "path": "web/src/views/MissionArchitectView.jsx",

@@ -281,6 +281,14 @@ export function DisplayComfortPopover({
           >
             Static Off
           </button>
+          <button
+            type="button"
+            aria-pressed={settings.upperKeyMirror !== false}
+            className={`ide-seg-btn span-full ${settings.upperKeyMirror !== false ? 'active' : ''}`}
+            onClick={() => patch({ upperKeyMirror: settings.upperKeyMirror === false })}
+          >
+            Upper Shortcut Mirror: {settings.upperKeyMirror !== false ? 'Visible' : 'Hidden'}
+          </button>
         </div>
       </div>
 
@@ -307,7 +315,13 @@ export function DisplayComfortPopover({
   );
 }
 
-export function WhyPurposeFirstModal({ open, onClose, onJumpScenario, onNavigate }) {
+export function WhyPurposeFirstModal({
+  open,
+  onClose,
+  onJumpScenario,
+  onNavigate,
+  onOpenPalette
+}) {
   return (
     <ModalDialog
       open={open}
@@ -316,8 +330,37 @@ export function WhyPurposeFirstModal({ open, onClose, onJumpScenario, onNavigate
       title="Purpose-First Team Planning & Keyboard Guide"
     >
       <blockquote className="thesis-quote">
-        "Start from the work to be done, check that everyone's skills and hours fit together, and let the server confirm every spot."
+        "Connecting people through purpose: start from the work to be done, check that everyone's skills and hours fit together, and let the server confirm every spot."
       </blockquote>
+
+      {/* Prominent Mouse / Touch Command Search Card (No Keyboard Needed) */}
+      <div
+        data-reactive-surface=""
+        className="subcard guide-search-spotlight"
+      >
+        <div className="row-between wrap-gap">
+          <div>
+            <span className="eyebrow-tag">INSTANT NAVIGATION · NO KEYBOARD REQUIRED</span>
+            <h3>Command Search: Find People, Skills, Scenarios, or Actions</h3>
+            <p className="small-copy muted-copy top-gap-xs">
+              Jump straight to any teammate, skill filter, schedule scenario, display contrast mode, offline relay test, 50-person race, or white-paper download with a single click or tap.
+            </p>
+          </div>
+          {onOpenPalette && (
+            <button
+              type="button"
+              data-reactive-surface=""
+              className="btn btn-primary guide-open-search-btn"
+              onClick={() => {
+                onClose();
+                onOpenPalette();
+              }}
+            >
+              <SearchIcon size={15} /> Open Command Search
+            </button>
+          )}
+        </div>
+      </div>
 
       <div className="comparison-grid">
         <div className="subcard tone-warn">
@@ -337,19 +380,27 @@ export function WhyPurposeFirstModal({ open, onClose, onJumpScenario, onNavigate
             <li><strong>Schedule &amp; Handoff Check:</strong> Places tightest tasks first and verifies clean cross-timezone handoffs.</li>
             <li><strong>Smart Skill Verification:</strong> Asks <strong>zero questions</strong> when a backup teammate already covers the work, or prompts one quick check when needed.</li>
             <li><strong>Add Help Without Replacing People:</strong> Suggests who unblocks a bottleneck while keeping current teammates.</li>
-            <li><strong>Server-Confirmed Spots + Offline Forwarding:</strong> 50-person race safety + offline request forwarding through a connected teammate.</li>
+            <li><strong>Server-Confirmed Spots &amp; Offline Forwarding:</strong> 50-person race safety and offline request forwarding through a connected teammate.</li>
           </ul>
         </div>
       </div>
 
       <div className="subcard top-gap-sm">
-        <h3>Keyboard Shortcuts</h3>
-        <div className="pill-row top-gap-xs small-copy">
-          <span><kbd>Alt+1..4</kbd> Switch steps 1-4</span>
-          <span><kbd>Ctrl+K</kbd> or <kbd>/</kbd> Command search</span>
-          <span><kbd>?</kbd> Open this guide</span>
-          <span><kbd>Esc</kbd> Close menu or dialog</span>
-          <span><kbd>Ctrl+Shift+A</kbd> Full display studio</span>
+        <div className="row-between wrap-gap">
+          <h3>Verified Keyboard &amp; Accessibility Shortcuts</h3>
+          <span className="badge-pill">Paused automatically inside text inputs</span>
+        </div>
+        <div className="shortcut-reference-grid top-gap-xs small-copy">
+          <div className="shortcut-ref-item"><kbd>?</kbd> or <kbd>g</kbd> or <kbd>F1</kbd> <span>Open this Guide</span></div>
+          <div className="shortcut-ref-item"><kbd>/</kbd> or <kbd>Ctrl+K</kbd> <span>Open Command Search</span></div>
+          <div className="shortcut-ref-item"><kbd>1..4</kbd> or <kbd>Alt+1..4</kbd> <span>Switch steps 1 through 4</span></div>
+          <div className="shortcut-ref-item"><kbd>f</kbd> <span>Focus teammate &amp; skill filter</span></div>
+          <div className="shortcut-ref-item"><kbd>[</kbd> and <kbd>]</kbd> <span>Previous / next team page</span></div>
+          <div className="shortcut-ref-item"><kbd>p</kbd> <span>Switch Acting-As profile</span></div>
+          <div className="shortcut-ref-item"><kbd>d</kbd> or <kbd>Ctrl+Shift+A</kbd> <span>Display, Scale &amp; Contrast</span></div>
+          <div className="shortcut-ref-item"><kbd>e</kbd> <span>Download Team Plan HTML</span></div>
+          <div className="shortcut-ref-item"><kbd>r</kbd> <span>Refresh live server board</span></div>
+          <div className="shortcut-ref-item"><kbd>Esc</kbd> <span>Close dialog or leave input</span></div>
         </div>
       </div>
 
@@ -778,8 +829,17 @@ export function AccessibilityStudioDrawer({ open, onClose, settings, onChange })
             className={`studio-option-card compact ${settings.singleKeyShortcuts ? 'selected' : ''}`}
             onClick={() => update({ singleKeyShortcuts: !settings.singleKeyShortcuts })}
           >
-            <strong>Single-Key Shortcuts (/ and ?): {settings.singleKeyShortcuts ? 'On' : 'Off'}</strong>
-            <span className="muted-copy">WCAG 2.1.4 control; automatically paused inside text fields</span>
+            <strong>Single-Key Shortcuts (/, ?, 1-4, f, p, d, e, r): {settings.singleKeyShortcuts ? 'On' : 'Off'}</strong>
+            <span className="muted-copy">WCAG 2.1.4 character-key control; automatically paused inside text fields</span>
+          </button>
+          <button
+            type="button"
+            aria-pressed={settings.upperKeyMirror !== false}
+            className={`studio-option-card compact ${settings.upperKeyMirror !== false ? 'selected' : ''}`}
+            onClick={() => update({ upperKeyMirror: settings.upperKeyMirror === false })}
+          >
+            <strong>Upper Peripheral Shortcut Mirror: {settings.upperKeyMirror !== false ? 'Visible' : 'Hidden'}</strong>
+            <span className="muted-copy">Translucent upper bar with clickable keyboard and mouse/touch shortcuts</span>
           </button>
         </div>
       </div>
@@ -862,8 +922,8 @@ export function CommandPaletteModal({ open, onClose, commands }) {
       onClose={onClose}
       variant="palette"
       initialFocusRef={inputRef}
-      eyebrow="COMMAND SEARCH (CTRL+K OR /)"
-      title="Jump to Any Step, Scenario, Display Mode, or Download"
+      eyebrow="COMMAND SEARCH (CLICK, CTRL+K, OR /)"
+      title="Search Teammates, Skills, Steps, Scenarios, Display, or Export"
     >
       <div className="palette-search-wrap">
         <SearchIcon size={18} className="palette-search-icon" />
@@ -876,10 +936,35 @@ export function CommandPaletteModal({ open, onClose, commands }) {
             setActiveIndex(0);
           }}
           onKeyDown={handleKeyDown}
-          placeholder="Search: find teammates, plan, download, high contrast, 50 people..."
+          placeholder="Search people (Priya, Mateo), skills (backend, ui), steps, contrast, 50 race..."
           aria-label="Filter platform commands"
           className="palette-input"
         />
+      </div>
+
+      <div className="pill-row palette-quick-chips" role="group" aria-label="Quick command categories">
+        {[
+          { label: 'All', q: '' },
+          { label: 'Teammates', q: 'Teammates' },
+          { label: 'Skills', q: 'Skill Filter' },
+          { label: 'Scenarios', q: 'Example Plans' },
+          { label: 'Live Tests', q: 'Live Tests' },
+          { label: 'Display', q: 'Display' }
+        ].map(cat => (
+          <button
+            key={cat.label}
+            type="button"
+            aria-pressed={query.toLowerCase() === cat.q.toLowerCase()}
+            className={`mini-preset-chip ${query.toLowerCase() === cat.q.toLowerCase() ? 'active' : ''}`}
+            onClick={() => {
+              setQuery(cat.q);
+              setActiveIndex(0);
+              inputRef.current?.focus();
+            }}
+          >
+            {cat.label}
+          </button>
+        ))}
       </div>
 
       <div className="palette-list" role="listbox" aria-label="Available commands">

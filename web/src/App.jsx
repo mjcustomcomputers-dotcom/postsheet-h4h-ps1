@@ -11,6 +11,8 @@ import {
 } from './ergonomics.js';
 import {
   MISSION_SCENARIOS,
+  BUILDER_DIRECTORY,
+  SKILLS_CATALOG,
   normalizeBuilderId,
   findBuilderById,
   computePartialTaskPreview,
@@ -32,7 +34,7 @@ import {
 import CrewCharterExportModal, { triggerTeamPlanDownload } from './components/CrewCharterExportModal.jsx';
 import EpistemicStencil from './components/EpistemicStencil.jsx';
 import SolarBatonHorizon from './components/SolarBatonHorizon.jsx';
-import KeyboardLightRibbon from './components/KeyboardLightRibbon.jsx';
+import KeyboardLightRibbon, { UpperShortcutHoloMirror } from './components/KeyboardLightRibbon.jsx';
 import DiscoverView from './views/DiscoverView.jsx';
 import MissionArchitectView from './views/MissionArchitectView.jsx';
 import SeatAuthorityView from './views/SeatAuthorityView.jsx';
@@ -48,6 +50,8 @@ import {
   OutboxIcon,
   UserIcon,
   HelpIcon,
+  SearchIcon,
+  SparklesIcon,
   EyeIcon,
   DownloadIcon,
   ChevronDownIcon,
@@ -173,6 +177,18 @@ export default function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [charterOpen, setCharterOpen] = useState(false);
   const [authPromptMessage, setAuthPromptMessage] = useState('');
+  const [discoverFilterReq, setDiscoverFilterReq] = useState({ seq: 0, focus: false });
+
+  const requestDiscoverFilter = useCallback((opts = {}) => {
+    setActiveView('discover');
+    setDiscoverFilterReq(prev => ({
+      seq: prev.seq + 1,
+      focus: Boolean(opts.focus),
+      query: opts.query,
+      skill: opts.skill,
+      tab: opts.tab
+    }));
+  }, []);
 
   // Auth & Event State
   const [eventId, setEventId] = useState('seed-event');
@@ -2887,7 +2903,7 @@ export default function App() {
         setStudioOpen(v => !v);
         return;
       }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setPaletteOpen(v => !v);
         return;
@@ -2895,6 +2911,11 @@ export default function App() {
       if (e.key === 'F1') {
         e.preventDefault();
         setWhyOpen(v => !v);
+        return;
+      }
+      if (e.key === 'Escape' && inEditable && !inOpenDialog) {
+        e.preventDefault();
+        target?.blur?.();
         return;
       }
 
@@ -2908,12 +2929,65 @@ export default function App() {
       }
 
       if (ergonomics.singleKeyShortcuts && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        if (e.key === '/') {
-          e.preventDefault();
-          setPaletteOpen(true);
-        } else if (e.key === '?') {
+        // Explicit Shift+Slash / '?' check FIRST so '?' always opens the Guide and never falls into '/' Search
+        const isQuestionKey = e.key === '?' || (e.code === 'Slash' && e.shiftKey);
+        const isPlainSlash = e.key === '/' && !e.shiftKey;
+
+        if (isQuestionKey || e.key.toLowerCase() === 'g') {
           e.preventDefault();
           setWhyOpen(true);
+          return;
+        }
+        if (isPlainSlash) {
+          e.preventDefault();
+          setPaletteOpen(true);
+          return;
+        }
+        if (!e.shiftKey) {
+          const lower = e.key.toLowerCase();
+          if (e.key === '1') { e.preventDefault(); setActiveView('discover'); return; }
+          if (e.key === '2') { e.preventDefault(); setActiveView('architect'); return; }
+          if (e.key === '3') { e.preventDefault(); setActiveView('authority'); return; }
+          if (e.key === '4') { e.preventDefault(); setActiveView('arena'); return; }
+          if (lower === 'f') {
+            e.preventDefault();
+            requestDiscoverFilter({ focus: true });
+            return;
+          }
+          if (lower === 'p') {
+            e.preventDefault();
+            setDisplayPopoverOpen(false);
+            setActingMenuOpen(v => !v);
+            return;
+          }
+          if (lower === 'd') {
+            e.preventDefault();
+            setActingMenuOpen(false);
+            setDisplayPopoverOpen(v => !v);
+            return;
+          }
+          if (lower === 'e') {
+            e.preventDefault();
+            handleDirectPlanDownload();
+            return;
+          }
+          if (lower === 'r') {
+            e.preventDefault();
+            refreshBoard(true);
+            return;
+          }
+          if (e.key === '[' && activeView === 'discover') {
+            e.preventDefault();
+            setPageIndex(p => Math.max(0, p - 1));
+            return;
+          }
+          if (e.key === ']' && activeView === 'discover') {
+            e.preventDefault();
+            setPageIndex(p => {
+              const total = totalTeams !== null ? Math.max(1, Math.ceil(totalTeams / pageSize)) : p + 2;
+              return p + 1 < total ? p + 1 : p;
+            });
+          }
         }
       }
     }
@@ -2927,7 +3001,22 @@ export default function App() {
     charterOpen,
     actingMenuOpen,
     displayPopoverOpen,
-    ergonomics.singleKeyShortcuts
+    ergonomics.singleKeyShortcuts,
+    activeView,
+    totalTeams,
+    pageSize,
+    requestDiscoverFilter,
+    refreshBoard,
+    eventId,
+    teamId,
+    actorId,
+    selectedTeam,
+    goalDescription,
+    horizonHours,
+    tasks,
+    teamPeople,
+    plan,
+    issuedInvite
   ]);
 
   function handleTabListKeyDown(e, idx) {
@@ -2946,32 +3035,49 @@ export default function App() {
 
   const commands = useMemo(
     () => [
-      { id: 'v1', group: 'Steps', label: '1. Find teammates', shortcut: 'Alt+1', keywords: 'directory board search filter people', run: () => setActiveView('discover') },
-      { id: 'v2', group: 'Steps', label: '2. Plan the work', shortcut: 'Alt+2', keywords: 'schedule timeline tasks timezones', run: () => setActiveView('architect') },
-      { id: 'v3', group: 'Steps', label: '3. Manage your team', shortcut: 'Alt+3', keywords: 'invite join offline relay mateo', run: () => setActiveView('authority') },
-      { id: 'v4', group: 'Steps', label: '4. Test the last spot', shortcut: 'Alt+4', keywords: 'race 50 benchmark speed', run: () => setActiveView('arena') },
-      { id: 'sc-1', group: 'Example Plans', label: '1. Different time zones, clean handoff', keywords: 'baton timezone india arkansas priya', run: () => { setActiveView('architect'); selectScenario('baton'); } },
-      { id: 'sc-2', group: 'Example Plans', label: '2. One person double-booked on two tasks', keywords: 'hall overload mateo simultaneous', run: () => { setActiveView('architect'); selectScenario('hall'); } },
-      { id: 'sc-3', group: 'Example Plans', label: '3. Unverified skill: when backup covers it vs. quick check', keywords: 'omega voi unverified skill', run: () => { setActiveView('architect'); selectScenario('omega'); } },
-      { id: 'sc-4', group: 'Example Plans', label: '4. Unblock early setup without replacing teammates', keywords: 'devops cloud setup prerequisite', run: () => { setActiveView('architect'); selectScenario('prereq'); } },
-      { id: 'act-dl', group: 'Download & Print', label: 'Download Team Plan HTML (#FFFFFF white-paper file)', keywords: 'download html export file', run: () => handleDirectPlanDownload() },
+      { id: 'v1', group: 'Steps', label: '1. Find teammates & open teams', shortcut: '1 / Alt+1', keywords: 'directory board search filter people', run: () => setActiveView('discover') },
+      { id: 'v2', group: 'Steps', label: '2. Plan the work & schedule', shortcut: '2 / Alt+2', keywords: 'schedule timeline tasks timezones', run: () => setActiveView('architect') },
+      { id: 'v3', group: 'Steps', label: '3. Manage your team & offline relay', shortcut: '3 / Alt+3', keywords: 'invite join offline relay mateo', run: () => setActiveView('authority') },
+      { id: 'v4', group: 'Steps', label: '4. Test the last spot (50-person race)', shortcut: '4 / Alt+4', keywords: 'race 50 benchmark speed', run: () => setActiveView('arena') },
+      { id: 'f-focus', group: 'Directory Search', label: 'Focus teammate & skill filter input', shortcut: 'f', keywords: 'filter search directory people teams', run: () => requestDiscoverFilter({ focus: true, query: '' }) },
+      ...BUILDER_DIRECTORY.map(b => ({
+        id: `bld-${b.id}`,
+        group: 'Teammates',
+        label: `Preview ${b.displayName} (${b.timezone}) in team plan`,
+        keywords: `teammates builder ${b.id} ${b.displayName} ${b.role} ${b.timezone} ${Object.keys(b.skills).join(' ')}`,
+        run: () => handleToggleBuilderInCrew(b)
+      })),
+      ...SKILLS_CATALOG.map(sk => ({
+        id: `sk-${sk.id}`,
+        group: 'Skill Filter',
+        label: `Filter directory by skill: ${sk.label} (${sk.short})`,
+        keywords: `skill filter ${sk.id} ${sk.label} ${sk.short}`,
+        run: () => requestDiscoverFilter({ skill: sk.id, query: '', tab: 'builders' })
+      })),
+      { id: 'sc-1', group: 'Example Plans', label: '1. Different time zones, clean handoff', keywords: 'baton timezone india arkansas priya example plans', run: () => { setActiveView('architect'); selectScenario('baton'); } },
+      { id: 'sc-2', group: 'Example Plans', label: '2. One person double-booked on two tasks', keywords: 'hall overload mateo simultaneous example plans', run: () => { setActiveView('architect'); selectScenario('hall'); } },
+      { id: 'sc-3', group: 'Example Plans', label: '3. Unverified skill: backup covers it vs. quick check', keywords: 'omega voi unverified skill example plans', run: () => { setActiveView('architect'); selectScenario('omega'); } },
+      { id: 'sc-4', group: 'Example Plans', label: '4. Unblock early setup without replacing teammates', keywords: 'devops cloud setup prerequisite example plans', run: () => { setActiveView('architect'); selectScenario('prereq'); } },
+      { id: 'act-dl', group: 'Download & Print', label: 'Download Team Plan HTML (#FFFFFF white-paper file)', shortcut: 'e', keywords: 'download html export file', run: () => handleDirectPlanDownload() },
       { id: 'act-charter', group: 'Download & Print', label: 'Preview / Print Team Plan PDF', keywords: 'pdf print preview charter', run: () => setCharterOpen(true) },
-      { id: 'act-race', group: 'Live Tests', label: 'Run 50-person last-spot test', keywords: 'race 50 winner full', run: () => { setActiveView('arena'); handleRun50WayRace(); } },
-      { id: 'act-relay', group: 'Live Tests', label: 'Prepare example team for offline request forwarding', keywords: 'offline outbox mateo reconnect', run: () => { setActiveView('authority'); handleAutoSetupRelayDemo(); } },
-      { id: 'p-aurora', group: 'Switch Profile', label: 'Acting as: Aurora (Team lead)', keywords: 'aurora demo', run: () => switchPersona('leader-aurora') },
-      { id: 'p-kai', group: 'Switch Profile', label: 'Acting as: Kai (Frontend)', keywords: 'kai demo', run: () => switchPersona('builder-kai') },
-      { id: 'p-priya', group: 'Switch Profile', label: 'Acting as: Priya (Integration)', keywords: 'priya demo', run: () => switchPersona('builder-priya') },
-      { id: 'p-mateo', group: 'Switch Profile', label: 'Acting as: Mateo (Teammate Relay · Database)', keywords: 'mateo relay database demo', run: () => switchPersona('relay-mateo') },
-      { id: 'sc-auto', group: 'Display & Scale', label: 'Scale: Auto (60% Desktop / 100% Mobile)', keywords: 'auto scale 60 100', run: () => setErgonomics(s => ({ ...s, scaleLocked: false, scale: '60' })) },
-      { id: 'sc-60', group: 'Display & Scale', label: 'Scale: 60% Panorama', keywords: '60 panorama compact', run: () => setErgonomics(s => ({ ...s, scaleLocked: true, scale: '60' })) },
-      { id: 'sc-100', group: 'Display & Scale', label: 'Scale: 100% Standard', keywords: '100 standard large', run: () => setErgonomics(s => ({ ...s, scaleLocked: true, scale: '100' })) },
-      { id: 'th-moon', group: 'Display & Scale', label: 'Contrast: Moonlight Dark', keywords: 'dark moonlight default', run: () => setErgonomics(s => ({ ...s, theme: 'h4h-glass' })) },
-      { id: 'th-hc', group: 'Display & Scale', label: 'Contrast: High Contrast', keywords: 'high contrast yellow white', run: () => setErgonomics(s => ({ ...s, theme: 'aaa-contrast' })) },
-      { id: 'th-light', group: 'Display & Scale', label: 'Contrast: Moonlit Pearl (Light)', keywords: 'light pearl white', run: () => setErgonomics(s => ({ ...s, theme: 'warm-paper' })) },
-      { id: 'open-studio', group: 'Display & Scale', label: 'Open Extended Display & Shortcut Studio', shortcut: 'Ctrl+Shift+A', keywords: 'accessibility studio', run: () => setStudioOpen(true) },
-      { id: 'open-why', group: 'Help', label: 'Purpose-First Guide & Keyboard Shortcuts', shortcut: '?', keywords: 'help guide shortcuts', run: () => setWhyOpen(true) }
+      { id: 'act-race', group: 'Live Tests', label: 'Run 50-person last-spot test', keywords: 'live tests race 50 winner full', run: () => { setActiveView('arena'); handleRun50WayRace(); } },
+      { id: 'act-relay', group: 'Live Tests', label: 'Prepare example team for offline request forwarding', keywords: 'live tests offline outbox mateo reconnect', run: () => { setActiveView('authority'); handleAutoSetupRelayDemo(); } },
+      { id: 'act-refresh', group: 'Live Tests', label: 'Refresh live server board', shortcut: 'r', keywords: 'live tests refresh sync server board', run: () => refreshBoard(true) },
+      { id: 'p-aurora', group: 'Switch Profile', label: 'Acting as: Aurora (Team lead)', shortcut: 'p', keywords: 'aurora demo profile', run: () => switchPersona('leader-aurora') },
+      { id: 'p-kai', group: 'Switch Profile', label: 'Acting as: Kai (Frontend)', keywords: 'kai demo profile', run: () => switchPersona('builder-kai') },
+      { id: 'p-priya', group: 'Switch Profile', label: 'Acting as: Priya (Integration)', keywords: 'priya demo profile', run: () => switchPersona('builder-priya') },
+      { id: 'p-mateo', group: 'Switch Profile', label: 'Acting as: Mateo (Teammate Relay · Database)', keywords: 'mateo relay database demo profile', run: () => switchPersona('relay-mateo') },
+      { id: 'sc-auto', group: 'Display & Scale', label: 'Scale: Auto (60% Desktop / 100% Mobile)', keywords: 'display auto scale 60 100', run: () => setErgonomics(s => ({ ...s, scaleLocked: false, scale: '60' })) },
+      { id: 'sc-60', group: 'Display & Scale', label: 'Scale: 60% Panorama', keywords: 'display 60 panorama compact', run: () => setErgonomics(s => ({ ...s, scaleLocked: true, scale: '60' })) },
+      { id: 'sc-100', group: 'Display & Scale', label: 'Scale: 100% Standard', keywords: 'display 100 standard large', run: () => setErgonomics(s => ({ ...s, scaleLocked: true, scale: '100' })) },
+      { id: 'th-moon', group: 'Display & Scale', label: 'Contrast: Moonlight Dark', keywords: 'display dark moonlight default', run: () => setErgonomics(s => ({ ...s, theme: 'h4h-glass' })) },
+      { id: 'th-hc', group: 'Display & Scale', label: 'Contrast: High Contrast', keywords: 'display high contrast yellow white', run: () => setErgonomics(s => ({ ...s, theme: 'aaa-contrast' })) },
+      { id: 'th-light', group: 'Display & Scale', label: 'Contrast: Moonlit Pearl (Light)', keywords: 'display light pearl white', run: () => setErgonomics(s => ({ ...s, theme: 'warm-paper' })) },
+      { id: 'mirror-toggle', group: 'Display & Scale', label: 'Toggle Upper Peripheral Shortcut Mirror', keywords: 'display shortcut mirror bar holo keyboard', run: () => setErgonomics(s => ({ ...s, upperKeyMirror: s.upperKeyMirror === false })) },
+      { id: 'open-studio', group: 'Display & Scale', label: 'Open Extended Display & Shortcut Studio', shortcut: 'Ctrl+Shift+A', keywords: 'display accessibility studio', run: () => setStudioOpen(true) },
+      { id: 'open-why', group: 'Help', label: 'Purpose-First Guide & Keyboard Shortcuts', shortcut: '? / F1', keywords: 'help guide shortcuts', run: () => setWhyOpen(true) }
     ],
-    [selectScenario, switchPersona, eventId, teamId, actorId, selectedTeam, goalDescription, horizonHours, tasks, teamPeople, plan, issuedInvite]
+    [selectScenario, switchPersona, requestDiscoverFilter, handleToggleBuilderInCrew, refreshBoard, eventId, teamId, actorId, selectedTeam, goalDescription, horizonHours, tasks, teamPeople, plan, issuedInvite]
   );
 
   const horizonMin = Math.max(60, Math.round(Number(horizonHours || 4) * 60));
@@ -3074,9 +3180,9 @@ export default function App() {
         </div>
       )}
 
-      {/* IDE-Style Top Header: Brand + Plain Subtitle, 4 Plain Tabs, and ONLY 3 Right-Side Controls */}
+      {/* IDE-Style Top Header: Brand + Firefly Purpose Slogan, 4 Plain Tabs, and Right Controls */}
       <header className="top-command-header top-header no-print" role="banner">
-        {/* 1. Brand & Compact Plain-Language Subtitle */}
+        {/* 1. Brand, Reactive Flashlight Guide Trigger & Firefly Purpose Emblem */}
         <div className="brand-cluster">
           <div className="brand-pill">
             <span className="brand-icon-wrap">
@@ -3091,21 +3197,35 @@ export default function App() {
                 </h1>
                 <button
                   type="button"
-                  className="why-inline-link"
+                  data-reactive-surface=""
+                  className="why-inline-link guide-flashlight-btn"
                   onClick={() => setWhyOpen(true)}
-                  title="Open Purpose-First guide & keyboard shortcuts (?)"
+                  title="Essential start: Open Purpose-First Guide & Keyboard Shortcuts (? or F1)"
                 >
-                  <HelpIcon size={13} /> Guide
+                  <HelpIcon size={13} />
+                  <span>Guide</span>
+                  <kbd className="guide-key-tag">{ergonomics.singleKeyShortcuts ? '?' : 'F1'}</kbd>
                 </button>
               </div>
-              <p className="brand-meta">
-                Find people whose skills fit the work. Plan a team, manage membership, and test how the system handles a race for the last spot.
-              </p>
             </div>
           </div>
+
+          {/* Luminous Firefly Emblem in the Space Directly Left of 1. Find teammates */}
+          <button
+            type="button"
+            data-reactive-surface=""
+            className="purpose-firefly-emblem"
+            onClick={() => setWhyOpen(true)}
+            title="Connecting people through purpose - click to open the Purpose-First Guide"
+          >
+            <span className="firefly-spark" aria-hidden="true">
+              <SparklesIcon size={13} />
+            </span>
+            <span className="firefly-text">Connecting people through purpose</span>
+          </button>
         </div>
 
-        {/* 2. 4 Plain-Language Step Tabs (Alt+1..4) */}
+        {/* 2. 4 Plain-Language Step Tabs (1..4 / Alt+1..4) */}
         <nav aria-label="Primary workflow steps" className="primary-nav">
           <div role="tablist" aria-label="Workflow Steps" className="primary-tablist">
             {PRIMARY_TABS.map((tab, idx) => {
@@ -3124,7 +3244,7 @@ export default function App() {
                   className={`nav-tab ${selected ? 'active' : ''}`}
                   onClick={() => setActiveView(tab.id)}
                   onKeyDown={e => handleTabListKeyDown(e, idx)}
-                  title={`${tab.num}. ${tab.label} (${tab.hotkey})`}
+                  title={`${tab.num}. ${tab.label} (${ergonomics.singleKeyShortcuts ? `${tab.num} or ${tab.hotkey}` : tab.hotkey})`}
                 >
                   <Icon size={14} />
                   <span className="tab-num">{tab.num}.</span>
@@ -3135,8 +3255,20 @@ export default function App() {
           </div>
         </nav>
 
-        {/* 3. ONLY 3 Coding-App-Standard Controls on the Right */}
+        {/* 3. Visible Mouse/Touch Command Search + 3 Core Controls on the Right */}
         <div className="header-right-cluster ide-three-controls">
+          {/* Visible Mouse/Touch Command Search Entry Point */}
+          <button
+            type="button"
+            data-reactive-surface=""
+            className="btn btn-secondary ide-header-btn header-search-trigger"
+            onClick={() => setPaletteOpen(true)}
+            title="Open Command Search with mouse or keyboard (Ctrl+K or /)"
+          >
+            <SearchIcon size={14} />
+            <span>Search</span>
+            <kbd className="header-search-kbd">{ergonomics.singleKeyShortcuts ? '/' : 'Ctrl+K'}</kbd>
+          </button>
           {/* Control 1: Acting as: <Name> ▾ */}
           <div className="ide-popover-anchor">
             <button
@@ -3208,6 +3340,32 @@ export default function App() {
           </button>
         </div>
       </header>
+
+      {/* Upper Peripheral Translucent Hologram Shortcut Mirror */}
+      <UpperShortcutHoloMirror
+        visible={ergonomics.upperKeyMirror !== false}
+        activeView={activeView}
+        singleKeyShortcuts={ergonomics.singleKeyShortcuts}
+        onToggleSingleKeyShortcuts={() =>
+          setErgonomics(s => ({ ...s, singleKeyShortcuts: !s.singleKeyShortcuts }))
+        }
+        onToggleMirror={() =>
+          setErgonomics(s => ({ ...s, upperKeyMirror: s.upperKeyMirror === false }))
+        }
+        onOpenPalette={() => setPaletteOpen(true)}
+        onOpenHelp={() => setWhyOpen(true)}
+        onFocusFilter={() => requestDiscoverFilter({ focus: true })}
+        onNavigate={view => setActiveView(view)}
+        onToggleActingMenu={() => {
+          setDisplayPopoverOpen(false);
+          setActingMenuOpen(v => !v);
+        }}
+        onToggleDisplayMenu={() => {
+          setActingMenuOpen(false);
+          setDisplayPopoverOpen(v => !v);
+        }}
+        onDownloadPlan={handleDirectPlanDownload}
+      />
 
       {/* Mobile (<768px) Pinned Mini-Panorama Summary Strip */}
       {isMobileViewport && (
@@ -3348,6 +3506,9 @@ export default function App() {
               onVerifyPersonSkill={handleVerifyPersonSkill}
               onLockPlanAndMintInvite={handleLockPlanAndMintInvite}
               onInspectDagWipe={() => setActiveView('architect')}
+              onOpenPalette={() => setPaletteOpen(true)}
+              onOpenHelp={() => setWhyOpen(true)}
+              externalFilterRequest={discoverFilterReq}
               onNotify={notifyToast}
             />
           )}
@@ -3944,12 +4105,17 @@ export default function App() {
         authorityHealth={authorityHealth}
         queuedClaim={queuedClaim}
         singleKeyShortcuts={ergonomics.singleKeyShortcuts}
+        upperKeyMirror={ergonomics.upperKeyMirror !== false}
         onToggleSingleKeyShortcuts={() =>
           setErgonomics(s => ({ ...s, singleKeyShortcuts: !s.singleKeyShortcuts }))
+        }
+        onToggleUpperKeyMirror={() =>
+          setErgonomics(s => ({ ...s, upperKeyMirror: s.upperKeyMirror === false }))
         }
         onJumpToManageTeam={() => setActiveView('authority')}
         onOpenPalette={() => setPaletteOpen(true)}
         onOpenHelp={() => setWhyOpen(true)}
+        onFocusFilter={() => requestDiscoverFilter({ focus: true })}
       />
 
       {/* Accessible Modals & Drawers */}
@@ -3961,6 +4127,7 @@ export default function App() {
           selectScenario(scKey);
         }}
         onNavigate={view => setActiveView(view)}
+        onOpenPalette={() => setPaletteOpen(true)}
       />
 
       <AuthAccountModal

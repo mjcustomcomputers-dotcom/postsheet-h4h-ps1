@@ -178,6 +178,7 @@ export function detectOsDefaults() {
     motion: prefersReducedMotion ? 'off' : 'spring',
     readingLock: true,
     singleKeyShortcuts: true,
+    upperKeyMirror: true,
     crrMode: 'crr'
   };
 }
@@ -199,6 +200,8 @@ export function loadErgonomics() {
       readingLock: typeof parsed.readingLock === 'boolean' ? parsed.readingLock : defaults.readingLock,
       singleKeyShortcuts:
         typeof parsed.singleKeyShortcuts === 'boolean' ? parsed.singleKeyShortcuts : defaults.singleKeyShortcuts,
+      upperKeyMirror:
+        typeof parsed.upperKeyMirror === 'boolean' ? parsed.upperKeyMirror : defaults.upperKeyMirror,
       crrMode: parsed.crrMode === 'flat' ? 'flat' : 'crr'
     };
   } catch {
