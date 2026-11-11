@@ -1,13 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { request as httpRequest } from 'node:http';
+import { createConnection } from 'node:net';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
-import { startServer, issueToken, DEMO_PERSONA_RE } from '../src/server.mjs';
+import {
+  startServer,
+  issueToken,
+  DEMO_PERSONA_RE,
+  canonicalizeRequestUrl,
+  resolveSafeStaticAsset
+} from '../src/server.mjs';
 import { escapeHtml, buildTeamPlanWhitePaperHtml } from '../web/src/charter-whitepaper.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -697,5 +704,178 @@ test('SEC10 | Defensive SQLite pragmas, bounded 512-key LRU, revoked-token pruni
   } finally {
     app.authority.close();
     tmp.cleanup();
+  }
+});
+
+function rawTcpHttp(port, rawLines) {
+  return new Promise((resolveWire, rejectWire) => {
+    const sock = createConnection({ host: '127.0.0.1', port }, () => {
+      sock.write(rawLines.join('\r\n') + '\r\n\r\n');
+    });
+    const chunks = [];
+    sock.on('data', c => chunks.push(c));
+    sock.on('end', () => {
+      const txt = Buffer.concat(chunks).toString('utf8');
+      const headEnd = txt.indexOf('\r\n\r\n');
+      const head = headEnd === -1 ? txt : txt.slice(0, headEnd);
+      const body = headEnd === -1 ? '' : txt.slice(headEnd + 4);
+      const statusMatch = head.match(/^HTTP\/1\.[01]\s+(\d{3})/);
+      resolveWire({
+        status: statusMatch ? Number(statusMatch[1]) : 0,
+        head,
+        body
+      });
+    });
+    sock.on('error', rejectWire);
+  });
+}
+
+test('SEC11 | Raw wire-level path traversal, double-encoding, sibling-prefix, dotfile, symlink & Windows device probes blocked', async () => {
+  const tmp = makeTempDir('h4h-sec11-jail-');
+  const distDir = join(tmp.dir, 'dist');
+  const siblingSecretDir = join(tmp.dir, 'dist-secret');
+  mkdirSync(join(distDir, 'assets'), { recursive: true });
+  mkdirSync(join(distDir, 'dir.js'), { recursive: true });
+  mkdirSync(siblingSecretDir, { recursive: true });
+
+  writeFileSync(join(distDir, 'index.html'), '<!doctype html><title>JailTest</title>', 'utf8');
+  writeFileSync(join(distDir, 'assets', 'app.js'), 'console.log("ok");', 'utf8');
+  writeFileSync(join(distDir, '.env'), 'SECRET=SHOULD_NEVER_SERVE', 'utf8');
+  writeFileSync(join(distDir, 'leak.sqlite'), 'SQLITE_SHOULD_NEVER_SERVE', 'utf8');
+  writeFileSync(join(siblingSecretDir, 'stolen.js'), 'TOP_SECRET_SIBLING', 'utf8');
+  const outsideSecret = join(tmp.dir, 'outside-secret.js');
+  writeFileSync(outsideSecret, 'OUTSIDE_JAIL_SECRET', 'utf8');
+
+  let symlinkCreated = false;
+  try {
+    symlinkSync(outsideSecret, join(distDir, 'assets', 'sym-escape.js'));
+    symlinkCreated = true;
+  } catch {
+    // Windows without Developer Mode / symlink privilege skips symlink creation cleanly
+  }
+
+  const app = startServer({ secret: SECRET, distDir });
+  const addr = await app.listen();
+
+  try {
+    // 1. Legitimate SPA entry & allowlisted asset succeed (GET + HEAD)
+    const rootGet = await rawTcpHttp(addr.port, ['GET / HTTP/1.1', 'Host: localhost', 'Connection: close']);
+    assert.equal(rootGet.status, 200);
+    assert.ok(rootGet.body.includes('<title>JailTest</title>'));
+    assert.match(rootGet.head, /x-frame-options:\s*DENY/i);
+
+    const rootHead = await rawTcpHttp(addr.port, ['HEAD / HTTP/1.1', 'Host: localhost', 'Connection: close']);
+    assert.equal(rootHead.status, 200);
+    assert.equal(rootHead.body, '');
+
+    const assetGet = await rawTcpHttp(addr.port, ['GET /assets/app.js HTTP/1.1', 'Host: localhost', 'Connection: close']);
+    assert.equal(assetGet.status, 200);
+    assert.equal(assetGet.body, 'console.log("ok");');
+
+    // 2. Wire-level traversal, encoding, backslash, null-byte, semicolon, and Windows device probes -> 400 INVALID_PATH
+    const badWireTargets = [
+      '/../../package.json',
+      '/../dist-secret/stolen.js',
+      '/%2e%2e/dist-secret/stolen.js',
+      '/%2e%2e%2fpackage.json',
+      '/%2e%2e%5cpackage.json',
+      '/%252e%252e%252fpackage.json',
+      '/assets/..%5c..%5coutside-secret.js',
+      '/assets/%00app.js',
+      '/..;/api/events/seed-event/board',
+      '//evil.example/assets/app.js',
+      'http://evil.example/health',
+      '/assets/CON.js',
+      '/assets/NUL.txt',
+      '/assets/app.js::$DATA'
+    ];
+    for (const target of badWireTargets) {
+      const r = await rawTcpHttp(addr.port, [`GET ${target} HTTP/1.1`, 'Host: localhost', 'Connection: close']);
+      assert.equal(r.status, 400, `Expected 400 INVALID_PATH for wire target '${target}', got ${r.status}`);
+      assert.ok(!r.body.includes('SECRET') && !r.body.includes('<title>JailTest</title>'));
+    }
+
+    // 3. Dotfiles, non-allowlisted extensions (.sqlite), directories (dir.js), and scanner paths -> 404 JSON (never 200 SPA fallback or 500 EISDIR)
+    const scannerTargets = [
+      '/.env',
+      '/.git/HEAD',
+      '/.git/config',
+      '/.wrangler/config/default.toml',
+      '/leak.sqlite',
+      '/dir.js',
+      '/etc/passwd',
+      '/proc/self/environ',
+      '/wp-admin'
+    ];
+    for (const target of scannerTargets) {
+      const r = await rawTcpHttp(addr.port, [`GET ${target} HTTP/1.1`, 'Host: localhost', 'Connection: close']);
+      assert.equal(r.status, 404, `Expected 404 ROUTE_NOT_FOUND for scanner target '${target}', got ${r.status}`);
+      assert.ok(!r.body.includes('SHOULD_NEVER_SERVE') && !r.body.includes('<title>JailTest</title>'));
+    }
+
+    // 4. Symlink escape inside dist/assets -> blocked (404)
+    if (symlinkCreated) {
+      const symRes = await rawTcpHttp(addr.port, ['GET /assets/sym-escape.js HTTP/1.1', 'Host: localhost', 'Connection: close']);
+      assert.equal(symRes.status, 404);
+      assert.ok(!symRes.body.includes('OUTSIDE_JAIL_SECRET'));
+    }
+
+    // 5. Direct unit assertions on resolveSafeStaticAsset & canonicalizeRequestUrl
+    assert.equal(resolveSafeStaticAsset(distDir, '/../dist-secret/stolen.js'), null);
+    assert.throws(() => canonicalizeRequestUrl('/%c0%afetc/passwd'), /INVALID_PATH/);
+    assert.throws(() => canonicalizeRequestUrl('/' + 'a'.repeat(2100)), /URI_TOO_LONG/);
+  } finally {
+    await app.close();
+    tmp.cleanup();
+  }
+});
+
+test('SEC12 | Malformed URL crash immunity, CL.TE framing guard, TRACE/OPTIONS 405, dot-ID block & /api/peer/glue DoS cap', async () => {
+  const app = startServer({ secret: SECRET });
+  const addr = await app.listen();
+  const base = `http://127.0.0.1:${addr.port}`;
+
+  try {
+    // 1. Malformed URL that throws in new URL() MUST NOT crash the async HTTP listener
+    const badUrlRes = await rawTcpHttp(addr.port, ['GET http://[::1]:bad/ HTTP/1.1', 'Host: localhost', 'Connection: close']);
+    assert.equal(badUrlRes.status, 400);
+
+    // Server remains 100% alive afterward
+    const alive = await rawTcpHttp(addr.port, ['HEAD /health HTTP/1.1', 'Host: localhost', 'Connection: close']);
+    assert.equal(alive.status, 200);
+    assert.equal(alive.body, '');
+
+    // 2. HTTP Request Smuggling probe (both Transfer-Encoding and Content-Length) -> 400
+    const smuggle = await rawTcpHttp(addr.port, [
+      'POST /api/auth/login HTTP/1.1',
+      'Host: localhost',
+      'Content-Type: application/json',
+      'Content-Length: 2',
+      'Transfer-Encoding: chunked',
+      'Connection: close'
+    ]);
+    assert.equal(smuggle.status, 400);
+
+    // 3. Unsupported HTTP verbs (TRACE, OPTIONS, DELETE, PUT) -> 405 with Allow: GET, HEAD, POST
+    for (const verb of ['TRACE', 'OPTIONS', 'DELETE', 'PUT']) {
+      const r = await rawTcpHttp(addr.port, [`${verb} /health HTTP/1.1`, 'Host: localhost', 'Connection: close']);
+      assert.equal(r.status, 405, `Expected 405 for ${verb}, got ${r.status}`);
+      assert.match(r.head, /allow:\s*GET, HEAD, POST/i);
+    }
+
+    // 4. Dot / double-dot identifiers rejected across token minting & API routes
+    assert.throws(() => issueToken('..', SECRET), /INVALID_ACTOR/);
+    assert.throws(() => issueToken('a..b', SECRET), /INVALID_ACTOR/);
+    const tok = issueToken('leader-aurora', SECRET);
+    const badEv = await jsonCall(base, 'POST', '/api/events', { eventId: '..', maxSize: 4 }, tok);
+    assert.equal(badEv.status, 400);
+
+    // 5. /api/peer/glue O(N^2) array flooding capped at <= 128 records
+    const flood = Array.from({ length: 130 }, (_, i) => ({ id: `r-${i}` }));
+    const glueFlood = await jsonCall(base, 'POST', '/api/peer/glue', { localRecords: flood, peerRecords: [] }, tok);
+    assert.equal(glueFlood.status, 400);
+    assert.equal(glueFlood.body.error, 'INVALID_RECORDS_SCOPE');
+  } finally {
+    await app.close();
   }
 });

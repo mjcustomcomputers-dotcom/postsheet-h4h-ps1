@@ -1,8 +1,8 @@
 // H4H PS1 | Unified Layer-A Authority + R5 Solvers + Layer-B Peer Adapter + Static UI Host
 import { createServer } from 'node:http';
 import { createHmac, createHash, timingSafeEqual } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
-import { resolve, dirname, extname, normalize } from 'node:path';
+import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
+import { resolve, dirname, extname, isAbsolute, relative, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { MembershipAuthority } from './authority.mjs';
 import { planGoal } from './goal-planner.mjs';
@@ -13,6 +13,10 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const DIST_DIR = resolve(HERE, '../web/dist');
 
 const ID_RE = /^[A-Za-z0-9_.:@-]{1,128}$/;
+const isSafeId = s => typeof s === 'string' && ID_RE.test(s) && s !== '.' && s !== '..' && !s.includes('..');
+const SAFE_IP_RE = /^[0-9a-fA-F:.]{2,45}$/;
+const WIN_RESERVED_DEVICE_RE = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
+const SPA_ENTRY_ROUTES = new Set(['/', '/index.html', '/discover', '/mission', '/seat', '/proof']);
 export const DEMO_PERSONA_RE =
   /^(leader-aurora|builder-kai|builder-priya|relay-mateo|race-leader|(aurora|priya|kai|mateo|lead|mem|claimant)-[A-Za-z0-9_-]{1,28})$/;
 const DEMO_AUTO_EVENT_RE = /^(seed-event|h4h-open-crews|race-[A-Za-z0-9_-]{1,40})$/;
@@ -22,7 +26,7 @@ const b64 = o => Buffer.from(JSON.stringify(o)).toString('base64url');
 const sign = (p, secret) => createHmac('sha256', secret).update(p).digest('base64url');
 
 export function issueToken(actor, secret, ttlSec = 3600, roles = ['member']) {
-  if (typeof actor !== 'string' || !ID_RE.test(actor)) throw Error('INVALID_ACTOR');
+  if (!isSafeId(actor)) throw Error('INVALID_ACTOR');
   if (typeof secret !== 'string' || Buffer.byteLength(secret) < 32) throw Error('SECRET_TOO_SHORT');
   const p = b64({ sub: actor, roles, aud: 'h4h-ps1-local', exp: Math.floor(Date.now() / 1000) + ttlSec });
   return p + '.' + sign(p, secret);
@@ -45,8 +49,7 @@ export function verifyToken(token, secret) {
     p.aud !== 'h4h-ps1-local' ||
     !Number.isInteger(p.exp) ||
     p.exp <= Date.now() / 1000 ||
-    typeof p.sub !== 'string' ||
-    !ID_RE.test(p.sub) ||
+    !isSafeId(p.sub) ||
     !Array.isArray(p.roles)
   ) {
     throw Error('UNAUTHORIZED');
@@ -55,10 +58,10 @@ export function verifyToken(token, secret) {
 }
 
 export function issueRelayWarrant({ sub, eventId, teamId, opId, codeHash }, secret, ttlSec = 600) {
-  if (typeof sub !== 'string' || !ID_RE.test(sub)) throw Error('INVALID_ACTOR');
-  if (typeof eventId !== 'string' || !ID_RE.test(eventId)) throw Error('INVALID_EVENT');
-  if (typeof teamId !== 'string' || !ID_RE.test(teamId)) throw Error('INVALID_TEAM');
-  if (typeof opId !== 'string' || !ID_RE.test(opId)) throw Error('INVALID_OPERATION');
+  if (!isSafeId(sub)) throw Error('INVALID_ACTOR');
+  if (!isSafeId(eventId)) throw Error('INVALID_EVENT');
+  if (!isSafeId(teamId)) throw Error('INVALID_TEAM');
+  if (!isSafeId(opId)) throw Error('INVALID_OPERATION');
   if (typeof codeHash !== 'string' || !/^[0-9a-f]{64}$/.test(codeHash)) throw Error('INVALID_CODE_HASH');
   if (typeof secret !== 'string' || Buffer.byteLength(secret) < 32) throw Error('SECRET_TOO_SHORT');
   const boundedTtl = Math.min(3600, Math.max(1, Math.trunc(Number(ttlSec) || 600)));
@@ -91,11 +94,10 @@ export function verifyRelayWarrant(token, secret) {
     p.aud !== 'h4h-ps1-relay-warrant' ||
     !Number.isInteger(p.exp) ||
     p.exp <= Date.now() / 1000 ||
-    typeof p.sub !== 'string' ||
-    !ID_RE.test(p.sub) ||
-    typeof p.eventId !== 'string' ||
-    typeof p.teamId !== 'string' ||
-    typeof p.opId !== 'string' ||
+    !isSafeId(p.sub) ||
+    !isSafeId(p.eventId) ||
+    !isSafeId(p.teamId) ||
+    !isSafeId(p.opId) ||
     typeof p.codeHash !== 'string' ||
     !/^[0-9a-f]{64}$/.test(p.codeHash)
   ) {
@@ -117,6 +119,8 @@ function parseTokenAudience(rawToken) {
 }
 
 const errStatus = {
+  AMBIGUOUS_FRAMING: 400,
+  INVALID_PATH: 400,
   UNAUTHORIZED: 401,
   LEADER_REQUIRED: 403,
   NOT_MEMBER: 403,
@@ -124,6 +128,7 @@ const errStatus = {
   SELF_RELAY_FORBIDDEN: 403,
   NO_EVENT: 404,
   NO_TEAM: 404,
+  METHOD_NOT_ALLOWED: 405,
   ACCOUNT_EXISTS: 409,
   TEAM_EXISTS: 409,
   TARGET_NOT_TEAM_MEMBER: 409,
@@ -132,6 +137,7 @@ const errStatus = {
   IDEMPOTENCY_KEY_REUSED: 409,
   INVITE_INVALID_OR_USED: 409,
   INVITE_EXPIRED: 410,
+  URI_TOO_LONG: 414,
   UNSUPPORTED_MEDIA_TYPE: 415,
   TOO_MANY_REQUESTS: 429,
   AUTH_BUSY: 429
@@ -140,6 +146,9 @@ const errStatus = {
 const commonSecurityHeaders = {
   'cache-control': 'no-store',
   'x-content-type-options': 'nosniff',
+  'x-frame-options': 'DENY',
+  'x-permitted-cross-domain-policies': 'none',
+  'x-dns-prefetch-control': 'off',
   'referrer-policy': 'no-referrer',
   'cross-origin-opener-policy': 'same-origin',
   'cross-origin-resource-policy': 'same-origin',
@@ -157,8 +166,119 @@ const mimeByExt = {
   '.js': 'application/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
-  '.svg': 'image/svg+xml'
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.png': 'image/png',
+  '.woff2': 'font/woff2'
 };
+
+export function canonicalizeRequestUrl(rawUrl) {
+  if (typeof rawUrl !== 'string' || rawUrl.length === 0) throw Error('INVALID_PATH');
+  if (rawUrl.length > 2048) throw Error('URI_TOO_LONG');
+  if (/[\x00-\x1f\x7f]/.test(rawUrl) || rawUrl.includes('\\')) throw Error('INVALID_PATH');
+  if (!rawUrl.startsWith('/') || rawUrl.startsWith('//')) throw Error('INVALID_PATH');
+
+  const qIdx = rawUrl.search(/[?#]/);
+  const rawPath = qIdx === -1 ? rawUrl : rawUrl.slice(0, qIdx);
+  const rawSegs = rawPath.split('/');
+  if (
+    rawPath.includes(';') ||
+    rawPath.includes('//') ||
+    rawSegs.some(s => s === '.' || s === '..') ||
+    /%00|%2f|%5c|%2e|%25(?:00|2f|5c|2e)|%c0%af|%e0%80%af/i.test(rawPath)
+  ) {
+    throw Error('INVALID_PATH');
+  }
+
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(rawUrl, 'http://localhost');
+  } catch {
+    throw Error('INVALID_PATH');
+  }
+
+  let decodedPath;
+  try {
+    decodedPath = decodeURIComponent(parsedUrl.pathname);
+  } catch {
+    throw Error('INVALID_PATH');
+  }
+
+  if (!decodedPath.startsWith('/') || decodedPath.includes('\0') || decodedPath.includes('\\')) {
+    throw Error('INVALID_PATH');
+  }
+
+  const segs = decodedPath.split('/');
+  for (let i = 1; i < segs.length; i++) {
+    const seg = segs[i];
+    if (seg === '') {
+      if (i !== segs.length - 1) throw Error('INVALID_PATH');
+      continue;
+    }
+    if (
+      seg === '.' ||
+      seg === '..' ||
+      seg.includes('\0') ||
+      seg.includes('\\') ||
+      seg.includes('/') ||
+      seg.includes(':') ||
+      WIN_RESERVED_DEVICE_RE.test(seg)
+    ) {
+      throw Error('INVALID_PATH');
+    }
+  }
+
+  return { parsedUrl, route: decodedPath };
+}
+
+export function resolveSafeStaticAsset(distRoot, route) {
+  if (!distRoot || typeof route !== 'string' || !existsSync(distRoot)) return null;
+  let distReal;
+  try {
+    distReal = realpathSync(distRoot);
+  } catch {
+    return null;
+  }
+
+  const segs = route.split('/').filter(Boolean);
+  if (segs.some(s => s.startsWith('.'))) return null;
+
+  let relTarget;
+  if (SPA_ENTRY_ROUTES.has(route)) {
+    relTarget = 'index.html';
+  } else {
+    const ext = extname(route).toLowerCase();
+    if (!ext || !Object.hasOwn(mimeByExt, ext)) return null;
+    relTarget = segs.join(sep);
+  }
+
+  const candidate = resolve(distReal, relTarget);
+  const rel = relative(distReal, candidate);
+  if (!rel || rel.startsWith('..') || isAbsolute(rel)) return null;
+
+  let st;
+  try {
+    st = lstatSync(candidate);
+  } catch {
+    return null;
+  }
+  if (st.isSymbolicLink() || !st.isFile() || st.size > 4 * 1024 * 1024) return null;
+
+  let real;
+  try {
+    real = realpathSync(candidate);
+  } catch {
+    return null;
+  }
+  const realRel = relative(distReal, real);
+  if (!realRel || realRel.startsWith('..') || isAbsolute(realRel) || !real.startsWith(distReal + sep)) {
+    return null;
+  }
+
+  const contentType = mimeByExt[extname(real).toLowerCase()];
+  if (!contentType) return null;
+  return { filePath: real, contentType, byteLength: st.size };
+}
 
 function hasForbiddenProtoKeys(node, depth = 0) {
   if (depth > 32) return true;
@@ -228,14 +348,15 @@ function getClientIp(req) {
   const sockIp = String(req.socket?.remoteAddress || '127.0.0.1').trim();
   if (process.env.PS1_TRUST_PROXY === '1') {
     const cfIp = typeof req.headers['cf-connecting-ip'] === 'string' ? req.headers['cf-connecting-ip'].trim() : '';
-    if (cfIp) return cfIp;
+    if (cfIp && SAFE_IP_RE.test(cfIp)) return cfIp;
     const xff = typeof req.headers['x-forwarded-for'] === 'string' ? req.headers['x-forwarded-for'] : '';
-    if (xff) {
+    if (xff && xff.length <= 512) {
       const parts = xff
         .split(',')
         .map(s => s.trim())
         .filter(Boolean);
-      if (parts.length > 0) return parts[parts.length - 1];
+      const lastHop = parts.length > 0 ? parts[parts.length - 1] : '';
+      if (lastHop && SAFE_IP_RE.test(lastHop)) return lastHop;
     }
   }
   return sockIp;
@@ -247,7 +368,8 @@ export function startServer({
   host = '127.0.0.1',
   port = 0,
   enableDemo = true,
-  enforceRateLimit = false
+  enforceRateLimit = false,
+  distDir = DIST_DIR
 } = {}) {
   if (typeof secret !== 'string' || Buffer.byteLength(secret) < 32) throw Error('SECRET_TOO_SHORT');
   const authority = new MembershipAuthority(dbPath);
@@ -298,6 +420,7 @@ export function startServer({
 
   const http = createServer(async (req, res) => {
     const isHttps = String(req.headers['x-forwarded-proto'] || '').trim().toLowerCase() === 'https';
+    const method = String(req.method || '').toUpperCase();
 
     function withDynamicSecurityHeaders(baseHeaders, extraHeaders = {}) {
       const h = { ...baseHeaders, ...extraHeaders };
@@ -310,23 +433,39 @@ export function startServer({
     function respond(status, data, extraHeaders = {}) {
       if (res.destroyed) return;
       res.writeHead(status, withDynamicSecurityHeaders(apiHeaders, extraHeaders));
-      res.end(JSON.stringify(data));
+      if (method === 'HEAD') {
+        res.end();
+      } else {
+        res.end(JSON.stringify(data));
+      }
     }
 
-    const parsedUrl = new URL(req.url || '/', 'http://localhost');
-    const route = parsedUrl.pathname;
-    const clientIp = getClientIp(req);
-
     try {
-      if (req.method === 'GET' && route === '/health') {
+      if (req.headers['transfer-encoding'] !== undefined && req.headers['content-length'] !== undefined) {
+        req.resume();
+        throw Error('AMBIGUOUS_FRAMING');
+      }
+
+      if (method !== 'GET' && method !== 'HEAD' && method !== 'POST') {
+        req.resume();
+        throw Error('METHOD_NOT_ALLOWED');
+      }
+
+      const { parsedUrl, route } = canonicalizeRequestUrl(req.url || '/');
+      const clientIp = getClientIp(req);
+
+      if ((method === 'GET' || method === 'HEAD') && route === '/health') {
         respond(200, { status: 'up' });
         return;
       }
 
       const boardMatch = route.match(/^\/api\/events\/([A-Za-z0-9_.:@-]{1,128})\/board$/);
-      if (req.method === 'GET' && boardMatch) {
-        const limit = Number(parsedUrl.searchParams.get('limit') || 100);
-        const offset = Number(parsedUrl.searchParams.get('offset') || 0);
+      if (method === 'GET' && boardMatch) {
+        if (!isSafeId(boardMatch[1])) throw Error('INVALID_EVENT');
+        const rawLimit = parsedUrl.searchParams.get('limit');
+        const rawOffset = parsedUrl.searchParams.get('offset');
+        const limit = rawLimit === null || rawLimit === '' ? 100 : Number(rawLimit);
+        const offset = rawOffset === null || rawOffset === '' ? 0 : Number(rawOffset);
         const teams = authority.board(boardMatch[1], limit, offset);
         if (parsedUrl.searchParams.get('meta') === '1') {
           const evId = boardMatch[1];
@@ -344,20 +483,23 @@ export function startServer({
       const teamDetailMatch = route.match(
         /^\/api\/events\/([A-Za-z0-9_.:@-]{1,128})\/teams\/([A-Za-z0-9_.:@-]{1,128})$/
       );
-      if (req.method === 'GET' && teamDetailMatch) {
+      if (method === 'GET' && teamDetailMatch) {
+        if (!isSafeId(teamDetailMatch[1])) throw Error('INVALID_EVENT');
+        if (!isSafeId(teamDetailMatch[2])) throw Error('INVALID_TEAM');
         respond(200, ext.teamDetails(teamDetailMatch[1], teamDetailMatch[2]));
         return;
       }
 
       const auditMatch = route.match(/^\/api\/events\/([A-Za-z0-9_.:@-]{1,128})\/audit$/);
-      if (req.method === 'GET' && auditMatch) {
+      if (method === 'GET' && auditMatch) {
+        if (!isSafeId(auditMatch[1])) throw Error('INVALID_EVENT');
         requireBearer(req);
         const rows = authority.recentAudit(auditMatch[1], 100);
         respond(200, { eventId: auditMatch[1], audit: rows });
         return;
       }
 
-      if (req.method === 'GET' && route === '/api/peer/notes') {
+      if (method === 'GET' && route === '/api/peer/notes') {
         requireBearer(req);
         const evId = parsedUrl.searchParams.get('eventId') || '';
         respond(200, { notes: ext.listPeerNotes(evId, 25) });
@@ -365,7 +507,8 @@ export function startServer({
       }
 
       const streamMatch = route.match(/^\/api\/events\/([A-Za-z0-9_.:@-]{1,128})\/stream$/);
-      if (req.method === 'GET' && streamMatch) {
+      if (method === 'GET' && streamMatch) {
+        if (!isSafeId(streamMatch[1])) throw Error('INVALID_EVENT');
         if (streamClients.size >= 100) {
           respond(503, { error: 'STREAM_CAPACITY' });
           return;
@@ -409,41 +552,33 @@ export function startServer({
         return;
       }
 
-      // Static React UI serving for non-/api GET routes when web/dist is built
-      if (req.method === 'GET' && !route.startsWith('/api/')) {
-        if (existsSync(resolve(DIST_DIR, 'index.html'))) {
-          const cleanRel =
-            route === '/'
-              ? 'index.html'
-              : normalize(route)
-                  .replace(/^(\.\.(\/|\\|$))+/, '')
-                  .replace(/^[\/\\]+/, '');
-          const candidate = resolve(DIST_DIR, cleanRel);
-          const target =
-            candidate.startsWith(DIST_DIR) && existsSync(candidate) && extname(candidate)
-              ? candidate
-              : extname(cleanRel)
-                ? null
-                : resolve(DIST_DIR, 'index.html');
-          if (target && existsSync(target)) {
-            const extType = mimeByExt[extname(target)] || 'application/octet-stream';
-            res.writeHead(
-              200,
-              withDynamicSecurityHeaders(commonSecurityHeaders, {
-                'content-type': extType,
-                'content-security-policy':
-                  "default-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'"
-              })
-            );
-            res.end(readFileSync(target));
-            return;
+      // Hardened static React UI jail for non-/api GET/HEAD routes
+      if ((method === 'GET' || method === 'HEAD') && !route.startsWith('/api/')) {
+        const asset = resolveSafeStaticAsset(distDir, route);
+        if (asset) {
+          const bodyBuf = method === 'HEAD' ? null : readFileSync(asset.filePath);
+          const byteLen = bodyBuf ? bodyBuf.length : asset.byteLength;
+          res.writeHead(
+            200,
+            withDynamicSecurityHeaders(commonSecurityHeaders, {
+              'content-type': asset.contentType,
+              'content-length': String(byteLen),
+              'content-security-policy':
+                "default-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'"
+            })
+          );
+          if (method === 'HEAD') {
+            res.end();
+          } else {
+            res.end(bodyBuf);
           }
+          return;
         }
         respond(404, { error: 'ROUTE_NOT_FOUND' });
         return;
       }
 
-      if (req.method !== 'POST') {
+      if (method !== 'POST') {
         respond(404, { error: 'ROUTE_NOT_FOUND' });
         return;
       }
@@ -488,8 +623,8 @@ export function startServer({
         const payload = await readJson(req);
         const persona = String(payload.actorId || 'leader-aurora');
         const evId = String(payload.eventId || 'seed-event');
-        if (!ID_RE.test(persona)) throw Error('INVALID_ACTOR');
-        if (!ID_RE.test(evId)) throw Error('INVALID_EVENT');
+        if (!isSafeId(persona)) throw Error('INVALID_ACTOR');
+        if (!isSafeId(evId)) throw Error('INVALID_EVENT');
         if (!DEMO_PERSONA_RE.test(persona) || ext.hasRegisteredAccount(persona)) {
           throw Error('DEMO_PERSONA_FORBIDDEN');
         }
@@ -621,7 +756,12 @@ export function startServer({
         return;
       }
       if (route === '/api/peer/glue') {
-        respond(200, contextGlueOrExplain(payload.localRecords || [], payload.peerRecords || []));
+        const localRecs = payload.localRecords === undefined ? [] : payload.localRecords;
+        const peerRecs = payload.peerRecords === undefined ? [] : payload.peerRecords;
+        if (!Array.isArray(localRecs) || !Array.isArray(peerRecs) || localRecs.length > 128 || peerRecs.length > 128) {
+          throw Error('INVALID_RECORDS_SCOPE');
+        }
+        respond(200, contextGlueOrExplain(localRecs, peerRecs));
         return;
       }
       if (route === '/api/peer/relay-claim') {
@@ -745,7 +885,14 @@ export function startServer({
             : code.startsWith('INVALID_') || code === 'CYCLIC_TASK_DEPENDENCY'
               ? 400
               : 500);
-      const extra = status === 429 ? { 'retry-after': '10' } : {};
+      const extra =
+        status === 429
+          ? { 'retry-after': '10' }
+          : status === 405
+            ? { allow: 'GET, HEAD, POST' }
+            : code === 'AMBIGUOUS_FRAMING'
+              ? { connection: 'close' }
+              : {};
       respond(status, { error: status === 500 ? 'INTERNAL_ERROR' : code }, extra);
     }
   });

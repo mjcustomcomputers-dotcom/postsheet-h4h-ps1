@@ -1,6 +1,6 @@
 {
   "project": "Post Sheet | Ability & Purpose Crew Network (H4H-PS1)",
-  "generatedAt": "2026-11-11T11:46:50.325Z",
+  "generatedAt": "2026-11-11T13:01:41.612Z",
   "fileCount": 81,
   "files": [
     {
@@ -40,8 +40,8 @@
     },
     {
       "path": "SECURITY.md",
-      "bytes": 5276,
-      "sha256": "71587a810a2baa9a7bc95e2b031e2fac7fdf9adfcd10f42c359539af5b456c4f"
+      "bytes": 6896,
+      "sha256": "2407b26a3f88b0c10c5f22c4b586dc912422f37b4fa459487da27ee2008bcc77"
     },
     {
       "path": "docker-compose.hardened.yml",
@@ -50,8 +50,8 @@
     },
     {
       "path": "docs/DECISION_AND_EXPERIMENT_LEDGER.md",
-      "bytes": 16973,
-      "sha256": "5d1d309bf41768613b9e63f1ce6cb846830b5ed49b40938e6042eed8b728b7df"
+      "bytes": 18362,
+      "sha256": "1e50a4c75624a02905f2d896807c8aef93403adba3f605f5447e923cceef75da"
     },
     {
       "path": "docs/ENGINE_SOLVER_ADVERSARIAL_REVIEW.md",
@@ -220,13 +220,13 @@
     },
     {
       "path": "src/server.mjs",
-      "bytes": 27792,
-      "sha256": "dfb7b015aa154b80847cc94e5f20f926b56b11ae547e442699246ad778883852"
+      "bytes": 32401,
+      "sha256": "ac47bc8074fb792cdacfd2b407d50b2e8518a364456658a79270875ba91fdd15"
     },
     {
       "path": "src/synchronicity-ext.mjs",
-      "bytes": 18002,
-      "sha256": "1d217dafaef04bbd5e9a4fa1c424bea711267f5190c469355d4cab4072a5d3b4"
+      "bytes": 18085,
+      "sha256": "80f435790ba7b8c48d0dc43f164b313865b7608d13e1df19e7cbdefd68ea55cc"
     },
     {
       "path": "src/synchronicity-solvers.mjs",
@@ -270,8 +270,8 @@
     },
     {
       "path": "tests/security-hardening.test.mjs",
-      "bytes": 28839,
-      "sha256": "7a6704bed0f31348794ec13c1062493749ca3a62bde9e7ef34c0a632aef09cb8"
+      "bytes": 36760,
+      "sha256": "27eb26040fa985e30eb1519f3a49562bebb4f9b20f93581636c0c8471efa4bb9"
     },
     {
       "path": "tests/solver-adversarial-r6.test.mjs",

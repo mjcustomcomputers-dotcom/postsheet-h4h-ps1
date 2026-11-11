@@ -16,8 +16,9 @@ import {
 import { sealPeerArtifact, openPeerArtifact } from './peer-envelope.mjs';
 
 const ID = /^[A-Za-z0-9_.:@-]{1,128}$/;
+const isSafeId = v => typeof v === 'string' && ID.test(v) && v !== '.' && v !== '..' && !v.includes('..');
 const validId = (v, label) => {
-  if (typeof v !== 'string' || !ID.test(v)) throw Error('INVALID_' + label);
+  if (!isSafeId(v)) throw Error('INVALID_' + label);
   return v;
 };
 const sha256 = s => createHash('sha256').update(s).digest('hex');
