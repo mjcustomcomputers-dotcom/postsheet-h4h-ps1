@@ -49,7 +49,6 @@ import {
   MeshIcon,
   OutboxIcon,
   UserIcon,
-  HelpIcon,
   SearchIcon,
   SparklesIcon,
   EyeIcon,
@@ -3180,49 +3179,25 @@ export default function App() {
         </div>
       )}
 
-      {/* IDE-Style Top Header: Brand + Firefly Purpose Slogan, 4 Plain Tabs, and Right Controls */}
+      {/* IDE-Style Top Header: Special Firefly Post Sheet Banner, 4 Plain Tabs, and Right Controls */}
       <header className="top-command-header top-header no-print" role="banner">
-        {/* 1. Brand, Reactive Flashlight Guide Trigger & Firefly Purpose Emblem */}
+        {/* 1. Special Firefly Company Banner: Larger Post Sheet + Small Slogan Underneath */}
         <div className="brand-cluster">
-          <div className="brand-pill">
-            <span className="brand-icon-wrap">
-              <BrandMark size={19} />
+          <div className="brand-firefly-banner" data-reactive-surface="">
+            <span className="brand-icon-wrap" aria-hidden="true">
+              <BrandMark size={22} />
             </span>
             <div className="brand-titles">
-              <div className="pill-row brand-title-line">
-                <h1 className="brand-h1" title="Post Sheet | Ability & Purpose Crew Network">
-                  <span>Post Sheet</span>
-                  <span className="brand-h1-sub"> · Crew Network</span>
-                  <span className="sr-only"> | Ability &amp; Purpose Crew Network</span>
-                </h1>
-                <button
-                  type="button"
-                  data-reactive-surface=""
-                  className="why-inline-link guide-flashlight-btn"
-                  onClick={() => setWhyOpen(true)}
-                  title="Essential start: Open Purpose-First Guide & Keyboard Shortcuts (? or F1)"
-                >
-                  <HelpIcon size={13} />
-                  <span>Guide</span>
-                  <kbd className="guide-key-tag">{ergonomics.singleKeyShortcuts ? '?' : 'F1'}</kbd>
-                </button>
-              </div>
+              <h1 className="brand-h1" title="Post Sheet | Ability & Purpose Crew Network">
+                <span className="brand-firefly-title">Post Sheet</span>
+                <span className="sr-only"> | Ability &amp; Purpose Crew Network</span>
+              </h1>
+              <p className="brand-firefly-slogan">
+                <SparklesIcon size={11} className="brand-slogan-spark" />
+                <span className="brand-slogan-text">Connecting people through purpose</span>
+              </p>
             </div>
           </div>
-
-          {/* Luminous Firefly Emblem in the Space Directly Left of 1. Find teammates */}
-          <button
-            type="button"
-            data-reactive-surface=""
-            className="purpose-firefly-emblem"
-            onClick={() => setWhyOpen(true)}
-            title="Connecting people through purpose - click to open the Purpose-First Guide"
-          >
-            <span className="firefly-spark" aria-hidden="true">
-              <SparklesIcon size={13} />
-            </span>
-            <span className="firefly-text">Connecting people through purpose</span>
-          </button>
         </div>
 
         {/* 2. 4 Plain-Language Step Tabs (1..4 / Alt+1..4) */}
@@ -3507,7 +3482,6 @@ export default function App() {
               onLockPlanAndMintInvite={handleLockPlanAndMintInvite}
               onInspectDagWipe={() => setActiveView('architect')}
               onOpenPalette={() => setPaletteOpen(true)}
-              onOpenHelp={() => setWhyOpen(true)}
               externalFilterRequest={discoverFilterReq}
               onNotify={notifyToast}
             />

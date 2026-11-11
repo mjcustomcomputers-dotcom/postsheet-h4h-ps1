@@ -590,28 +590,56 @@ textarea {
 .brand-cluster {
   display: flex;
   align-items: center;
-  gap: 8px;
   min-width: 0;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
 }
 
-.brand-pill {
-  display: flex;
+/* Special Firefly Company Banner: Larger Post Sheet + Small Slogan Underneath in One Capsule */
+.brand-firefly-banner {
+  position: relative;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  min-width: 0;
+  gap: 10px;
+  padding: 5px 14px 5px 8px;
+  border-radius: 12px;
+  border: 1px solid rgba(140, 230, 90, 0.48);
+  background:
+    linear-gradient(
+      115deg,
+      rgba(140, 230, 90, 0.16) 0%,
+      rgba(94, 234, 212, 0.12) 50%,
+      rgba(248, 223, 157, 0.14) 100%
+    ),
+    var(--well-bg);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.30),
+    0 0 18px -6px rgba(126, 231, 210, 0.38),
+    var(--shadow-operable);
+  transition: border-color var(--motion-dur), box-shadow var(--motion-dur);
+}
+
+.brand-firefly-banner:hover {
+  border-color: var(--accent-primary);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.30),
+    0 0 22px -5px rgba(140, 230, 90, 0.46),
+    var(--shadow-lift);
 }
 
 .brand-icon-wrap {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  background: var(--accent-soft);
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  background:
+    linear-gradient(135deg, rgba(140, 230, 90, 0.24), rgba(94, 234, 212, 0.16)),
+    var(--bg-elevated);
   color: var(--accent-primary);
-  border: var(--border-width) solid var(--glass-rim-border);
+  border: 1px solid rgba(159, 212, 198, 0.42);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.20);
   flex-shrink: 0;
 }
 
@@ -622,160 +650,120 @@ textarea {
   min-width: 0;
 }
 
-.brand-title-line {
-  gap: 7px;
-  flex-wrap: nowrap;
-}
-
 .brand-h1 {
-  font-size: 0.92rem;
-  font-weight: 760;
-  letter-spacing: -0.015em;
-  line-height: 1.18;
+  margin: 0;
+  font-size: 1.14rem;
+  font-weight: 820;
+  letter-spacing: -0.022em;
+  line-height: 1.10;
   white-space: nowrap;
 }
 
-.brand-h1-sub {
-  font-weight: 620;
-  color: var(--text-secondary);
-}
-
-.why-inline-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 10px;
-  min-height: 28px;
-  border-radius: 999px;
-  border: 1px solid var(--border-strong);
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-  font-size: 0.76rem;
-  font-weight: 720;
-  white-space: nowrap;
-  box-shadow:
-    inset 0 1px 0 var(--optical-rim-top),
-    var(--shadow-operable);
-}
-
-.why-inline-link:hover {
-  color: var(--text-primary);
-  border-color: var(--accent-primary);
-}
-
-.guide-flashlight-btn {
-  border-color: var(--accent-primary);
-  background: linear-gradient(135deg, var(--accent-soft), var(--bg-elevated));
-  color: var(--text-primary);
-  box-shadow:
-    inset 0 1px 0 var(--optical-rim-top),
-    0 0 0 1px rgba(126, 231, 210, 0.18),
-    var(--shadow-operable);
-}
-
-.guide-flashlight-btn:hover {
-  border-color: var(--accent-primary-hover);
-  box-shadow:
-    inset 0 1px 0 var(--optical-rim-top),
-    0 0 14px -4px var(--crr-proximity-glow),
-    var(--shadow-lift);
-}
-
-.guide-key-tag {
-  font-size: 0.67rem;
-  padding: 0 5px;
-  line-height: 1.35;
-}
-
-/* Firefly / 10D Multi-Stop Luminous Purpose Emblem (Left of 1. Find teammates, 0 Idle Animation) */
-.purpose-firefly-emblem {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 36px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(140, 230, 90, 0.42);
-  background:
-    linear-gradient(
-      112deg,
-      rgba(140, 230, 90, 0.14) 0%,
-      rgba(94, 234, 212, 0.12) 48%,
-      rgba(248, 223, 157, 0.13) 100%
-    ),
-    var(--well-bg);
-  color: var(--text-primary);
-  font-size: 0.78rem;
-  font-weight: 730;
-  letter-spacing: -0.005em;
-  white-space: nowrap;
-  flex-shrink: 0;
-  cursor: pointer;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.28),
-    0 0 16px -6px rgba(126, 231, 210, 0.34),
-    var(--shadow-operable);
-  transition: border-color var(--motion-dur), box-shadow var(--motion-dur);
-}
-
-.purpose-firefly-emblem:hover {
-  border-color: var(--accent-primary);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.28),
-    0 0 20px -5px rgba(140, 230, 90, 0.44),
-    var(--shadow-lift);
-}
-
-.firefly-spark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--tone-warn-ink);
-  filter: drop-shadow(0 0 5px rgba(248, 223, 157, 0.45));
-  flex-shrink: 0;
-}
-
-.firefly-text {
-  background: linear-gradient(96deg, #F8DF9D 0%, #B9F6CA 46%, #7EE7D2 100%);
+.brand-firefly-title {
+  background: linear-gradient(96deg, #FFFFFF 0%, #DFFCE9 52%, #9AF06E 100%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: var(--text-primary);
 }
 
-[data-theme="warm-paper"] .purpose-firefly-emblem {
+.brand-firefly-slogan {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 690;
+  letter-spacing: 0.005em;
+  line-height: 1.22;
+  white-space: nowrap;
+}
+
+.brand-slogan-spark {
+  color: var(--tone-warn-ink);
+  filter: drop-shadow(0 0 4px rgba(248, 223, 157, 0.45));
+  flex-shrink: 0;
+}
+
+.brand-slogan-text {
+  background: linear-gradient(96deg, #F8DF9D 0%, #B9F6CA 48%, #7EE7D2 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: var(--text-secondary);
+}
+
+[data-theme="petrol-glass"] .brand-firefly-banner {
+  border-color: rgba(100, 223, 223, 0.48);
+}
+
+[data-theme="obsidian-prism"] .brand-firefly-banner {
+  border-color: rgba(167, 139, 250, 0.48);
+}
+
+[data-theme="matte-slate"] .brand-firefly-banner {
+  border-color: #38BDF8;
+  box-shadow: var(--shadow-operable);
+}
+
+[data-theme="warm-paper"] .brand-firefly-banner {
   border-color: #0369A1;
   background:
-    linear-gradient(112deg, rgba(14, 165, 233, 0.11), rgba(16, 185, 129, 0.11), rgba(217, 119, 6, 0.10)),
+    linear-gradient(115deg, rgba(14, 165, 233, 0.11), rgba(16, 185, 129, 0.10), rgba(217, 119, 6, 0.09)),
     #FFFFFF;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    inset 0 1px 0 rgba(255, 255, 255, 0.94),
     var(--shadow-operable);
 }
 
-[data-theme="warm-paper"] .firefly-spark {
-  color: #B45309;
-  filter: none;
+[data-theme="warm-paper"] .brand-icon-wrap {
+  background: #E0F2FE;
+  border-color: #0369A1;
+  color: #0B4F6C;
 }
 
-[data-theme="warm-paper"] .firefly-text {
-  background: linear-gradient(96deg, #0F172A 0%, #0B4F6C 52%, #047857 100%);
+[data-theme="warm-paper"] .brand-firefly-title {
+  background: linear-gradient(96deg, #0F172A 0%, #0B4F6C 65%, #047857 100%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: #0F172A;
 }
 
-[data-theme="aaa-contrast"] .purpose-firefly-emblem {
+[data-theme="warm-paper"] .brand-slogan-spark {
+  color: #B45309;
+  filter: none;
+}
+
+[data-theme="warm-paper"] .brand-slogan-text {
+  background: linear-gradient(96deg, #0B4F6C 0%, #047857 60%, #92400E 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: #334155;
+}
+
+[data-theme="aaa-contrast"] .brand-firefly-banner {
   border: 2px solid #FFD60A;
   background: #09090B;
   box-shadow: none;
 }
 
-[data-theme="aaa-contrast"] .firefly-spark,
-[data-theme="aaa-contrast"] .firefly-text {
+[data-theme="aaa-contrast"] .brand-icon-wrap {
+  background: #000000;
+  border: 1px solid #FFD60A;
+  color: #FFD60A;
+  box-shadow: none;
+}
+
+[data-theme="aaa-contrast"] .brand-firefly-title {
+  background: none;
+  -webkit-text-fill-color: #FFFFFF;
+  color: #FFFFFF;
+}
+
+[data-theme="aaa-contrast"] .brand-slogan-spark,
+[data-theme="aaa-contrast"] .brand-slogan-text {
   background: none;
   -webkit-text-fill-color: #FFD60A;
   color: #FFD60A;
@@ -888,8 +876,22 @@ textarea {
 
 .holo-pill-guide {
   border-color: var(--accent-primary);
-  background: var(--accent-soft);
+  background: linear-gradient(135deg, var(--accent-soft), var(--bg-elevated));
   color: var(--text-primary);
+  font-weight: 740;
+  padding: 3px 11px;
+  box-shadow:
+    inset 0 1px 0 var(--optical-rim-top),
+    0 0 14px -5px rgba(140, 230, 90, 0.36),
+    var(--shadow-operable);
+}
+
+.holo-pill-guide:hover {
+  border-color: var(--accent-primary-hover);
+  box-shadow:
+    inset 0 1px 0 var(--optical-rim-top),
+    0 0 18px -4px rgba(140, 230, 90, 0.48),
+    var(--shadow-lift);
 }
 
 .holo-step-group {
@@ -960,11 +962,6 @@ textarea {
 
 .discover-cmd-btn {
   border-color: var(--border-strong);
-}
-
-.discover-guide-btn {
-  border-color: var(--accent-primary);
-  background: var(--accent-soft);
 }
 
 /* Primary 4-Step ARIA Tablist */
@@ -4137,7 +4134,7 @@ input[type="range"] {
   }
 }
 
-@media (min-width: 1410px) {
+@media (min-width: 1280px) {
   .top-command-header,
   .top-header,
   .primary-tablist,
@@ -4146,17 +4143,8 @@ input[type="range"] {
   }
 }
 
-@media (max-width: 1620px) and (min-width: 1100px) {
-  .brand-h1-sub {
-    display: none;
-  }
-}
-
 /* Tablet (768px .. 1099px): 2-Column 58fr / 42fr Split & >=42px Touch Targets */
 @media (min-width: 768px) and (max-width: 1099px) {
-  .purpose-firefly-emblem {
-    min-height: 42px;
-  }
 
   .workspace-layout.is-panoramic-3 {
     grid-template-columns: minmax(0, 58fr) minmax(0, 42fr);
@@ -4211,22 +4199,18 @@ input[type="range"] {
     flex-wrap: wrap;
   }
 
-  .brand-h1 {
+  .brand-h1,
+  .brand-firefly-slogan {
     white-space: normal;
     max-width: 100%;
   }
 
   .brand-cluster {
     width: 100%;
-    flex-wrap: wrap;
   }
 
-  .purpose-firefly-emblem {
+  .brand-firefly-banner {
     width: 100%;
-    justify-content: center;
-    white-space: normal;
-    text-align: center;
-    min-height: 44px;
   }
 
   .holo-key-mirror {
@@ -4240,8 +4224,7 @@ input[type="range"] {
   }
 
   .holo-pill,
-  .holo-meta-btn,
-  .why-inline-link {
+  .holo-meta-btn {
     min-height: 44px;
     padding: 6px 12px;
   }

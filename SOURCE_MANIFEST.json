@@ -1,6 +1,6 @@
 {
   "project": "Post Sheet | Ability & Purpose Crew Network (H4H-PS1)",
-  "generatedAt": "2026-11-11T14:21:21.449Z",
+  "generatedAt": "2026-11-11T14:55:38.850Z",
   "fileCount": 81,
   "files": [
     {
@@ -310,8 +310,8 @@
     },
     {
       "path": "web/src/App.jsx",
-      "bytes": 165044,
-      "sha256": "db4d39b7cdfb06037e845b1f7c332353c0aae0353b341ec3121f79eb9f432a95"
+      "bytes": 164021,
+      "sha256": "39ce1b91b12e6e8afb0ef1e16ef64727d34dfba348f628c4c55404a9bfcd57a0"
     },
     {
       "path": "web/src/charter-whitepaper.js",
@@ -335,8 +335,8 @@
     },
     {
       "path": "web/src/components/KeyboardLightRibbon.jsx",
-      "bytes": 10955,
-      "sha256": "150882a3f00198359e276d82282d69dab36a5b5f3b10f144ba36277488a9a64f"
+      "bytes": 10972,
+      "sha256": "2bc2ea4e4394af256ad417836dfe3c5d03d85df51feaf95d96b50c30dc6d75eb"
     },
     {
       "path": "web/src/components/ModalDialog.jsx",
@@ -380,13 +380,13 @@
     },
     {
       "path": "web/src/style.css",
-      "bytes": 93284,
-      "sha256": "1ae0e3d407f00e7cc914a64b1a32f5e2ee4387701b9da202ebf88d9751b3e083"
+      "bytes": 93320,
+      "sha256": "f326c82788cd643408e91e91488b3573bb8246c1055d5790c7fbed76f3dd43c3"
     },
     {
       "path": "web/src/views/DiscoverView.jsx",
-      "bytes": 55355,
-      "sha256": "21dc18bcdb8e2d5bdee124f5bba3a530d0d8bc136edd04f2fe25a11b28c8a177"
+      "bytes": 54907,
+      "sha256": "d48eccc16007e9355cb80a1183ecf618cc47a18b89a59c344710f70d5ce6c81a"
     },
     {
       "path": "web/src/views/MissionArchitectView.jsx",

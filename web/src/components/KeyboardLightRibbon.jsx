@@ -86,6 +86,18 @@ export function UpperShortcutHoloMirror({
             <button
               type="button"
               data-reactive-surface=""
+              className="holo-pill holo-pill-guide"
+              onClick={onOpenHelp}
+              title="Essential start: Open Purpose-First Guide and full shortcut reference (? or F1)"
+            >
+              <HelpIcon size={14} />
+              <span>Guide</span>
+              <kbd>{singleKeyShortcuts ? '? or F1' : 'F1'}</kbd>
+            </button>
+
+            <button
+              type="button"
+              data-reactive-surface=""
               className="holo-pill holo-pill-search"
               onClick={onOpenPalette}
               title="Open Command Search with mouse or keyboard (Ctrl+K or /)"
@@ -93,18 +105,6 @@ export function UpperShortcutHoloMirror({
               <SearchIcon size={13} />
               <span>Command Search</span>
               <kbd>{singleKeyShortcuts ? '/ or Ctrl+K' : 'Ctrl+K'}</kbd>
-            </button>
-
-            <button
-              type="button"
-              data-reactive-surface=""
-              className="holo-pill holo-pill-guide"
-              onClick={onOpenHelp}
-              title="Open Purpose-First Guide and full shortcut reference (? or F1)"
-            >
-              <HelpIcon size={13} />
-              <span>Guide</span>
-              <kbd>{singleKeyShortcuts ? '? or F1' : 'F1'}</kbd>
             </button>
 
             <button

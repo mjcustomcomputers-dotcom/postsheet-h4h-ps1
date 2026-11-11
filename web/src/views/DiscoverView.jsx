@@ -23,8 +23,7 @@ import {
   EyeIcon,
   ArrowRightIcon,
   ShieldCheckIcon,
-  SplitWipeIcon,
-  HelpIcon
+  SplitWipeIcon
 } from '../icons.jsx';
 
 function LifecycleBadge({ lifecycle, label, legacyMode, openSeats, members, maxSize }) {
@@ -136,7 +135,6 @@ export default function DiscoverView({
   onLockPlanAndMintInvite,
   onInspectDagWipe,
   onOpenPalette,
-  onOpenHelp,
   externalFilterRequest,
   onNotify
 }) {
@@ -373,19 +371,6 @@ export default function DiscoverView({
             >
               <SearchIcon size={14} />
               <span>Command Search</span>
-            </button>
-          )}
-
-          {onOpenHelp && (
-            <button
-              type="button"
-              data-reactive-surface=""
-              className="btn btn-secondary btn-compact discover-guide-btn"
-              onClick={onOpenHelp}
-              title="Open Purpose-First Guide & Keyboard Shortcuts (?)"
-            >
-              <HelpIcon size={14} />
-              <span>Start Guide</span>
             </button>
           )}
 
