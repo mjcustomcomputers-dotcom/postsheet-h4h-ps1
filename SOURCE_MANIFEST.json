@@ -1,12 +1,12 @@
 {
   "project": "Post Sheet | Ability & Purpose Crew Network (H4H-PS1)",
-  "generatedAt": "2026-11-11T17:13:33.435Z",
+  "generatedAt": "2026-11-11T17:33:02.438Z",
   "fileCount": 82,
   "files": [
     {
       "path": ".github/workflows/ci.yml",
-      "bytes": 2956,
-      "sha256": "9dcc6695c6318056aa7eee403d734e07b90afffc8af47d9b5ab7b17d04ff8dc1"
+      "bytes": 2962,
+      "sha256": "0dab3026bef5c6ccea19749ce5ec5cdc97838940c1ec5dea2363c11656793c03"
     },
     {
       "path": ".gitignore",
@@ -15,8 +15,8 @@
     },
     {
       "path": "DESIGN.md",
-      "bytes": 4492,
-      "sha256": "07b1deca83150e55702de570c9da9bcfee627716e293d560a8f1a05b4c24d74c"
+      "bytes": 4506,
+      "sha256": "89bab45a3915899bf4715998afc27b4941d413ade4ec8e116be50734113940c9"
     },
     {
       "path": "Dockerfile",
@@ -30,13 +30,13 @@
     },
     {
       "path": "PREEXISTING_WORK.md",
-      "bytes": 3296,
-      "sha256": "e592b5a46a58576724cf82f2a814d33903ac4568f77ac66ac9ebc36829edf132"
+      "bytes": 3310,
+      "sha256": "56d2f6d152bc96a6899de31ca75d325b4364c061fee3c0762adc20a0afd15264"
     },
     {
       "path": "README.md",
-      "bytes": 35760,
-      "sha256": "639dd218b871791b1d96d20a7a2bdd5c04d87dc6e1179fc531b8a39fc25aa6f8"
+      "bytes": 35846,
+      "sha256": "222f024b926c367e63951f29d1dbe65757df4af387521fdbbbc33f95f6ade78c"
     },
     {
       "path": "SECURITY.md",
@@ -381,7 +381,7 @@
     {
       "path": "web/src/presets-and-catalog.js",
       "bytes": 49893,
-      "sha256": "b491e5d4ef47de338c0c0df38dceb826871df66c8a13d8dde0827b87554e72d2"
+      "sha256": "92f463ff0eb823ddc6adc686719ee7c6df135ee6539a36328d94cbe54cddf2e5"
     },
     {
       "path": "web/src/style.css",
@@ -400,8 +400,8 @@
     },
     {
       "path": "web/src/views/ProofArenaView.jsx",
-      "bytes": 14491,
-      "sha256": "ebfe16ea3bd7760393d0af8f9067d18a0e337b0370b67a77390ba735bddc5ec6"
+      "bytes": 14514,
+      "sha256": "50d7c7305c3eb7d626ba785ea59332f8908d36da024d0e13c5cad9f13faa68dd"
     },
     {
       "path": "web/src/views/SeatAuthorityView.jsx",

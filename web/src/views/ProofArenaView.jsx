@@ -253,9 +253,9 @@ export default function ProofArenaView({
 
               <div className="subcard tone-ok">
                 <span className="eyebrow-tag">AUTOMATED CHECKS</span>
-                <strong className="giant-stat">170 / 170 PASS</strong>
+                <strong className="giant-stat">176 / 176 PASS</strong>
                 <p className="muted-copy small-copy">
-                  111 Node suite tests (baseline, race, SSE, crypto, R5/R6 solver, security) + 59 bash &amp; SQLite oracle gate checks.
+                  117 Node suite tests (baseline, race, SSE, crypto, R5/R6/R15 solver &amp; matcher labs, security) + 59 bash &amp; SQLite oracle gate checks.
                 </p>
               </div>
             </div>
