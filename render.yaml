@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: postsheet-h4h-ps1
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: PS1_PORT
+        value: "8788"
+      - key: PS1_BIND
+        value: "0.0.0.0"
+      - key: PS1_AUTH_SECRET
+        generateValue: true

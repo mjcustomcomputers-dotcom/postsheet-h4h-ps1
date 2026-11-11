@@ -1,0 +1,14 @@
+# H4H PS1: keep local credentials, generated datasets and installed packages out of Git.
+node_modules/
+web/node_modules/
+web/dist/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
+.env
+.env.*
+*.key
+*.pem
+evidence/local/
+logs/

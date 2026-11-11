@@ -1,0 +1,45 @@
+name: H4H-PS1 CI & Race Oracle
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+
+jobs:
+  verify-ps1:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install & build accessible React client
+        run: |
+          npm ci --prefix web --ignore-scripts --no-fund
+          npm run build --prefix web
+      - name: Run Baseline (28 API + 14 Planner + SSE) -> 50-Way Adversarial Race -> 12-Query SQLite Oracle
+        run: |
+          bash scripts/run-gates.sh scripts/baseline.sh scripts/adversarial.sh scripts/independent.sh
+      - name: Run Layer-B Crypto, Durable Replay, HTTP Peer Relay, React Retry & Synchronicity R5 Suite
+        run: |
+          node --test \
+            tests/peer-envelope.test.mjs \
+            tests/peer-receipts.test.mjs \
+            tests/peer-relay.test.mjs \
+            tests/react-operation.test.mjs \
+            tests/synchronicity-r5.test.mjs
+      - name: Verify 10,000-user / 2,000-team deterministic seed & 100-client p95 < 200ms board SLA
+        run: |
+          node src/seed.mjs /tmp/ci-seed.sqlite
+          PS1_AUTH_SECRET="ci-ephemeral-32-byte-signing-secret-key-01" \
+          PS1_SQLITE_PATH="/tmp/ci-seed.sqlite" \
+          PS1_BIND="127.0.0.1" \
+          PS1_PORT="8788" \
+          node src/server.mjs &
+          SRV_PID=$!
+          for i in {1..25}; do curl -fsS http://127.0.0.1:8788/health >/dev/null && break; sleep 0.2; done
+          node scripts/exact-p95-bench.mjs "http://127.0.0.1:8788/api/events/seed-event/board?limit=100" 100 5000
+          kill "$SRV_PID" || true

@@ -1,0 +1,11 @@
+MISSION=H4H-PS1-SETUP-01
+REVISION=R9-RELAY-01
+EXECUTOR=KERNEL_BEER_OS_LINUX
+SOURCE=26495ff6a22c7fb480963d27b68aba8baae057be
+RUN=20261110T232020Z-297086
+# tests 12
+# pass 12
+# fail 0
+TEST_DOMAIN=loopback-HTTP,encrypted-transport,authz,inbox,ack,idempotency,restart,capacity
+GIT_EVIDENCE_ROOT=/home/kernel-beer/kernel-beer-labs/H4H-PS1-SETUP-01/evidence/r9-relay-20261110T232020Z-297086
+925f2621a62470bb14bb53f00d023525b4a7ed67838bb1fb7f64854412e5c99f  /home/kernel-beer/kernel-beer-labs/H4H-PS1-SETUP-01/evidence/r9-relay-20261110T232020Z-297086/relay.tap

@@ -1,0 +1,282 @@
+{
+  "project": "Post Sheet | Ability & Purpose Crew Network (H4H-PS1)",
+  "generatedAt": "2026-11-11T00:14:13.060Z",
+  "fileCount": 55,
+  "files": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "bytes": 1751,
+      "sha256": "11c8230e17b02788a12f7ac61fdb1aaa299bffa793173337d2c3b77b0eb83a21"
+    },
+    {
+      "path": ".gitignore",
+      "bytes": 217,
+      "sha256": "6ae47bdcd61f325f7c0268364cbc1bfd5aa5f8449bf607f69c84c61533556f61"
+    },
+    {
+      "path": "DESIGN.md",
+      "bytes": 4043,
+      "sha256": "4095502fb30438f8f68b1cc4afdcd97833735b92bd6866fcdf1f63f3d868ec67"
+    },
+    {
+      "path": "Dockerfile",
+      "bytes": 472,
+      "sha256": "6236cdfd6d4072ac35a6c1244a37134f1b23348eebe358108dc60a8d58f2c443"
+    },
+    {
+      "path": "LOAD_REPORT.md",
+      "bytes": 1143,
+      "sha256": "6239adb8be0f05bed510ffdf95f8e556c8b4ca7dddeb4b10bc541ee08e9619cd"
+    },
+    {
+      "path": "PREEXISTING_WORK.md",
+      "bytes": 2312,
+      "sha256": "94e9dac7ec04eab4dc26963a18b300128d704df9a419039b80a38255b958eade"
+    },
+    {
+      "path": "README.md",
+      "bytes": 1763,
+      "sha256": "37a7f17e6330732233bc1d7d8e8c7b4a91e4826a49bb59b9fd32c287337987c7"
+    },
+    {
+      "path": "docs/local-receipts/KB-R6-LOAD-RECOVERY-20261110T230518Z.txt",
+      "bytes": 792,
+      "sha256": "04c138494d45c8574491f79b2740abc4734de7ed32aa2958432e4dfe1567d936"
+    },
+    {
+      "path": "docs/local-receipts/KB-R7-REACT-20261110T230831Z-296300.txt",
+      "bytes": 708,
+      "sha256": "26face586043aed521bf54f33099e1308eed33b5ef4d7aacf1c141d168517567"
+    },
+    {
+      "path": "docs/local-receipts/KB-R8-PEER-20261110T231329Z-296768.txt",
+      "bytes": 488,
+      "sha256": "66ae5a7c56587b5450aacb2652b5963ae3e2e4c9b2e1144927e9a17a6c3662fd"
+    },
+    {
+      "path": "docs/local-receipts/KB-R9-RELAY-20261110T232020Z-297086.txt",
+      "bytes": 555,
+      "sha256": "efe93bcb4588bef15437e295346e5af4c4caeb6806c78cc8cd1a9c632a3212ec"
+    },
+    {
+      "path": "infrastructure/IPFS-SOURCE-LINEAGE.md",
+      "bytes": 1301,
+      "sha256": "72d6a3cf7c8267fe46bbc4dbaede650a124f0ac51a24c54e1210514f2a295dee"
+    },
+    {
+      "path": "infrastructure/LOCAL-CHECKPOINT.env",
+      "bytes": 486,
+      "sha256": "632cf8e50c856cc1844326a4d4da874a4237033c64c030e77f1b909f71d6c5b4"
+    },
+    {
+      "path": "infrastructure/TEST-INTEGRATION.env",
+      "bytes": 600,
+      "sha256": "d7edee867bed0dad841b23ff5b5c09740c8de1f4e9c84c9c43950153112814c4"
+    },
+    {
+      "path": "render.yaml",
+      "bytes": 277,
+      "sha256": "11e4509afe55bddc70a8650f98b14f345b249a09caa085a1c42f887deb7f7e9f"
+    },
+    {
+      "path": "scripts/adversarial.sh",
+      "bytes": 124,
+      "sha256": "070ce4f74316257051db5fb8b4e392f8ad88dfe4d2dab304019cb1c9f46d789e"
+    },
+    {
+      "path": "scripts/assess-board-load.mjs",
+      "bytes": 2099,
+      "sha256": "eb603dcbe4ae674744e6a2d8a98ab91f811f24da0ba878d137eeb0b8814b53ae"
+    },
+    {
+      "path": "scripts/baseline.sh",
+      "bytes": 121,
+      "sha256": "06f90a8b74020cb5f3c070021f16efd33b2221cd0324b57945e10398a7d8ccc4"
+    },
+    {
+      "path": "scripts/bootstrap-tools.sh",
+      "bytes": 2486,
+      "sha256": "0658b17d300df9bf988443ddefd2d83780793df0dd58301abb722660c86d1d93"
+    },
+    {
+      "path": "scripts/check-integration.sh",
+      "bytes": 1963,
+      "sha256": "acdecbd3a5748266808502084fa2de1e737c5c29cec892796c7d7f4038d47c0b"
+    },
+    {
+      "path": "scripts/exact-p95-bench.mjs",
+      "bytes": 2016,
+      "sha256": "9d4292c2b0ebb2ea253d66463a8f27e291cc29e93959c3a684a0eb8df416f8e2"
+    },
+    {
+      "path": "scripts/independent.sh",
+      "bytes": 265,
+      "sha256": "e888e8679b27a28e47cec3b9dbe715d1b19a3578cdde342ee8a15c8ad3225e12"
+    },
+    {
+      "path": "scripts/issue-local-token.sh",
+      "bytes": 311,
+      "sha256": "aaea6e400adacabeb66a5d6092b32e67d956042fd724ff138b057b0ad8709564"
+    },
+    {
+      "path": "scripts/load-board.sh",
+      "bytes": 1954,
+      "sha256": "ae4b815fda022699b28db0cea0d18d8d0ad84733215ca12d767c9604fc2e8047"
+    },
+    {
+      "path": "scripts/run-gates.sh",
+      "bytes": 2247,
+      "sha256": "e5c922ffa8e016df60ccbfe7731ee49a61d8d7e738c9e94feb1329d8daea12b1"
+    },
+    {
+      "path": "scripts/run-node-suite.sh",
+      "bytes": 868,
+      "sha256": "212e74a75c237dc83899c6b4b9f1d0f5fc1e10b832f7febd4f4f8fe1c4028f6f"
+    },
+    {
+      "path": "scripts/start-local.sh",
+      "bytes": 1286,
+      "sha256": "e12d08734900b89be167695badc4ac59d8b5b3d941fd6f9e3f5e07c43f4c264b"
+    },
+    {
+      "path": "scripts/start-web.sh",
+      "bytes": 1271,
+      "sha256": "46fc46491a022ec99a6b0e9ac8a2dd8f04f995973e4c5b130eb04bf9ab0fe573"
+    },
+    {
+      "path": "src/authority.mjs",
+      "bytes": 8788,
+      "sha256": "8e5a089e8f824d208cb8a5f95528213680284e6f5a1c0771b7d833a003dd470f"
+    },
+    {
+      "path": "src/goal-planner.mjs",
+      "bytes": 6813,
+      "sha256": "ac32e88504fcfd90beafa20ef4974b03bc2f3ab2eb0832e664678434ce9e0643"
+    },
+    {
+      "path": "src/peer-envelope.mjs",
+      "bytes": 4768,
+      "sha256": "ff70bdedd9adbb54485fff5153044b744f1713735bc162a037638cc9e5b8f583"
+    },
+    {
+      "path": "src/peer-receipts.mjs",
+      "bytes": 2291,
+      "sha256": "cb049a45baece19733d1a4a9147912d68d074388d4848e2673c0a60364dc31d5"
+    },
+    {
+      "path": "src/peer-relay.mjs",
+      "bytes": 8992,
+      "sha256": "700050ecc43f2a69076342f86d3006509d5c0a6fbe5050488c6295f78ade1cef"
+    },
+    {
+      "path": "src/seed.mjs",
+      "bytes": 1746,
+      "sha256": "881ca7b64c643f47b0e208212f1da067652e26c7f21af62cedf9e9c620660f8c"
+    },
+    {
+      "path": "src/server.mjs",
+      "bytes": 15672,
+      "sha256": "788d2ae1c2799b7e8e91b1515e1d95afb93ab222d0bca22a6f5b452f7f5b25fe"
+    },
+    {
+      "path": "src/synchronicity-ext.mjs",
+      "bytes": 10003,
+      "sha256": "146dd104ed4668afe76a3a15f62494399cd2366efd47c5b8865ca0b58921f02d"
+    },
+    {
+      "path": "src/synchronicity-solvers.mjs",
+      "bytes": 18615,
+      "sha256": "fb7614d538f4cd38cd437cc16562ea6b2a5777f410eb16d026c2c766612c8a7d"
+    },
+    {
+      "path": "tests/api-adversarial.test.mjs",
+      "bytes": 4415,
+      "sha256": "f38762e1c780746d78f00c726015e961e51d15306edd3a2030ac3da330656bb6"
+    },
+    {
+      "path": "tests/api-baseline.test.mjs",
+      "bytes": 6551,
+      "sha256": "8a8392105f13e2a0baa764b3646e962acfa3f92f0757fcf6beada81dbe3603bd"
+    },
+    {
+      "path": "tests/peer-envelope.test.mjs",
+      "bytes": 2841,
+      "sha256": "fdfbef0f02ad341b7c4947ea272a4cf3f421261585404374439a29d262fced0a"
+    },
+    {
+      "path": "tests/peer-receipts.test.mjs",
+      "bytes": 3674,
+      "sha256": "dcc659f0566f87514a136775e1be486c332a3e26aca9f47cc0962cf8dc2cb6fc"
+    },
+    {
+      "path": "tests/peer-relay.test.mjs",
+      "bytes": 10257,
+      "sha256": "ad59d2f4dd8286beb231b954fe9105ebcc4222f16965dc1311bd43cad25c133a"
+    },
+    {
+      "path": "tests/planner.test.mjs",
+      "bytes": 4838,
+      "sha256": "2ab52368fbdcbc2270a90d5e3f8a437be2083d14854bea737c61139e1af189b5"
+    },
+    {
+      "path": "tests/react-operation.test.mjs",
+      "bytes": 2481,
+      "sha256": "8be3766b086015058dd33f125043b8f5f490a9fd69178719ff34e84ae448b428"
+    },
+    {
+      "path": "tests/sql-independent.py",
+      "bytes": 2009,
+      "sha256": "e6b9815e73e4e47b3e075c444a38aecc301b0e13881cfafbdeaa70b62e041400"
+    },
+    {
+      "path": "tests/sse.test.mjs",
+      "bytes": 1240,
+      "sha256": "5abc3e8255abbffd3909bc8c99cd146a17b05a6f71ee1cfd471b965ef68d0b10"
+    },
+    {
+      "path": "tests/synchronicity-r5.test.mjs",
+      "bytes": 9254,
+      "sha256": "bc49684e3bcbd5817f7b9ce371254182f25123341b3b1c674b651213ec373189"
+    },
+    {
+      "path": "web/index.html",
+      "bytes": 343,
+      "sha256": "0f2415fe8a5112c85966280e343558adf585972fcf7d37cfe9850c4910b46008"
+    },
+    {
+      "path": "web/package-lock.json",
+      "bytes": 36383,
+      "sha256": "0761c988555aa59c200f5d1ddc9727d017c74fd7bfea3a02967ce1dce9869438"
+    },
+    {
+      "path": "web/package.json",
+      "bytes": 353,
+      "sha256": "7c8a518e040faf6c70118746bba1afbd1ad3445ba5d7e46265862a28c5613a23"
+    },
+    {
+      "path": "web/src/App.jsx",
+      "bytes": 25933,
+      "sha256": "a1be79841ad458b7b6fc629eed13bb4acdb5f014ead57439fa0439748b04f36a"
+    },
+    {
+      "path": "web/src/claim-operation.js",
+      "bytes": 1325,
+      "sha256": "d6cd0ccad591d10e3a635ece673c9785c9664aed4fc9e765d3c7cc93e429b21e"
+    },
+    {
+      "path": "web/src/main.jsx",
+      "bytes": 221,
+      "sha256": "7b2e843a6c066ab204125e985a509af1cb77959eac7d8130cdf7fe6f4a1d4c7f"
+    },
+    {
+      "path": "web/src/style.css",
+      "bytes": 4351,
+      "sha256": "a3ee202ec1fd8761a383efebc297b1102aa1b576e27b801621958848b2b974a0"
+    },
+    {
+      "path": "web/vite.config.mjs",
+      "bytes": 228,
+      "sha256": "89c938bed8cb4f4974e334a7ddb5b75b7149c5c2a4fd4890337cdd82a097d8ad"
+    }
+  ]
+}
