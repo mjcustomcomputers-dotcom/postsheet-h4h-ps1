@@ -45,10 +45,10 @@ import {
 } from './icons.jsx';
 
 const PRIMARY_TABS = [
-  { id: 'discover', num: '1', label: 'Discover Crews & Builders', short: 'Discover', hotkey: 'Alt+1', Icon: CompassIcon },
-  { id: 'architect', num: '2', label: 'Mission & Ability Architect', short: 'Mission Architect', hotkey: 'Alt+2', Icon: GitBranchIcon },
-  { id: 'authority', num: '3', label: 'Live Seat Authority & Peer Mesh', short: 'Seat & Peer Mesh', hotkey: 'Alt+3', Icon: ShieldCheckIcon },
-  { id: 'arena', num: '4', label: 'Concurrency & Scale Proof Arena', short: 'Scale & Race Proof', hotkey: 'Alt+4', Icon: ZapIcon }
+  { id: 'discover', num: '1', label: 'Teammates & Crews', short: 'Teammates & Crews', hotkey: 'Alt+1', Icon: CompassIcon },
+  { id: 'architect', num: '2', label: 'Mission Planner', short: 'Mission Planner', hotkey: 'Alt+2', Icon: GitBranchIcon },
+  { id: 'authority', num: '3', label: 'Seat & Mesh Relay', short: 'Seat & Mesh Relay', hotkey: 'Alt+3', Icon: ShieldCheckIcon },
+  { id: 'arena', num: '4', label: '50x Race Proof', short: '50x Race Proof', hotkey: 'Alt+4', Icon: ZapIcon }
 ];
 
 async function readApiJson(response) {
@@ -375,6 +375,107 @@ export default function App() {
             horizonMin: hMin,
             label: `Baseline roster (${sc.teamPeople.map(p => p.id).join(', ')})`
           };
+        }
+
+        // Auto-spawn 3 open-seat showcase crews once on first boot if seed-event Page 1 starts at crew-0000
+        try {
+          const checkBoard = await readApiJson(
+            await fetch('/api/events/seed-event/board?limit=5&offset=0', { cache: 'no-store' })
+          );
+          const firstTid = checkBoard.teams?.[0]?.team_id || '';
+          if (!firstTid || firstTid === 'crew-0000') {
+            const bootTag = String(Date.now()).slice(-4);
+            const bootSpecs = [
+              {
+                tid: `00-open-baton-${bootTag}`,
+                lead: `lead-baton-${bootTag}`,
+                extraCount: 1,
+                mission: 'Async Hot Springs (UTC-6) <-> Bengaluru (UTC+5:30) Mesh API & Accessible UI',
+                skills: ['backend', 'frontend', 'integrate'],
+                utcBucket: 'baton'
+              },
+              {
+                tid: `01-open-hall-${bootTag}`,
+                lead: `lead-hall-${bootTag}`,
+                extraCount: 2,
+                mission: 'Zero-downtime SQLite WAL schema cutover & real-time telemetry board',
+                skills: ['backend', 'database', 'devops'],
+                utcBucket: 'americas'
+              },
+              {
+                tid: `02-final-seat-${bootTag}`,
+                lead: `lead-scarce-${bootTag}`,
+                extraCount: 3,
+                mission: 'Scarce final-seat WCAG 2.2 AAA lab notebook & schedule verifier',
+                skills: ['frontend', 'design', 'integrate'],
+                utcBucket: 'baton'
+              }
+            ];
+            let nextCustom = loadCustomCrewOverlay();
+            for (const sp of bootSpecs) {
+              const leadSess = await readApiJson(
+                await fetch('/api/auth/demo', {
+                  method: 'POST',
+                  headers: { 'content-type': 'application/json' },
+                  body: JSON.stringify({ actorId: sp.lead, eventId: 'seed-event', maxSize: 5 })
+                })
+              );
+              await readApiJson(
+                await fetch('/api/teams', {
+                  method: 'POST',
+                  headers: { 'content-type': 'application/json', authorization: 'Bearer ' + leadSess.token },
+                  body: JSON.stringify({ eventId: 'seed-event', teamId: sp.tid })
+                })
+              );
+              for (let k = 0; k < sp.extraCount; k++) {
+                const inv = await readApiJson(
+                  await fetch('/api/invitations', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json', authorization: 'Bearer ' + leadSess.token },
+                    body: JSON.stringify({ eventId: 'seed-event', teamId: sp.tid, expiresAt: Date.now() + 600000 })
+                  })
+                );
+                const memSess = await readApiJson(
+                  await fetch('/api/auth/demo', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({
+                      actorId: `mem-${bootTag}-${sp.tid.slice(0, 2)}-${k}`,
+                      eventId: 'seed-event',
+                      maxSize: 5
+                    })
+                  })
+                );
+                await readApiJson(
+                  await fetch('/api/invitations/claim', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json', authorization: 'Bearer ' + memSess.token },
+                    body: JSON.stringify({
+                      eventId: 'seed-event',
+                      teamId: sp.tid,
+                      code: inv.code,
+                      opId: `boot-${bootTag}-${sp.tid.slice(0, 2)}-${k}`
+                    })
+                  })
+                );
+              }
+              nextCustom = saveCustomCrewOverlayEntry('seed-event', sp.tid, {
+                mission: sp.mission,
+                skills: sp.skills,
+                utcBucket: sp.utcBucket
+              });
+            }
+            setCustomCrewMap(nextCustom);
+            const refreshed = await readApiJson(
+              await fetch(`/api/events/seed-event/board?limit=${pageSize}&offset=0&meta=1`, { cache: 'no-store' })
+            );
+            setBoard(refreshed.teams || []);
+            if (typeof refreshed.totalTeams === 'number') setTotalTeams(refreshed.totalTeams);
+            if (typeof refreshed.totalMembers === 'number') setTotalMembers(refreshed.totalMembers);
+            if (typeof refreshed.maxSize === 'number') setEventMaxSize(refreshed.maxSize);
+          }
+        } catch {
+          // Non-fatal if seed-event already has open crews or demo auth is disabled
         }
       } catch {
         // Graceful fallback when PS1_DEMO_AUTH=0
@@ -826,7 +927,7 @@ export default function App() {
           activeTok
         );
         setTeamId(targetTid);
-        setIssuedInvite(inv);
+        setIssuedInvite({ ...inv, teamId: targetTid, eventId, issuedBy: activeLead });
         setInviteCode(inv.code);
         setPageIndex(0);
         await refreshBoard();
@@ -876,13 +977,14 @@ export default function App() {
   }
 
   function handleSendBuilderToArchitect(builder) {
-    const existsInTeam = teamPeople.some(p => p.id === builder.id);
-    const existsInCands = candidates.some(p => c.id === builder.id);
+    const targetId = builder.plannerId || builder.id;
+    const existsInTeam = teamPeople.some(p => p.id === targetId || p.id === builder.id);
+    const existsInCands = candidates.some(p => p.id === targetId || p.id === builder.id);
     let nextCands = candidates;
     if (!existsInTeam && !existsInCands) {
       nextCands = [
         {
-          id: builder.id,
+          id: targetId,
           timezone: builder.timezone,
           startMin: builder.startMin,
           endMin: builder.endMin,
@@ -894,6 +996,44 @@ export default function App() {
     }
     setActiveView('architect');
     runSolveAndRecommend({ candidates: nextCands });
+  }
+
+  // Real-time in-place Builder toggle on View 1 Live Split Studio
+  function handleToggleBuilderInCrew(builder) {
+    const targetId = builder.plannerId || builder.id;
+    const existsInTeam = teamPeople.some(p => p.id === targetId || p.id === builder.id);
+    let nextTeam;
+    let nextCands = [...candidates];
+
+    if (existsInTeam) {
+      nextTeam = teamPeople.filter(p => p.id !== targetId && p.id !== builder.id);
+      if (!nextCands.some(c => c.id === targetId || c.id === builder.id)) {
+        nextCands = [
+          {
+            id: targetId,
+            timezone: builder.timezone,
+            startMin: builder.startMin ?? 0,
+            endMin: builder.endMin ?? 240,
+            skills: { ...(builder.skills || {}) }
+          },
+          ...nextCands
+        ];
+      }
+    } else {
+      const personEntry = {
+        id: targetId,
+        timezone: builder.timezone,
+        startMin: builder.startMin ?? 0,
+        endMin: builder.endMin ?? 240,
+        skills: { ...(builder.skills || {}) }
+      };
+      nextTeam = [...teamPeople, personEntry];
+      nextCands = nextCands.filter(c => c.id !== targetId && c.id !== builder.id);
+    }
+
+    setTeamPeople(nextTeam);
+    setCandidates(nextCands);
+    runSolveAndRecommend({ teamPeople: nextTeam, candidates: nextCands });
   }
 
   // View 3: Seat Authority & Peer Mesh Handlers
@@ -940,16 +1080,113 @@ export default function App() {
 
   async function handleCreateInvite() {
     try {
-      await runProtectedAction(`Issue Single-Use Invite (${teamId})`, async freshTok => {
+      await runProtectedAction(`Issue Single-Use Invite (${teamId})`, async (freshTok, freshActor) => {
         const expiresAt = Date.now() + 600000;
         const res = await sendPost('/api/invitations', { eventId, teamId, expiresAt }, freshTok);
-        setIssuedInvite(res);
+        const activeLead = freshActor || actorRef.current || actorId || 'leader';
+        setIssuedInvite({ ...res, teamId, eventId, issuedBy: activeLead });
         setInviteCode(res.code);
         setStatusMessage(`INVITE | Minted single-use SHA-256 hashed invitation for '${teamId}' (10m TTL).`);
         await loadAudit(freshTok);
       });
     } catch (e) {
       setStatusMessage(`INVITE | ${e.message}`);
+    }
+  }
+
+  async function handleClaimAsFreshCandidate() {
+    if (joiningLock.current || !inviteCode) return;
+    joiningLock.current = true;
+    setJoining(true);
+    try {
+      const suffix = String(Date.now()).slice(-4);
+      const freshCandidateId = `priya-claim-${suffix}`;
+      let claimantTok = '';
+      let claimantActor = freshCandidateId;
+
+      try {
+        const candSession = await readApiJson(
+          await fetch('/api/auth/demo', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ actorId: freshCandidateId, eventId, maxSize: 5 })
+          })
+        );
+        claimantTok = candSession.token;
+        claimantActor = candSession.actorId;
+        signedOutManuallyRef.current = false;
+        tokenRef.current = claimantTok;
+        actorRef.current = claimantActor;
+        setToken(claimantTok);
+        setActorId(claimantActor);
+      } catch {
+        // When PS1_DEMO_AUTH=0, prompt judge to sign in / register as invited candidate and replay claim
+        await runProtectedAction(`Claim Seat on ${teamId} as Invited Candidate`, async (replayedTok, replayedActor) => {
+          const op = await getOrCreateClaimOperation({
+            eventId,
+            teamId,
+            code: inviteCode,
+            store: sessionStorage
+          });
+          const res = await sendPost(
+            '/api/invitations/claim',
+            { eventId, teamId, code: inviteCode, opId: op.opId },
+            replayedTok
+          );
+          if (res.status === 'COMMITTED') finishClaimOperation(sessionStorage, op.key);
+          setStatusMessage(`AUTHORITY | ${res.status} for '${replayedActor || res.actorId}' on '${res.teamId}'.`);
+          await refreshBoard();
+          await inspectTeam(teamId);
+          await loadAudit(replayedTok);
+        });
+        return;
+      }
+
+      const operation = await getOrCreateClaimOperation({
+        eventId,
+        teamId,
+        code: inviteCode,
+        store: sessionStorage
+      });
+
+      if (wanOffline) {
+        setQueuedClaim({
+          eventId,
+          teamId,
+          code: inviteCode,
+          opId: operation.opId,
+          key: operation.key,
+          actorId: claimantActor,
+          claimantToken: claimantTok
+        });
+        setRelayedReceipt(null);
+        setReplayReceipt(null);
+        setStatusMessage(
+          `LOCAL OUTBOX | Switched to '${claimantActor}' while WAN is offline. Queued opId '${operation.opId}' for peer relay!`
+        );
+        return;
+      }
+
+      const result = await sendPost(
+        '/api/invitations/claim',
+        { eventId, teamId, code: inviteCode, opId: operation.opId },
+        claimantTok
+      );
+      if (result.status === 'COMMITTED') {
+        finishClaimOperation(sessionStorage, operation.key);
+      }
+      setQueuedClaim(null);
+      setStatusMessage(
+        `AUTHORITY | Switched to invited candidate '${claimantActor}' and committed seat on '${result.teamId}' in 1 click!`
+      );
+      await refreshBoard();
+      await inspectTeam(teamId);
+      await loadAudit(claimantTok);
+    } catch (e) {
+      setStatusMessage(`CANDIDATE CLAIM | ${e.message}`);
+    } finally {
+      joiningLock.current = false;
+      setJoining(false);
     }
   }
 
@@ -1143,7 +1380,7 @@ export default function App() {
         setToken(priyaSession.token);
         setRelayToken(relaySession.token);
         setTeamId(demoTeam);
-        setIssuedInvite(inv);
+        setIssuedInvite({ ...inv, teamId: demoTeam, eventId, issuedBy: leadSession.actorId });
         setInviteCode(inv.code);
         setQueuedClaim(null);
         setRelayedReceipt(null);
@@ -1386,10 +1623,10 @@ export default function App() {
   // Command Palette Registry
   const commands = useMemo(
     () => [
-      { id: 'v1', group: 'Navigation', label: '1. Discover Crews & Builders', shortcut: 'Alt+1', keywords: 'directory board search filter', run: () => setActiveView('discover') },
-      { id: 'v2', group: 'Navigation', label: '2. Mission & Ability Architect', shortcut: 'Alt+2', keywords: 'dag planner critical path wipe', run: () => setActiveView('architect') },
-      { id: 'v3', group: 'Navigation', label: '3. Live Seat Authority & Peer Mesh', shortcut: 'Alt+3', keywords: 'invite claim wan drop relay', run: () => setActiveView('authority') },
-      { id: 'v4', group: 'Navigation', label: '4. Concurrency & Scale Proof Arena', shortcut: 'Alt+4', keywords: 'race 50 benchmark p95', run: () => setActiveView('arena') },
+      { id: 'v1', group: 'Navigation', label: '1. Teammates & Crews (Live Split Studio)', shortcut: 'Alt+1', keywords: 'directory board search filter teammates', run: () => setActiveView('discover') },
+      { id: 'v2', group: 'Navigation', label: '2. Mission Planner & DAG Wipe', shortcut: 'Alt+2', keywords: 'dag planner critical path wipe', run: () => setActiveView('architect') },
+      { id: 'v3', group: 'Navigation', label: '3. Seat & Mesh Relay Workbench', shortcut: 'Alt+3', keywords: 'invite claim wan drop relay', run: () => setActiveView('authority') },
+      { id: 'v4', group: 'Navigation', label: '4. 50x Race Proof & Scale Arena', shortcut: 'Alt+4', keywords: 'race 50 benchmark p95', run: () => setActiveView('arena') },
       { id: 'sc-a', group: 'Scenarios', label: 'Load Scenario A: Async UTC Baton-Pass (Hot Springs <-> Bengaluru)', keywords: 'baton timezone india arkansas', run: () => { setActiveView('architect'); selectScenario('baton'); } },
       { id: 'sc-b', group: 'Scenarios', label: 'Load Scenario B: Hall Capacity Contention Counterexample', keywords: 'hall overload mateo simultaneous', run: () => { setActiveView('architect'); selectScenario('hall'); } },
       { id: 'sc-c', group: 'Scenarios', label: 'Load Scenario C: Wildcard Omega & P9R Zero-Question Gate', keywords: 'omega voi shannon unknown skill', run: () => { setActiveView('architect'); selectScenario('omega'); } },
@@ -1401,12 +1638,12 @@ export default function App() {
       { id: 'p-aurora', group: 'Judge Personas', label: 'Switch Persona: leader-aurora', keywords: 'auth demo leader', run: () => switchPersona('leader-aurora') },
       { id: 'p-kai', group: 'Judge Personas', label: 'Switch Persona: builder-kai', keywords: 'auth demo frontend', run: () => switchPersona('builder-kai') },
       { id: 'p-priya', group: 'Judge Personas', label: 'Switch Persona: builder-priya', keywords: 'auth demo relay', run: () => switchPersona('builder-priya') },
-      { id: 'th-sbr', group: 'Accessibility & Themes', label: 'Theme: Super Bob Ross Comfort (#11171D / #8FBEB4)', keywords: 'sbr matte sage comfort', run: () => setErgonomics(s => ({ ...s, theme: 'sbr-comfort' })) },
-      { id: 'th-h4h', group: 'Accessibility & Themes', label: 'Theme: Hack4Hack Builder Studio (#0B0F19 / #10B981)', keywords: 'h4h studio indigo emerald violet', run: () => setErgonomics(s => ({ ...s, theme: 'h4h-studio' })) },
-      { id: 'th-glass', group: 'Accessibility & Themes', label: 'Theme: Moonlight Optical Glass', keywords: 'dark obsidian refractive', run: () => setErgonomics(s => ({ ...s, theme: 'midnight-glass' })) },
-      { id: 'th-slate', group: 'Accessibility & Themes', label: 'Theme: Calm Matte Slate (Zero Translucency)', keywords: 'opaque matte', run: () => setErgonomics(s => ({ ...s, theme: 'matte-slate' })) },
-      { id: 'th-paper', group: 'Accessibility & Themes', label: 'Theme: Warm Paper Light (Daylight)', keywords: 'light paper', run: () => setErgonomics(s => ({ ...s, theme: 'warm-paper' })) },
-      { id: 'th-aaa', group: 'Accessibility & Themes', label: 'Theme: WCAG AAA High-Contrast (7:1+)', keywords: 'contrast yellow black accessible', run: () => setErgonomics(s => ({ ...s, theme: 'aaa-contrast' })) },
+      { id: 'th-h4h-glass', group: 'Accessibility & Themes', label: 'Theme: H4H Spatial Glass (#090D11 / #8CE65A)', keywords: 'h4h spatial glass jade obsidian default', run: () => setErgonomics(s => ({ ...s, theme: 'h4h-glass' })) },
+      { id: 'th-petrol', group: 'Accessibility & Themes', label: 'Theme: Petrol Deep Glass (#06151C / #64DFDF)', keywords: 'petrol deep glass cyan oceanic', run: () => setErgonomics(s => ({ ...s, theme: 'petrol-glass' })) },
+      { id: 'th-prism', group: 'Accessibility & Themes', label: 'Theme: Obsidian Prism (#090D18 / #5EEAD4 + #A78BFA)', keywords: 'obsidian prism indigo teal violet', run: () => setErgonomics(s => ({ ...s, theme: 'obsidian-prism' })) },
+      { id: 'th-slate', group: 'Accessibility & Themes', label: 'Theme: Calm Matte Dark (Zero Blur)', keywords: 'opaque matte dark slate', run: () => setErgonomics(s => ({ ...s, theme: 'matte-slate' })) },
+      { id: 'th-paper', group: 'Accessibility & Themes', label: 'Theme: Frosted Daylight (Light)', keywords: 'light frosted paper daylight', run: () => setErgonomics(s => ({ ...s, theme: 'warm-paper' })) },
+      { id: 'th-aaa', group: 'Accessibility & Themes', label: 'Theme: WCAG AAA Contrast (7:1+)', keywords: 'contrast yellow black accessible', run: () => setErgonomics(s => ({ ...s, theme: 'aaa-contrast' })) },
       { id: 'open-studio', group: 'Accessibility & Themes', label: 'Open Accessibility & FOV Studio Drawer', shortcut: 'Ctrl+Shift+A', keywords: 'scale font motion split', run: () => setStudioOpen(true) },
       { id: 'open-why', group: 'Thesis', label: 'Open "Why Purpose First?" Thesis Brief', keywords: 'inversion architecture', run: () => setWhyOpen(true) }
     ],
@@ -1426,25 +1663,31 @@ export default function App() {
         Skip to main content
       </a>
 
-      {/* Clean Single-Row Top Command Header (Optical Glass Rim ONLY on .top-header, .command-palette & Active Pills) */}
+      {/* Single-Row Spatial Optical Glass Top Header */}
       <header className="top-command-header top-header no-print" role="banner">
         {/* 1. Brand & Origin Pill */}
         <div className="brand-cluster">
           <div className="brand-pill">
             <span className="brand-icon-wrap">
-              <BrandMark size={22} />
+              <BrandMark size={20} />
             </span>
             <div className="brand-titles">
-              <h1 className="brand-h1">Post Sheet | Ability &amp; Purpose Crew Network</h1>
-              <span className="brand-meta">Hack4Hack PS1 Flagship · Synchronicity R5</span>
+              <h1 className="brand-h1" title="Post Sheet | Ability & Purpose Crew Network">
+                <span>Post Sheet</span>
+                <span className="brand-h1-sub"> · Crew Network</span>
+                <span className="sr-only"> | Ability &amp; Purpose Crew Network</span>
+              </h1>
+              <span className="brand-meta">Hack4Hack PS1 · Synchronicity R5</span>
             </div>
           </div>
           <button
             type="button"
             className="btn btn-ghost btn-compact why-pill"
             onClick={() => setWhyOpen(true)}
+            title="Why Purpose First? Read core thesis"
           >
-            <HelpIcon size={15} /> Why Purpose First?
+            <HelpIcon size={14} />
+            <span className="why-label">Thesis</span>
           </button>
         </div>
 
@@ -1469,7 +1712,7 @@ export default function App() {
                   onKeyDown={e => handleTabListKeyDown(e, idx)}
                   title={`${tab.label} (${tab.hotkey})`}
                 >
-                  <Icon size={16} />
+                  <Icon size={15} />
                   <span className="tab-num">{tab.num}.</span>
                   <span className="tab-text">{tab.short}</span>
                 </button>
@@ -1478,9 +1721,8 @@ export default function App() {
           </div>
         </nav>
 
-        {/* 3. Judge Quick Personas, 3-Coordinate Network Pill, 1-Click Theme & Panorama Triggers */}
+        {/* 3. Judge Quick Personas, 3-Coordinate Network Pill, Theme & Studio Triggers */}
         <div className="header-right-cluster">
-          {/* 1-Click Judge Persona Switcher */}
           <div className="persona-switcher" role="group" aria-label="Judge quick personas and account sign-in">
             {['leader-aurora', 'builder-kai', 'builder-priya'].map(p => {
               const shortName = p.split('-')[1];
@@ -1508,10 +1750,10 @@ export default function App() {
               aria-label={`Account session (${actorId || 'Sign in'})`}
               title="scrypt Account Register / Sign-In / Logout"
             >
-              <UserIcon size={14} />
+              <UserIcon size={13} />
               <span>
                 {actorId && !['leader-aurora', 'builder-kai', 'builder-priya'].includes(actorId)
-                  ? actorId
+                  ? actorId.slice(0, 12)
                   : token
                     ? 'Account'
                     : 'Sign In'}
@@ -1519,7 +1761,6 @@ export default function App() {
             </button>
           </div>
 
-          {/* 3-Coordinate Network Indicator Pill */}
           <button
             type="button"
             className="network-coords-pill"
@@ -1529,34 +1770,33 @@ export default function App() {
             }. Encrypted Peer Mesh: Ready via relay-mateo. Local Durable Outbox: ${
               queuedClaim ? '1 Pending Relay' : '0 Queued'
             }. Activate to open Seat Authority and Peer Mesh.`}
-            title="Click to inspect 3-Coordinate Continuity & WAN-Drop Relay"
+            title="3-Coordinate Continuity: Authority SQLite | AES+P256 Mesh | Durable Outbox"
           >
             <span className={`coord-item ${wanOffline ? 'coord-warn' : authorityHealth === 'online' ? 'coord-ok' : ''}`}>
-              <DatabaseIcon size={13} />
-              <span>Auth: {wanOffline ? 'WAN Drop' : authorityHealth === 'online' ? 'Direct' : 'Sync'}</span>
+              <DatabaseIcon size={12} />
+              <span>{wanOffline ? 'WAN Drop' : authorityHealth === 'online' ? 'Direct' : 'Sync'}</span>
             </span>
             <span className="coord-sep" aria-hidden="true">|</span>
             <span className="coord-item coord-ok">
-              <MeshIcon size={13} />
-              <span>Mesh: AES+P256</span>
+              <MeshIcon size={12} />
+              <span>Mesh</span>
             </span>
             <span className="coord-sep" aria-hidden="true">|</span>
             <span className={`coord-item ${queuedClaim ? 'coord-warn' : ''}`}>
-              <OutboxIcon size={13} />
-              <span>Outbox: {queuedClaim ? '1 Pending' : '0'}</span>
+              <OutboxIcon size={12} />
+              <span>{queuedClaim ? '1' : '0'}</span>
             </span>
           </button>
 
-          {/* Compact 1-Click Theme Pill + 3-Panel Panorama + Palette + FOV Studio */}
           <div className="studio-triggers">
             <button
               type="button"
               className="btn btn-ghost icon-text-btn theme-quick-pill"
               onClick={cycleThemePreset}
               aria-label={`Current theme ${currentThemeSpec.label}. Click to cycle theme preset.`}
-              title={`Theme: ${currentThemeSpec.label} (Click to cycle SBR Comfort / H4H Studio / Glass / Paper / AAA)`}
+              title={`Theme: ${currentThemeSpec.label} (Click to cycle H4H Spatial Glass / Petrol / Prism / Matte / Daylight / AAA)`}
             >
-              <PaletteIcon size={15} />
+              <PaletteIcon size={14} />
               <span
                 className="swatch-dot"
                 style={{ background: currentThemeSpec.swatch[2] }}
@@ -1568,15 +1808,14 @@ export default function App() {
             <button
               type="button"
               aria-pressed={ergonomics.density === 'panoramic-3'}
-              className={`btn icon-text-btn ${
+              className={`btn icon-text-btn hide-mid-header ${
                 ergonomics.density === 'panoramic-3' ? 'btn-primary' : 'btn-ghost'
               }`}
               onClick={togglePanoramicWorkbench}
               aria-label="Toggle 3-Panel Panoramic Workbench (41 / 29 / 29)"
               title="Toggle 3-Panel Panorama (Active View + Live DAG/VOI + Live Seat/SSE)"
             >
-              <ColumnsIcon size={15} />
-              <span className="hide-narrow">3-Panel</span>
+              <ColumnsIcon size={14} />
             </button>
 
             <button
@@ -1586,7 +1825,7 @@ export default function App() {
               aria-label="Open command palette (Ctrl+K or slash)"
               title="Command Palette (Ctrl+K or /)"
             >
-              <CommandIcon size={15} />
+              <CommandIcon size={14} />
               <kbd className="hide-narrow">Ctrl+K</kbd>
             </button>
 
@@ -1597,8 +1836,8 @@ export default function App() {
               aria-label="Open Accessibility and FOV Studio (Ctrl+Shift+A)"
               title="Accessibility & FOV Studio (Ctrl+Shift+A)"
             >
-              <SlidersIcon size={15} />
-              <span className="hide-narrow">FOV &amp; A11y</span>
+              <SlidersIcon size={14} />
+              <span className="hide-narrow">A11y</span>
             </button>
           </div>
         </div>
@@ -1622,7 +1861,6 @@ export default function App() {
               onEnsureEvent={handleEnsureEvent}
               board={board}
               totalTeams={totalTeams}
-              totalMembers={totalMembers}
               boardLatencyMs={boardLatencyMs}
               sseConnected={sseConnected}
               pageIndex={pageIndex}
@@ -1643,6 +1881,20 @@ export default function App() {
               verifiedCrewMap={verifiedCrewMap}
               customCrewMap={customCrewMap}
               spawningDemo={spawningDemo}
+              activeScenarioKey={activeScenarioKey}
+              onSelectScenario={selectScenario}
+              goalDescription={goalDescription}
+              horizonHours={horizonHours}
+              tasks={tasks}
+              teamPeople={teamPeople}
+              candidates={candidates}
+              plan={plan}
+              recs={recs}
+              solving={solving}
+              lockingPlan={lockingPlan}
+              onToggleBuilderInCrew={handleToggleBuilderInCrew}
+              onLockPlanAndMintInvite={handleLockPlanAndMintInvite}
+              onInspectDagWipe={() => setActiveView('architect')}
             />
           )}
 
@@ -1713,6 +1965,7 @@ export default function App() {
               auditRows={auditRows}
               onLoadAudit={loadAudit}
               onOpenCharterExport={() => setCharterOpen(true)}
+              onClaimAsFreshCandidate={handleClaimAsFreshCandidate}
             />
           )}
 

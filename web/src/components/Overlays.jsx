@@ -545,7 +545,7 @@ export function CommandPaletteModal({ open, onClose, commands }) {
             setActiveIndex(0);
           }}
           onKeyDown={handleKeyDown}
-          placeholder="Type a command: baton, hall, panorama, charter, race 50, sbr comfort..."
+          placeholder="Type a command: baton, hall, panorama, charter, race 50, spatial glass..."
           aria-label="Filter platform commands"
           className="palette-input"
         />

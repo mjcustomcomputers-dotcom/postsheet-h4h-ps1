@@ -246,7 +246,7 @@ function ContributorListEditor({
 }
 
 export default function MissionArchitectView({
-  theme = 'sbr-comfort',
+  theme = 'h4h-glass',
   motion = 'spring',
   activeScenarioKey,
   omegaMode,

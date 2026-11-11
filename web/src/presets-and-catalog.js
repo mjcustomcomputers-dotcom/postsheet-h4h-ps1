@@ -303,35 +303,11 @@ export const MISSION_SCENARIOS = {
 
 export const BUILDER_DIRECTORY = [
   {
-    id: 'leader-aurora',
-    role: 'Systems & SQLite Architect',
-    timezone: 'UTC-6 · Hot Springs',
-    utcOffset: -6,
-    utcBucket: 'americas',
-    windowLabel: 'T+00:00 .. T+04:00',
-    startMin: 0,
-    endMin: 240,
-    skills: { backend: 'supported', database: 'supported', design: 'unknown' },
-    batonReady: true,
-    secondaryContext: 'Regional Builder Collective',
-    bio: 'Designs serialized SQLite WAL engines and zero-race invite protocols.'
-  },
-  {
-    id: 'builder-kai',
-    role: 'Accessible Frontend & Ergonomics Engineer',
-    timezone: 'UTC-6 · Hot Springs',
-    utcOffset: -6,
-    utcBucket: 'americas',
-    windowLabel: 'T+00:00 .. T+04:00',
-    startMin: 0,
-    endMin: 240,
-    skills: { frontend: 'supported', design: 'supported' },
-    batonReady: true,
-    secondaryContext: 'Civic & Accessibility Lab',
-    bio: 'Builds WCAG 2.2 AAA interfaces, keyboard focus traps, and spatial DAG visualizers.'
-  },
-  {
     id: 'builder-priya',
+    plannerId: 'priya',
+    displayName: 'Priya Nair',
+    initials: 'PR',
+    avatarTone: 'jade',
     role: 'Integration & Cryptographic Relay Engineer',
     timezone: 'UTC+5:30 · Bengaluru',
     utcOffset: 5.5,
@@ -342,10 +318,56 @@ export const BUILDER_DIRECTORY = [
     skills: { integrate: 'supported', devops: 'supported' },
     batonReady: true,
     secondaryContext: 'Open Global Mesh',
+    legacyAffiliation: 'Bengaluru · IIIT Systems Cohort',
+    legacyHiddenFailure: 'Legacy boards show 0m overlap with UTC-6 and skip her, missing the exact T+240..480m integration handoff!',
     bio: 'Specializes in async UTC baton-pass handoffs, AES-256-GCM envelopes, and E2E gates.'
   },
   {
+    id: 'leader-aurora',
+    plannerId: 'aurora',
+    displayName: 'Aurora Vance',
+    initials: 'AU',
+    avatarTone: 'teal',
+    role: 'Systems & SQLite Architect',
+    timezone: 'UTC-6 · Hot Springs',
+    utcOffset: -6,
+    utcBucket: 'americas',
+    windowLabel: 'T+00:00 .. T+04:00',
+    startMin: 0,
+    endMin: 240,
+    skills: { backend: 'supported', database: 'supported', design: 'unknown' },
+    batonReady: true,
+    secondaryContext: 'Regional Builder Collective',
+    legacyAffiliation: 'Hot Springs · State Engineering',
+    legacyHiddenFailure: 'Legacy tags count backend + database simultaneously, hiding single-person Hall overload on parallel tasks.',
+    bio: 'Designs serialized SQLite WAL engines and zero-race invite protocols.'
+  },
+  {
+    id: 'builder-kai',
+    plannerId: 'kai',
+    displayName: 'Kai Mercer',
+    initials: 'KA',
+    avatarTone: 'cyan',
+    role: 'Accessible Frontend & Ergonomics Engineer',
+    timezone: 'UTC-6 · Hot Springs',
+    utcOffset: -6,
+    utcBucket: 'americas',
+    windowLabel: 'T+00:00 .. T+04:00',
+    startMin: 0,
+    endMin: 240,
+    skills: { frontend: 'supported', design: 'supported' },
+    batonReady: true,
+    secondaryContext: 'Civic & Accessibility Lab',
+    legacyAffiliation: 'Hot Springs · Design & HCI Lab',
+    legacyHiddenFailure: 'Legacy profiles hide that his T+00:00..04:00 window ends before downstream E2E integration can start.',
+    bio: 'Builds WCAG 2.2 AAA interfaces, keyboard focus traps, and spatial DAG visualizers.'
+  },
+  {
     id: 'mateo',
+    plannerId: 'mateo',
+    displayName: 'Mateo Alvarez',
+    initials: 'MA',
+    avatarTone: 'violet',
     role: 'Data & Schema Reliability Specialist',
     timezone: 'UTC-5 · Toronto',
     utcOffset: -5,
@@ -356,10 +378,16 @@ export const BUILDER_DIRECTORY = [
     skills: { database: 'supported', backend: 'unknown' },
     batonReady: false,
     secondaryContext: 'Systems University Guild',
+    legacyAffiliation: 'Toronto · Waterloo Data Guild',
+    legacyHiddenFailure: 'Legacy boards flatten ?backend (unverified) into a confirmed badge without checking Wildcard Omega risk.',
     bio: 'Resolves simultaneous Hall capacity contention across database and migration tracks.'
   },
   {
     id: 'amina',
+    plannerId: 'amina',
+    displayName: 'Amina Lindqvist',
+    initials: 'AM',
+    avatarTone: 'amber',
     role: 'Protocol Verification & QA Steward',
     timezone: 'UTC+1 · Berlin',
     utcOffset: 1,
@@ -370,38 +398,16 @@ export const BUILDER_DIRECTORY = [
     skills: { integrate: 'supported', frontend: 'unknown' },
     batonReady: true,
     secondaryContext: 'Open Global Mesh',
+    legacyAffiliation: 'Berlin · TU Distributed Systems',
+    legacyHiddenFailure: 'Legacy view omits her mid-horizon T+02:30..06:30 bridge window between Americas and APAC.',
     bio: 'Bridges Americas and South Asia windows with clean mid-horizon contract tests.'
   },
   {
-    id: 'sanjay-steward',
-    role: 'Cloud & Accessibility Sandbox Steward',
-    timezone: 'UTC+0 · London',
-    utcOffset: 0,
-    utcBucket: 'emea',
-    windowLabel: 'T+00:00 .. T+03:00',
-    startMin: 0,
-    endMin: 180,
-    skills: { devops: 'supported', backend: 'supported' },
-    batonReady: true,
-    secondaryContext: 'Civic & Accessibility Lab',
-    bio: 'Unblocks crews early by provisioning reproducible containers and CI runners.'
-  },
-  {
-    id: 'kenji',
-    role: 'Async Systems & Telemetry Developer',
-    timezone: 'UTC+9 · Tokyo',
-    utcOffset: 9,
-    utcBucket: 'apac',
-    windowLabel: 'T+04:30 .. T+08:00',
-    startMin: 270,
-    endMin: 480,
-    skills: { backend: 'supported', integrate: 'supported', design: 'unknown' },
-    batonReady: true,
-    secondaryContext: 'Systems University Guild',
-    bio: 'Executes late-horizon benchmarking, SSE load probes, and final release packaging.'
-  },
-  {
     id: 'noor',
+    plannerId: 'noor',
+    displayName: 'Noor Hassan',
+    initials: 'NO',
+    avatarTone: 'rose',
     role: 'Inclusive Interaction Designer',
     timezone: 'UTC+3 · Nairobi',
     utcOffset: 3,
@@ -412,7 +418,49 @@ export const BUILDER_DIRECTORY = [
     skills: { design: 'supported', frontend: 'supported' },
     batonReady: true,
     secondaryContext: 'Civic & Accessibility Lab',
+    legacyAffiliation: 'Nairobi · Civic Design Studio',
+    legacyHiddenFailure: 'Legacy view hides how her T+02:00..06:00 window absorbs UI slack without displacing early builders.',
     bio: 'Crafts low-glare typography, 360px mobile reflows, and screen-reader schedule tables.'
+  },
+  {
+    id: 'kenji',
+    plannerId: 'kenji',
+    displayName: 'Kenji Takahashi',
+    initials: 'KE',
+    avatarTone: 'sky',
+    role: 'Async Systems & Telemetry Developer',
+    timezone: 'UTC+9 · Tokyo',
+    utcOffset: 9,
+    utcBucket: 'apac',
+    windowLabel: 'T+04:30 .. T+08:00',
+    startMin: 270,
+    endMin: 480,
+    skills: { backend: 'supported', integrate: 'supported', design: 'unknown' },
+    batonReady: true,
+    secondaryContext: 'Systems University Guild',
+    legacyAffiliation: 'Tokyo · Keio Systems Lab',
+    legacyHiddenFailure: 'Legacy view treats UTC+9 as incompatible with UTC-6 rather than a clean late-horizon release finisher.',
+    bio: 'Executes late-horizon benchmarking, SSE load probes, and final release packaging.'
+  },
+  {
+    id: 'sanjay-steward',
+    plannerId: 'sanjay-steward',
+    displayName: 'Sanjay Patel',
+    initials: 'SA',
+    avatarTone: 'emerald',
+    role: 'Cloud & Accessibility Sandbox Steward',
+    timezone: 'UTC+0 · London',
+    utcOffset: 0,
+    utcBucket: 'emea',
+    windowLabel: 'T+00:00 .. T+03:00',
+    startMin: 0,
+    endMin: 180,
+    skills: { devops: 'supported', backend: 'supported' },
+    batonReady: true,
+    secondaryContext: 'Civic & Accessibility Lab',
+    legacyAffiliation: 'London · Imperial Cloud Guild',
+    legacyHiddenFailure: 'Legacy boards miss preventive T+00:00..03:00 prerequisite unblocking for downstream crews.',
+    bio: 'Unblocks crews early by provisioning reproducible containers and CI runners.'
   }
 ];
 
@@ -508,24 +556,27 @@ export function deriveCrewProfile(team, verifiedCrewMap = {}, customCrewMap = {}
 
   const verifiedStatus = verifiedCrewMap[`${eventId}::${tid}`] || verifiedCrewMap[tid];
   let lifecycle = 'FORMING';
+  let lifecycleLabel = 'Open to Teammates';
   let lifecycleSub = `${openSeats} open ${openSeats === 1 ? 'seat' : 'seats'} · Matching complementary skills`;
+  let legacyHiddenFailure = 'Legacy view hides UTC handoff windows, so builders outside the leader timezone appear incompatible.';
 
   if (verifiedStatus === 'FEASIBLE_WITNESS') {
     lifecycle = openSeats > 0 ? 'PLAN_FEASIBLE_PENDING_ACCEPTANCE' : 'FEASIBLE_VERIFIED';
+    lifecycleLabel = openSeats > 0 ? 'Plan Verified · Open Seat' : 'Verified Ready to Ship';
     lifecycleSub = openSeats > 0
       ? 'Critical-path verified · Awaiting seat acceptance'
       : 'Seats confirmed & critical-path witness verified';
+    legacyHiddenFailure = 'Legacy view strips critical-path proof, making verified baton crews indistinguishable from double-booked rosters.';
   } else if (openSeats === 0) {
-    if (arch.fullReadinessHint === 'PLAN_FEASIBLE_PENDING_ACCEPTANCE') {
-      lifecycle = 'PLAN_FEASIBLE_PENDING_ACCEPTANCE';
-      lifecycleSub = 'Seats 100% full · Provisional handoff guard pending check';
-    } else {
-      lifecycle = 'ROSTER_CONFIRMED';
-      lifecycleSub = 'Seats 100% full · Deliverable DAG not yet verified';
-    }
+    lifecycle = 'ROSTER_CONFIRMED';
+    lifecycleLabel = 'Seats Full · Unverified Plan';
+    lifecycleSub = 'Seats 100% full · Deliverable DAG not yet verified';
+    legacyHiddenFailure = 'Legacy view labels 5/5 seats "Complete" even when parallel backend + database tasks overload one member!';
   } else if (openSeats === 1) {
     lifecycle = 'PLAN_FEASIBLE_PENDING_ACCEPTANCE';
+    lifecycleLabel = 'Plan Verified · Open Seat';
     lifecycleSub = '1 scarce final seat left · Contention-protected';
+    legacyHiddenFailure = 'Legacy boards lack serialized single-use seat locks on the final open seat and hide required handoff hours.';
   }
 
   return {
@@ -544,22 +595,24 @@ export function deriveCrewProfile(team, verifiedCrewMap = {}, customCrewMap = {}
     batonPassReady: arch.utcBucket === 'baton',
     isCustomMission: Boolean(custom),
     lifecycle,
-    lifecycleSub
+    lifecycleLabel,
+    lifecycleSub,
+    legacyHiddenFailure
   };
 }
 
 export const WALKTHROUGH_STEPS = [
   {
     time: '0:00 - 0:45',
-    title: '1. Purpose-First Directory & Lifecycle Separation',
-    detail: 'Browse 2,000 live SQLite crews in seed-event with sub-50ms board reads. Show why ROSTER_CONFIRMED (full seats) is distinct from deliverable feasibility, and filter by skill + UTC baton window.',
+    title: '1. Live Split Teammates Studio & Product Lens Switcher',
+    detail: 'Compare Purpose-First Glass (PS1) vs Legacy Profile-Only View on View 1, simulate Priya (UTC+5:30) right inside the Live Crew Dock, and watch the critical-path witness light up in place.',
     targetView: 'discover',
-    actionLabel: 'Open Discover Directory'
+    actionLabel: 'Open Teammates & Crews'
   },
   {
     time: '0:45 - 1:45',
-    title: '2. Async UTC Baton-Pass (Hot Springs UTC-6 <-> Bengaluru UTC+5:30)',
-    detail: 'Load Scenario A in Mission Architect: 0m simultaneous overlap between Arkansas and India, then click "Add Candidate to Simulation" on Priya to flip INFEASIBLE to FEASIBLE_WITNESS and inspect the Before/After DAG Wipe.',
+    title: '2. Async UTC Baton-Pass & Before/After DAG Split-Wipe',
+    detail: 'Inspect Scenario A in Mission Planner: 0m simultaneous overlap between Arkansas and India, flipping Blocked to Verified Ready to Ship with an interactive Before/After SVG DAG wipe.',
     targetView: 'architect',
     scenarioKey: 'baton',
     actionLabel: 'Load Scenario A (Baton-Pass)'
@@ -567,7 +620,7 @@ export const WALKTHROUGH_STEPS = [
   {
     time: '1:45 - 2:35',
     title: '3. Hall Capacity Contention & Wildcard Omega Zero-Question Gate',
-    detail: 'Load Scenario B ({Aurora, Kai} simultaneous backend+database overload -> 0-displacement repair adding Mateo) and Scenario C (EXISTS_FORALL_ROBUST zero questions vs Shannon VOI prompt).',
+    detail: 'Load Scenario B ({Aurora, Kai} simultaneous backend+database overload -> 0-displacement repair adding Mateo) and Scenario C (Zero-Question robust cover vs Shannon VOI prompt).',
     targetView: 'architect',
     scenarioKey: 'hall',
     actionLabel: 'Load Scenario B (Hall Deficit)'

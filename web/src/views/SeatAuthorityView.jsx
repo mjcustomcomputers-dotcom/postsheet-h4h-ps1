@@ -59,7 +59,8 @@ export default function SeatAuthorityView({
   onRunGluePreset,
   auditRows,
   onLoadAudit,
-  onOpenCharterExport
+  onOpenCharterExport,
+  onClaimAsFreshCandidate
 }) {
   const [nowMs, setNowMs] = useState(Date.now());
   const [transferTarget, setTransferTarget] = useState('');
@@ -120,6 +121,17 @@ export default function SeatAuthorityView({
 
   const countdown = issuedInvite?.expiresAt ? formatCountdown(issuedInvite.expiresAt, nowMs) : null;
   const expired = issuedInvite?.expiresAt && nowMs >= issuedInvite.expiresAt;
+  const actorAlreadyInTargetTeam = Boolean(
+    actorId &&
+      ((selectedTeam &&
+        selectedTeam.teamId === teamId &&
+        (selectedTeam.leader === actorId ||
+          (selectedTeam.members || []).some(m => m.userId === actorId))) ||
+        (issuedInvite &&
+          issuedInvite.code === inviteCode &&
+          issuedInvite.teamId === teamId &&
+          issuedInvite.issuedBy === actorId))
+  );
 
   return (
     <section aria-labelledby="authority-heading" className="view-section">
@@ -396,7 +408,10 @@ export default function SeatAuthorityView({
             {issuedInvite?.code && (
               <div className="invite-ticket" role="region" aria-label="Issued single-use invitation">
                 <div className="row-between wrap-gap">
-                  <strong>Protected Single-Use Invite Token</strong>
+                  <strong>
+                    Protected Single-Use Invite Token
+                    {issuedInvite.teamId ? ` (${issuedInvite.teamId})` : ''}
+                  </strong>
                   <span className={`status-chip ${expired ? 'chip-err' : 'chip-ok'}`}>
                     <ClockIcon size={13} /> {expired ? 'EXPIRED (410)' : `Expires in ${countdown}`}
                   </span>
@@ -408,7 +423,7 @@ export default function SeatAuthorityView({
                   </button>
                 </div>
                 <p className="muted-copy small-copy">
-                  <LockIcon size={13} /> Persisted in SQLite <code>invites</code> strictly as SHA-256 <code>code_hash</code>; consumed atomically on first valid claim.
+                  <LockIcon size={13} /> Issued by <code>{issuedInvite.issuedBy || actorId || 'leader'}</code> for <code>{issuedInvite.teamId || teamId}</code> · Persisted strictly as SHA-256 <code>code_hash</code>.
                 </p>
               </div>
             )}
@@ -425,6 +440,26 @@ export default function SeatAuthorityView({
                   className="mono-field"
                 />
               </label>
+
+              {inviteCode && actorAlreadyInTargetTeam && onClaimAsFreshCandidate && (
+                <div className="self-claim-guard subcard tone-ok top-gap-xs" role="region" aria-label="One-click candidate claim helper">
+                  <div className="small-copy">
+                    <strong>Active persona <code>{actorId}</code> already holds a seat on <code>{teamId}</code>.</strong>{' '}
+                    Because SQLite enforces <code>ONE_TEAM_PER_EVENT</code>, switch to an invited candidate in 1 click to claim this single-use invite cleanly:
+                  </div>
+                  <div className="pill-row top-gap-xs">
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-glow-cta"
+                      disabled={joining}
+                      onClick={onClaimAsFreshCandidate}
+                    >
+                      <SparklesIcon size={15} />{' '}
+                      {joining ? 'Switching & Claiming Seat...' : 'Switch to Invited Candidate & Claim Seat'}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {storagePreview.key && (
                 <div className="opid-inspector">
@@ -444,11 +479,11 @@ export default function SeatAuthorityView({
               <div className="pill-row top-gap-xs">
                 <button
                   type="button"
-                  className="btn btn-primary"
+                  className={inviteCode && actorAlreadyInTargetTeam ? 'btn btn-secondary' : 'btn btn-primary'}
                   disabled={joining || !inviteCode}
                   onClick={onJoinSeat}
                 >
-                  <ShieldCheckIcon /> {joining ? 'Submitting Claim...' : 'Request Membership (/api/invitations/claim)'}
+                  <ShieldCheckIcon /> {joining ? 'Submitting Claim...' : `Claim as Current Actor (${actorId || 'Sign in'})`}
                 </button>
                 <button
                   type="button"

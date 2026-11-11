@@ -1,47 +1,47 @@
-// PostSheet Workstation x Hack4Hack PS1 Cognitive-Ergonomics & FOV Calibration Engine
-const STORAGE_KEY = 'h4h-ps1:ergonomics:v2';
+// PostSheet Workstation x Hack4Hack PS1 Spatial Ergonomics & FOV Calibration Engine
+const STORAGE_KEY = 'h4h-ps1:ergonomics:v3';
 
 export const THEME_OPTIONS = [
   {
-    id: 'sbr-comfort',
-    shortLabel: 'SBR Comfort',
-    label: 'Super Bob Ross Comfort',
-    subtitle: 'Opaque matte #11171D canvas, #182129 structure, #8FBEB4 sage-teal, #9CC6DA focus',
-    swatch: ['#11171D', '#182129', '#8FBEB4', '#D1DCE5']
+    id: 'h4h-glass',
+    shortLabel: 'H4H Glass',
+    label: 'H4H Spatial Glass',
+    subtitle: 'Carbon-obsidian #090D11, subsurface emerald/teal glow, smoked glass cards & #8CE65A jade-lime accent',
+    swatch: ['#090D11', '#10181D', '#8CE65A', '#D5E2DE']
   },
   {
-    id: 'h4h-studio',
-    shortLabel: 'H4H Studio',
-    label: 'Hack4Hack Builder Studio',
-    subtitle: 'Obsidian-indigo #0B0F19 with #10B981 emerald and #8B5CF6 violet accents',
-    swatch: ['#0B0F19', '#13192B', '#10B981', '#8B5CF6']
+    id: 'petrol-glass',
+    shortLabel: 'Petrol Glass',
+    label: 'Petrol Deep Glass',
+    subtitle: 'Oceanic petrol #06151C canvas, smoked #0B222D glass, #64DFDF & #8FBEB4 specular rims',
+    swatch: ['#06151C', '#0B222D', '#64DFDF', '#D2E3EC']
   },
   {
-    id: 'midnight-glass',
-    shortLabel: 'Midnight Glass',
-    label: 'Moonlight Optical Glass',
-    subtitle: 'Refractive header rim on deep #0B101B obsidian with matte reading cards',
-    swatch: ['#0B101B', '#182129', '#4FD1C5', '#D1DCE5']
+    id: 'obsidian-prism',
+    shortLabel: 'Obsidian Prism',
+    label: 'Obsidian Prism',
+    subtitle: 'Twilight #090D18 canvas, smoked indigo-slate glass, #5EEAD4 & #A78BFA dual prism rim',
+    swatch: ['#090D18', '#12192A', '#5EEAD4', '#A78BFA']
   },
   {
     id: 'matte-slate',
-    shortLabel: 'Matte Slate',
-    label: 'Calm Matte Slate',
-    subtitle: 'Zero translucency, low-glare #0F172A engineering surface',
-    swatch: ['#0F172A', '#1E293B', '#38BDF8', '#F8FAFC']
+    shortLabel: 'Calm Matte',
+    label: 'Calm Matte Dark',
+    subtitle: 'Zero-blur opaque #11171D / #182129 low-glare dark engineering surface',
+    swatch: ['#11171D', '#182129', '#5EEAD4', '#D5E2DE']
   },
   {
     id: 'warm-paper',
-    shortLabel: 'Warm Paper',
-    label: 'Warm Paper Light',
-    subtitle: 'High-comfort #F8FAFC daylight reader with crisp dark ink',
-    swatch: ['#F8FAFC', '#FFFFFF', '#0B4F6C', '#0F172A']
+    shortLabel: 'Frosted Light',
+    label: 'Frosted Daylight',
+    subtitle: 'Clean light #EEF2F6 canvas with frosted white cards and crisp dark ink',
+    swatch: ['#EEF2F6', '#FFFFFF', '#0B4F6C', '#0F172A']
   },
   {
     id: 'aaa-contrast',
     shortLabel: 'WCAG AAA',
-    label: 'WCAG AAA High-Contrast',
-    subtitle: '7:1+ to 21:1 pure #000000 / #FFFFFF / #FFD60A high-visibility mode',
+    label: 'WCAG AAA Contrast',
+    subtitle: 'Pure #000000 / #FFFFFF / #FFD60A 7:1+ to 21:1 high-visibility mode',
     swatch: ['#000000', '#0A0A0A', '#FFD60A', '#FFFFFF']
   }
 ];
@@ -95,7 +95,7 @@ export function detectOsDefaults() {
   const prefersReducedTransparency = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-transparency: reduce)').matches;
   const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
-  let theme = 'sbr-comfort';
+  let theme = 'h4h-glass';
   if (prefersMoreContrast) theme = 'aaa-contrast';
   else if (prefersReducedTransparency) theme = 'matte-slate';
 
@@ -112,7 +112,7 @@ export function loadErgonomics() {
   const defaults = detectOsDefaults();
   if (typeof window === 'undefined') return defaults;
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY) || window.localStorage.getItem('h4h-ps1:ergonomics:v1');
+    const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaults;
     const parsed = JSON.parse(raw);
     const normalizedMotion = parsed.motion === 'zero' ? 'off' : parsed.motion;
