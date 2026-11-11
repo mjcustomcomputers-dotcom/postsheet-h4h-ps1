@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import TaskDagTimeline from '../components/TaskDagTimeline.jsx';
+import SolarBatonHorizon from '../components/SolarBatonHorizon.jsx';
+import EpistemicStencil from '../components/EpistemicStencil.jsx';
 import {
   SKILLS_CATALOG,
   TIMEZONE_PRESETS,
@@ -20,7 +22,10 @@ import {
   AlertTriangleIcon,
   ClockIcon,
   GlobeIcon,
-  LayersIcon
+  LayersIcon,
+  ShieldCheckIcon,
+  FileTextIcon,
+  ArrowRightIcon
 } from '../icons.jsx';
 
 const NEXT_SKILL_STATE = {
@@ -86,13 +91,16 @@ function ContributorListEditor({
         <span>Click any skill chip to cycle state:</span>
         <span className="skill-badge skill-verified">✓ Supported (Verified)</span>
         <span className="skill-badge skill-unknown">? Provisional (Offer micro-work-sample)</span>
-        <span className="skill-badge skill-none">— Not Claimed</span>
+        <span className="skill-badge skill-none">- Not Claimed</span>
       </div>
 
       <div className="contributor-cards-stack">
         {people.map((person, idx) => {
           const startPct = Math.min(95, Math.max(0, Math.round((person.startMin / Math.max(60, horizonMin)) * 100)));
-          const widthPct = Math.max(4, Math.min(100 - startPct, Math.round(((person.endMin - person.startMin) / Math.max(60, horizonMin)) * 100)));
+          const widthPct = Math.max(
+            4,
+            Math.min(100 - startPct, Math.round(((person.endMin - person.startMin) / Math.max(60, horizonMin)) * 100))
+          );
 
           return (
             <div key={`${person.id}-${idx}`} className="contributor-card">
@@ -146,7 +154,8 @@ function ContributorListEditor({
               <div className="pill-row" role="group" aria-label={`Skills for ${person.id}`}>
                 {SKILLS_CATALOG.map(sk => {
                   const st = person.skills?.[sk.id] || 'none';
-                  const stText = st === 'supported' ? 'Supported' : st === 'unknown' ? 'Provisional Unknown' : 'Not Claimed';
+                  const stText =
+                    st === 'supported' ? 'Supported' : st === 'unknown' ? 'Provisional Unknown' : 'Not Claimed';
                   return (
                     <button
                       key={sk.id}
@@ -155,7 +164,7 @@ function ContributorListEditor({
                       onClick={() => cycleSkill(idx, sk.id)}
                       aria-label={`${person.id} ${sk.short}: ${stText}. Activate to cycle state.`}
                     >
-                      {st === 'supported' ? '✓ ' : st === 'unknown' ? '? ' : '— '}
+                      {st === 'supported' ? '✓ ' : st === 'unknown' ? '? ' : '- '}
                       {sk.short}
                     </button>
                   );
@@ -164,7 +173,7 @@ function ContributorListEditor({
 
               {/* Visual Wake-Window Bar & Sliders */}
               <div className="wake-editor-box">
-                <div className="row-between small-copy">
+                <div className="row-between small-copy wrap-gap">
                   <span>
                     <ClockIcon size={13} /> Active Wake Window: <strong>T+{person.startMin}m .. T+{person.endMin}m</strong> ({Math.max(0, person.endMin - person.startMin)}m available)
                   </span>
@@ -174,14 +183,14 @@ function ContributorListEditor({
                       className="micro-preset-btn"
                       onClick={() => updatePerson(idx, { startMin: 0, endMin: Math.round(horizonMin * 0.5) })}
                     >
-                      Shift 1 (0–50%)
+                      Shift 1 (0-50%)
                     </button>
                     <button
                       type="button"
                       className="micro-preset-btn"
                       onClick={() => updatePerson(idx, { startMin: Math.round(horizonMin * 0.5), endMin: horizonMin })}
                     >
-                      Baton Relay (50–100%)
+                      Baton Relay (50-100%)
                     </button>
                     <button
                       type="button"
@@ -237,6 +246,8 @@ function ContributorListEditor({
 }
 
 export default function MissionArchitectView({
+  theme = 'sbr-comfort',
+  motion = 'spring',
   activeScenarioKey,
   omegaMode,
   onSelectScenario,
@@ -252,11 +263,15 @@ export default function MissionArchitectView({
   candidates,
   onChangeCandidates,
   plan,
+  beforeSnapshot,
   recs,
   solving,
+  lockingPlan,
   onRunSolveAndRecommend,
   onAddCandidateToTeam,
-  onVerifyPersonSkill
+  onVerifyPersonSkill,
+  onLockPlanAndMintInvite,
+  onOpenCharterExport
 }) {
   const [showDsl, setShowDsl] = useState(false);
   const [dslTasksDraft, setDslTasksDraft] = useState('');
@@ -337,18 +352,40 @@ export default function MissionArchitectView({
 
   return (
     <section aria-labelledby="architect-heading" className="view-section">
+      {/* 60-FPS Solar Terminator & Luminous Firefly Baton-Pass Horizon */}
+      <SolarBatonHorizon
+        mode="architect"
+        theme={theme}
+        motion={motion}
+        horizonMin={horizonMin}
+        teamPeople={teamPeople}
+        candidates={candidates}
+        recommendations={recs?.recommendations || []}
+      />
+
       {/* Header & 4 Interactive Scenario Cards */}
       <div className="surface-card hero-strip">
         <div className="row-between wrap-gap">
           <div className="prose-measure">
-            <span className="eyebrow-tag">VIEW 2 · SYNCHRONICITY R5 COUPLED SOLVER STUDIO</span>
+            <div className="pill-row">
+              <span className="eyebrow-tag">VIEW 2 · SYNCHRONICITY R5 COUPLED SOLVER STUDIO</span>
+              <EpistemicStencil kind="SQLITE_AUTHORITY" compact />
+              <EpistemicStencil kind="VOI_PROVISIONAL" compact />
+            </div>
             <h2 id="architect-heading" className="view-title">Mission &amp; Ability Architect</h2>
             <p className="muted-copy">
-              Start from what your crew is trying to build. Model critical-path task dependencies, 24-hour UTC wake windows, provisional <code>?skill</code> wildcards, and Hall capacity contention—then add complementary builders in 1 click.
+              Start from what your crew is trying to build. Model critical-path task dependencies, 24-hour UTC wake windows, provisional <code>?skill</code> wildcards, and Hall capacity contention, then add complementary builders in 1 click.
             </p>
           </div>
 
           <div className="pill-row">
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={onOpenCharterExport}
+            >
+              <FileTextIcon size={15} /> Export Crew Charter
+            </button>
             <button
               type="button"
               className="btn btn-secondary"
@@ -363,7 +400,7 @@ export default function MissionArchitectView({
               disabled={solving}
               onClick={() => onRunSolveAndRecommend()}
             >
-              <PlayIcon /> {solving ? 'Solving DAG…' : 'Evaluate Plan & Recommendations'}
+              <PlayIcon /> {solving ? 'Solving DAG...' : 'Evaluate Plan & Recommendations'}
             </button>
           </div>
         </div>
@@ -394,7 +431,7 @@ export default function MissionArchitectView({
         {currentScenario && (
           <div className="scenario-explainer">
             <p className="prose-measure">
-              <strong>{currentScenario.code} — {currentScenario.title}:</strong> {currentScenario.summary}
+              <strong>{currentScenario.code} · {currentScenario.title}:</strong> {currentScenario.summary}
             </p>
 
             {/* Scenario C Special Sub-Mode Switcher */}
@@ -406,7 +443,7 @@ export default function MissionArchitectView({
                   className={`btn btn-compact ${omegaMode === 'contingent' ? 'btn-primary' : 'btn-secondary'}`}
                   onClick={() => onToggleOmegaMode('contingent')}
                 >
-                  Mode C1: Contingent (?frontend → Emits 1.0-bit VOI Prompt)
+                  Mode C1: Contingent (?frontend -&gt; Emits 1.0-bit VOI Prompt)
                 </button>
                 <button
                   type="button"
@@ -414,7 +451,7 @@ export default function MissionArchitectView({
                   className={`btn btn-compact ${omegaMode === 'robust' ? 'btn-primary' : 'btn-secondary'}`}
                   onClick={() => onToggleOmegaMode('robust')}
                 >
-                  Mode C2: Robust Backup Present (EXISTS_FORALL_ROBUST → Zero Questions!)
+                  Mode C2: Robust Backup Present (EXISTS_FORALL_ROBUST -&gt; Zero Questions!)
                 </button>
               </div>
             )}
@@ -481,12 +518,18 @@ export default function MissionArchitectView({
         </div>
       )}
 
-      {/* Live Solver Verdict, Wildcard Omega Frontier, Repairs & Baton-Pass Recommendations */}
+      {/* Live Solver Verdict, Wildcard Omega Frontier, Repairs & Lock-to-View-3 Action */}
       {plan && (
         <div className={`surface-card verdict-banner ${statusTone}`} role="region" aria-label="Synchronicity R5 Solver Verdict">
           <div className="row-between wrap-gap">
             <div>
-              <span className="eyebrow-tag">AUTHORITATIVE /API/PLAN SOLVER WITNESS</span>
+              <div className="pill-row">
+                <span className="eyebrow-tag">AUTHORITATIVE /API/PLAN SOLVER WITNESS</span>
+                <EpistemicStencil
+                  kind={plan.status === 'CONDITIONAL_WITNESS' ? 'VOI_PROVISIONAL' : 'SQLITE_AUTHORITY'}
+                  compact
+                />
+              </div>
               <h3 className="verdict-headline">
                 {plan.status === 'FEASIBLE_WITNESS' ? (
                   <CheckCircleIcon size={22} />
@@ -504,7 +547,7 @@ export default function MissionArchitectView({
                 <strong className="metric-value">{plan.search?.nodes} / {plan.search?.limit}</strong>
               </div>
               <div className="metric-pill">
-                <span className="metric-label">Wildcard |Ω|</span>
+                <span className="metric-label">Wildcard |Omega|</span>
                 <strong className="metric-value">
                   {plan.frontier ? `${plan.frontier.worldsCovered} / ${plan.frontier.omegaSize} worlds` : '1 / 1'}
                 </strong>
@@ -520,6 +563,36 @@ export default function MissionArchitectView({
             </div>
           </div>
 
+          {/* FEASIBLE_WITNESS -> Lock Plan & Mint Invite into View 3 */}
+          {plan.status === 'FEASIBLE_WITNESS' && (
+            <div className="subcard tone-ok top-gap-sm">
+              <div className="row-between wrap-gap">
+                <div className="prose-measure">
+                  <strong>Critical-Path Schedule Verified:</strong> Ready to commit this deliverable crew on Layer-A SQLite and mint a protected single-use SHA-256 invite token.
+                </div>
+                <div className="pill-row">
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    disabled={lockingPlan}
+                    onClick={onLockPlanAndMintInvite}
+                  >
+                    <ShieldCheckIcon size={16} />
+                    {lockingPlan ? 'Locking Crew & Minting...' : 'Lock Feasible Plan & Mint Invite -> View 3'}
+                    <ArrowRightIcon size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-compact"
+                    onClick={onOpenCharterExport}
+                  >
+                    <FileTextIcon size={14} /> Export Crew Charter
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Zero-Question Gate Celebration when Robust with Wildcards */}
           {plan.frontier?.actionStable && (plan.frontier?.wildcards?.length || 0) > 0 && (
             <div className="subcard tone-ok top-gap-sm">
@@ -533,11 +606,16 @@ export default function MissionArchitectView({
             <div className="subcard tone-warn top-gap-sm">
               <div className="row-between wrap-gap">
                 <div className="prose-measure">
-                  <strong>
-                    Highest-Gain Shannon VOI Verification Prompt ({plan.frontier.voiQuestion.informationGainBits} bits):
-                  </strong>{' '}
-                  Offer a 5-minute micro-work-sample to confirm <code>{plan.frontier.voiQuestion.personId}</code> on{' '}
-                  <code>?{plan.frontier.voiQuestion.skill}</code> ({plan.frontier.voiQuestion.reason}).
+                  <div className="pill-row">
+                    <strong>
+                      Highest-Gain Shannon VOI Verification Prompt ({plan.frontier.voiQuestion.informationGainBits} bits)
+                    </strong>
+                    <EpistemicStencil kind="VOI_PROVISIONAL" compact />
+                  </div>
+                  <p className="small-top">
+                    Offer a 5-minute micro-work-sample to confirm <code>{plan.frontier.voiQuestion.personId}</code> on{' '}
+                    <code>?{plan.frontier.voiQuestion.skill}</code> ({plan.frontier.voiQuestion.reason}).
+                  </p>
                 </div>
                 <button
                   type="button"
@@ -546,7 +624,7 @@ export default function MissionArchitectView({
                     onVerifyPersonSkill(plan.frontier.voiQuestion.personId, plan.frontier.voiQuestion.skill)
                   }
                 >
-                  <CheckCircleIcon size={15} /> Simulate Work-Sample Pass (?{plan.frontier.voiQuestion.skill} → ✓)
+                  <CheckCircleIcon size={15} /> Simulate Work-Sample Pass (?{plan.frontier.voiQuestion.skill} -&gt; ✓)
                 </button>
               </div>
             </div>
@@ -570,7 +648,7 @@ export default function MissionArchitectView({
                       className="btn btn-secondary btn-compact top-gap-xs"
                       onClick={() => onVerifyPersonSkill(rep.personId, rep.skill)}
                     >
-                      Verify {rep.personId}’s {rep.skill} Evidence Now
+                      Verify {rep.personId}'s {rep.skill} Evidence Now
                     </button>
                   )}
                 </div>
@@ -643,7 +721,7 @@ export default function MissionArchitectView({
         </div>
       )}
 
-      {/* Mission Objective + Spatial DAG Visualizer */}
+      {/* Mission Objective + Spatial DAG Visualizer (with Before / After Wipe) */}
       <div className="surface-card">
         <div className="mission-meta-grid">
           <label className="field-label">
@@ -680,7 +758,12 @@ export default function MissionArchitectView({
           </label>
         </div>
 
-        <TaskDagTimeline tasks={tasks} horizonMin={horizonMin} plan={plan} />
+        <TaskDagTimeline
+          tasks={tasks}
+          horizonMin={horizonMin}
+          plan={plan}
+          beforeSnapshot={beforeSnapshot}
+        />
       </div>
 
       {/* Visual Task Dependency Builder */}

@@ -1,4 +1,6 @@
-// H4H PS1 | Purpose-First Scenarios, Deterministic Crew Enrichment, Builder Pool & DSL Helpers
+// H4H PS1 | Purpose-First Scenarios, Custom Crew Overlay, Builder Pool & DSL Helpers
+
+const CUSTOM_CREW_STORAGE_KEY = 'h4h-ps1:custom-crews:v1';
 
 export const SKILLS_CATALOG = [
   { id: 'backend', label: 'Backend & API', short: 'backend' },
@@ -26,15 +28,65 @@ export const SECONDARY_CONTEXTS = [
 ];
 
 export const TIMEZONE_PRESETS = [
-  { value: 'UTC-6 · Hot Springs', bucket: 'americas', defaultStartRatio: 0, defaultEndRatio: 0.5 },
-  { value: 'UTC-5 · Toronto / NYC', bucket: 'americas', defaultStartRatio: 0, defaultEndRatio: 0.6 },
-  { value: 'UTC-3 · São Paulo', bucket: 'americas', defaultStartRatio: 0.1, defaultEndRatio: 0.65 },
-  { value: 'UTC+0 · London / Accra', bucket: 'emea', defaultStartRatio: 0.2, defaultEndRatio: 0.75 },
-  { value: 'UTC+1 · Berlin / Lagos', bucket: 'emea', defaultStartRatio: 0.25, defaultEndRatio: 0.8 },
-  { value: 'UTC+3 · Nairobi', bucket: 'emea', defaultStartRatio: 0.3, defaultEndRatio: 0.85 },
-  { value: 'UTC+5:30 · Bengaluru', bucket: 'apac', defaultStartRatio: 0.5, defaultEndRatio: 1.0 },
-  { value: 'UTC+9 · Tokyo / Seoul', bucket: 'apac', defaultStartRatio: 0.55, defaultEndRatio: 1.0 }
+  { value: 'UTC-6 · Hot Springs', utcOffset: -6, bucket: 'americas', defaultStartRatio: 0, defaultEndRatio: 0.5 },
+  { value: 'UTC-5 · Toronto / NYC', utcOffset: -5, bucket: 'americas', defaultStartRatio: 0, defaultEndRatio: 0.6 },
+  { value: 'UTC-3 · Sao Paulo', utcOffset: -3, bucket: 'americas', defaultStartRatio: 0.1, defaultEndRatio: 0.65 },
+  { value: 'UTC+0 · London / Accra', utcOffset: 0, bucket: 'emea', defaultStartRatio: 0.2, defaultEndRatio: 0.75 },
+  { value: 'UTC+1 · Berlin / Lagos', utcOffset: 1, bucket: 'emea', defaultStartRatio: 0.25, defaultEndRatio: 0.8 },
+  { value: 'UTC+3 · Nairobi', utcOffset: 3, bucket: 'emea', defaultStartRatio: 0.3, defaultEndRatio: 0.85 },
+  { value: 'UTC+5:30 · Bengaluru', utcOffset: 5.5, bucket: 'apac', defaultStartRatio: 0.5, defaultEndRatio: 1.0 },
+  { value: 'UTC+9 · Tokyo / Seoul', utcOffset: 9, bucket: 'apac', defaultStartRatio: 0.55, defaultEndRatio: 1.0 }
 ];
+
+export function parseUtcOffsetHours(tzLabel, fallbackStartMin = 0, horizonMin = 480) {
+  if (typeof tzLabel === 'string') {
+    const m = /UTC([+-])(\d{1,2})(?::(\d{2}))?/i.exec(tzLabel);
+    if (m) {
+      const sign = m[1] === '-' ? -1 : 1;
+      const hrs = Number(m[2]);
+      const mins = m[3] ? Number(m[3]) / 60 : 0;
+      return Math.max(-12, Math.min(14, sign * (hrs + mins)));
+    }
+  }
+  const ratio = Math.max(0, Math.min(1, fallbackStartMin / Math.max(60, horizonMin)));
+  return Number((-6 + ratio * 15).toFixed(1));
+}
+
+export function loadCustomCrewOverlay() {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(CUSTOM_CREW_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveCustomCrewOverlayEntry(eventId, teamId, entry) {
+  const current = loadCustomCrewOverlay();
+  const scopedKey = `${eventId}::${teamId}`;
+  const next = {
+    ...current,
+    [scopedKey]: {
+      mission: String(entry.mission || '').trim() || 'Custom purpose-driven deliverable',
+      skills: Array.isArray(entry.skills) && entry.skills.length > 0 ? entry.skills : ['backend', 'frontend'],
+      utcLabel: entry.utcLabel || 'UTC-6 <-> UTC+5:30 Baton',
+      utcBucket: entry.utcBucket || 'baton',
+      secondaryContext: entry.secondaryContext || 'Open Global Mesh',
+      scenarioKey: entry.scenarioKey || 'baton'
+    }
+  };
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.setItem(CUSTOM_CREW_STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // Ignore storage quota restrictions gracefully
+    }
+  }
+  return next;
+}
 
 export const MISSION_SCENARIOS = {
   baton: {
@@ -43,7 +95,7 @@ export const MISSION_SCENARIOS = {
     title: 'Async UTC Baton-Pass',
     subtitle: 'Hot Springs (UTC-6) + Bengaluru (UTC+5:30) · 0m overlap, ships early!',
     summary:
-      'Aurora and Kai work T+0..240m in Arkansas (UTC-6). Priya works T+240..480m in Bengaluru (UTC+5:30) with 0m simultaneous overlap—yet directed task dependencies align cleanly so adding Priya flips INFEASIBLE to FEASIBLE_WITNESS with +150m deadline slack.',
+      'Aurora and Kai work T+0..240m in Arkansas (UTC-6). Priya works T+240..480m in Bengaluru (UTC+5:30) with 0m simultaneous overlap, yet directed task dependencies align cleanly so adding Priya flips INFEASIBLE to FEASIBLE_WITNESS with +150m deadline slack.',
     goalDescription: 'Ship race-safe API, accessible React UI, and E2E integration across Hot Springs (UTC-6) and Bengaluru (UTC+5:30)',
     horizonHours: 8,
     tasks: [
@@ -97,7 +149,7 @@ export const MISSION_SCENARIOS = {
     title: 'Hall Capacity Contention',
     subtitle: 'Why naive skill-tag union fails on simultaneous deadlines (0-displacement repair)',
     summary:
-      'Roster {Aurora, Kai} looks 100% covered on a static badge checklist (backend, database, frontend). Yet api-cutover and schema-migration both require 120m inside a 120m window—overloading Aurora. Synchronicity isolates the 1-role Hall deficit and adds Mateo with 0 displaced members.',
+      'Roster {Aurora, Kai} looks 100% covered on a static badge checklist (backend, database, frontend). Yet api-cutover and schema-migration both require 120m inside a 120m window, overloading Aurora. Synchronicity isolates the 1-role Hall deficit and adds Mateo with 0 displaced members.',
     goalDescription: 'Execute simultaneous zero-downtime API cutover and SQLite WAL schema migration within a 2-hour window',
     horizonHours: 2,
     tasks: [
@@ -205,7 +257,7 @@ export const MISSION_SCENARIOS = {
     title: 'Preventive Prerequisite Support',
     subtitle: 'Unlock a blocked 3-member crew by provisioning missing DevOps/A11y environment support',
     summary:
-      'Aurora, Kai, and Priya cover backend, frontend, and integration—but upstream cloud/accessibility runner provisioning (devops) is unverified, blocking the entire DAG. Granting preventive prerequisite support unlocks FEASIBLE_WITNESS with 0 accepted members replaced.',
+      'Aurora, Kai, and Priya cover backend, frontend, and integration, while upstream cloud/accessibility runner provisioning (devops) is unverified, blocking the DAG. Granting preventive prerequisite support unlocks FEASIBLE_WITNESS with 0 accepted members replaced.',
     goalDescription: 'Provision reproducible CI + accessibility test runner, build core platform, and pass full E2E verification',
     horizonHours: 6,
     tasks: [
@@ -254,6 +306,7 @@ export const BUILDER_DIRECTORY = [
     id: 'leader-aurora',
     role: 'Systems & SQLite Architect',
     timezone: 'UTC-6 · Hot Springs',
+    utcOffset: -6,
     utcBucket: 'americas',
     windowLabel: 'T+00:00 .. T+04:00',
     startMin: 0,
@@ -267,6 +320,7 @@ export const BUILDER_DIRECTORY = [
     id: 'builder-kai',
     role: 'Accessible Frontend & Ergonomics Engineer',
     timezone: 'UTC-6 · Hot Springs',
+    utcOffset: -6,
     utcBucket: 'americas',
     windowLabel: 'T+00:00 .. T+04:00',
     startMin: 0,
@@ -280,6 +334,7 @@ export const BUILDER_DIRECTORY = [
     id: 'builder-priya',
     role: 'Integration & Cryptographic Relay Engineer',
     timezone: 'UTC+5:30 · Bengaluru',
+    utcOffset: 5.5,
     utcBucket: 'apac',
     windowLabel: 'T+04:00 .. T+08:00',
     startMin: 240,
@@ -293,6 +348,7 @@ export const BUILDER_DIRECTORY = [
     id: 'mateo',
     role: 'Data & Schema Reliability Specialist',
     timezone: 'UTC-5 · Toronto',
+    utcOffset: -5,
     utcBucket: 'americas',
     windowLabel: 'T+00:00 .. T+03:30',
     startMin: 0,
@@ -306,6 +362,7 @@ export const BUILDER_DIRECTORY = [
     id: 'amina',
     role: 'Protocol Verification & QA Steward',
     timezone: 'UTC+1 · Berlin',
+    utcOffset: 1,
     utcBucket: 'emea',
     windowLabel: 'T+02:30 .. T+06:30',
     startMin: 150,
@@ -319,6 +376,7 @@ export const BUILDER_DIRECTORY = [
     id: 'sanjay-steward',
     role: 'Cloud & Accessibility Sandbox Steward',
     timezone: 'UTC+0 · London',
+    utcOffset: 0,
     utcBucket: 'emea',
     windowLabel: 'T+00:00 .. T+03:00',
     startMin: 0,
@@ -332,6 +390,7 @@ export const BUILDER_DIRECTORY = [
     id: 'kenji',
     role: 'Async Systems & Telemetry Developer',
     timezone: 'UTC+9 · Tokyo',
+    utcOffset: 9,
     utcBucket: 'apac',
     windowLabel: 'T+04:30 .. T+08:00',
     startMin: 270,
@@ -345,6 +404,7 @@ export const BUILDER_DIRECTORY = [
     id: 'noor',
     role: 'Inclusive Interaction Designer',
     timezone: 'UTC+3 · Nairobi',
+    utcOffset: 3,
     utcBucket: 'emea',
     windowLabel: 'T+02:00 .. T+06:00',
     startMin: 120,
@@ -360,7 +420,7 @@ const ARCHETYPES = [
   {
     mission: 'Local-first emergency mesh triage & SMS relay',
     skills: ['backend', 'frontend', 'integrate'],
-    utcLabel: 'UTC-6 ↔ UTC+5:30 Baton',
+    utcLabel: 'UTC-6 <-> UTC+5:30 Baton',
     utcBucket: 'baton',
     context: 'Open Global Mesh',
     scenarioKey: 'baton',
@@ -396,7 +456,7 @@ const ARCHETYPES = [
   {
     mission: 'Async cross-continent accessibility audit pipeline',
     skills: ['frontend', 'integrate', 'devops'],
-    utcLabel: 'UTC-5 ↔ UTC+5:30 Baton',
+    utcLabel: 'UTC-5 <-> UTC+5:30 Baton',
     utcBucket: 'baton',
     context: 'Civic & Accessibility Lab',
     scenarioKey: 'baton',
@@ -422,10 +482,22 @@ function hashString(str) {
   return Math.abs(h >>> 0);
 }
 
-export function deriveCrewProfile(team, verifiedCrewMap = {}) {
+export function deriveCrewProfile(team, verifiedCrewMap = {}, customCrewMap = {}, eventId = 'seed-event') {
   const tid = team.team_id || 'crew';
+  const custom = customCrewMap[`${eventId}::${tid}`] || customCrewMap[tid] || null;
   const h = hashString(tid);
-  const arch = ARCHETYPES[h % ARCHETYPES.length];
+  const arch = custom
+    ? {
+        mission: custom.mission,
+        skills: custom.skills,
+        utcLabel: custom.utcLabel || 'UTC-6 <-> UTC+5:30 Baton',
+        utcBucket: custom.utcBucket || 'baton',
+        context: custom.secondaryContext || 'Open Global Mesh',
+        scenarioKey: custom.scenarioKey || 'baton',
+        fullReadinessHint: 'PLAN_FEASIBLE_PENDING_ACCEPTANCE'
+      }
+    : ARCHETYPES[h % ARCHETYPES.length];
+
   const members = Number(team.members || 0);
   const maxSize = Number(team.max_size || 5);
   const openSeats = Math.max(0, maxSize - members);
@@ -434,7 +506,7 @@ export function deriveCrewProfile(team, verifiedCrewMap = {}) {
   if (openSeats === 0) seatState = 'full';
   else if (openSeats === 1) seatState = 'final-seat';
 
-  const verifiedStatus = verifiedCrewMap[tid];
+  const verifiedStatus = verifiedCrewMap[`${eventId}::${tid}`] || verifiedCrewMap[tid];
   let lifecycle = 'FORMING';
   let lifecycleSub = `${openSeats} open ${openSeats === 1 ? 'seat' : 'seats'} · Matching complementary skills`;
 
@@ -444,7 +516,6 @@ export function deriveCrewProfile(team, verifiedCrewMap = {}) {
       ? 'Critical-path verified · Awaiting seat acceptance'
       : 'Seats confirmed & critical-path witness verified';
   } else if (openSeats === 0) {
-    // Explicitly demonstrate that full seats != verified deliverable readiness
     if (arch.fullReadinessHint === 'PLAN_FEASIBLE_PENDING_ACCEPTANCE') {
       lifecycle = 'PLAN_FEASIBLE_PENDING_ACCEPTANCE';
       lifecycleSub = 'Seats 100% full · Provisional handoff guard pending check';
@@ -471,6 +542,7 @@ export function deriveCrewProfile(team, verifiedCrewMap = {}) {
     secondaryContext: arch.context,
     scenarioKey: arch.scenarioKey,
     batonPassReady: arch.utcBucket === 'baton',
+    isCustomMission: Boolean(custom),
     lifecycle,
     lifecycleSub
   };
@@ -478,22 +550,22 @@ export function deriveCrewProfile(team, verifiedCrewMap = {}) {
 
 export const WALKTHROUGH_STEPS = [
   {
-    time: '0:00 – 0:45',
+    time: '0:00 - 0:45',
     title: '1. Purpose-First Directory & Lifecycle Separation',
-    detail: 'Browse 2,000 live SQLite crews in seed-event with sub-40ms board reads. Show why ROSTER_CONFIRMED (full seats) is distinct from deliverable feasibility, and filter by skill + UTC baton window.',
+    detail: 'Browse 2,000 live SQLite crews in seed-event with sub-50ms board reads. Show why ROSTER_CONFIRMED (full seats) is distinct from deliverable feasibility, and filter by skill + UTC baton window.',
     targetView: 'discover',
     actionLabel: 'Open Discover Directory'
   },
   {
-    time: '0:45 – 1:45',
-    title: '2. Async UTC Baton-Pass (Hot Springs UTC-6 ↔ Bengaluru UTC+5:30)',
-    detail: 'Load Scenario A in Mission Architect: 0m simultaneous overlap between Arkansas and India, then click "Add Candidate to Simulation" on Priya to flip INFEASIBLE to FEASIBLE_WITNESS live.',
+    time: '0:45 - 1:45',
+    title: '2. Async UTC Baton-Pass (Hot Springs UTC-6 <-> Bengaluru UTC+5:30)',
+    detail: 'Load Scenario A in Mission Architect: 0m simultaneous overlap between Arkansas and India, then click "Add Candidate to Simulation" on Priya to flip INFEASIBLE to FEASIBLE_WITNESS and inspect the Before/After DAG Wipe.',
     targetView: 'architect',
     scenarioKey: 'baton',
     actionLabel: 'Load Scenario A (Baton-Pass)'
   },
   {
-    time: '1:45 – 2:35',
+    time: '1:45 - 2:35',
     title: '3. Hall Capacity Contention & Wildcard Omega Zero-Question Gate',
     detail: 'Load Scenario B ({Aurora, Kai} simultaneous backend+database overload -> 0-displacement repair adding Mateo) and Scenario C (EXISTS_FORALL_ROBUST zero questions vs Shannon VOI prompt).',
     targetView: 'architect',
@@ -501,22 +573,21 @@ export const WALKTHROUGH_STEPS = [
     actionLabel: 'Load Scenario B (Hall Deficit)'
   },
   {
-    time: '2:35 – 3:45',
-    title: '4. WAN-Drop Outbox → Signed Peer Relay → Idempotent Replay',
+    time: '2:35 - 3:45',
+    title: '4. WAN-Drop Outbox -> Signed Peer Relay -> Idempotent Replay',
     detail: 'Simulate direct WAN drop on active builder, queue SHA-256 opId in Local Durable Outbox (not yet admitted), forward via relay-mateo to Layer A, then reconnect and verify replayed: true.',
     targetView: 'authority',
     actionLabel: 'Open WAN-Drop & Peer Theater'
   },
   {
-    time: '3:45 – 5:00',
+    time: '3:45 - 5:00',
     title: '5. 50-Claimant Final-Seat Contention & 10k-User Scale Proof',
-    detail: 'Fire 50 simultaneous claimants at 1 open seat on a 2-seat crew -> verify 1 HTTP 200 winner, 49 HTTP 409 rejections, oversize=0, orphanLeader=0, and 36.68ms exact p95 latency.',
+    detail: 'Fire 50 simultaneous claimants at 1 open seat on a 2-seat crew -> verify 1 HTTP 200 winner, 49 HTTP 409 rejections, oversize=0, orphanLeader=0, and sub-50ms exact p95 latency.',
     targetView: 'arena',
     actionLabel: 'Open 50-Way Race Arena'
   }
 ];
 
-// Bidirectional conversion between Visual State and API / Advanced DSL payloads
 export function visualTasksToApi(tasks) {
   return tasks.map(t => ({
     id: String(t.id || '').trim(),

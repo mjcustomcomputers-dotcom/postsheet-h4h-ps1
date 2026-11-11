@@ -1,7 +1,7 @@
 {
   "project": "Post Sheet | Ability & Purpose Crew Network (H4H-PS1)",
-  "generatedAt": "2026-11-11T01:16:45.544Z",
-  "fileCount": 65,
+  "generatedAt": "2026-11-11T02:45:11.476Z",
+  "fileCount": 68,
   "files": [
     {
       "path": ".github/workflows/ci.yml",
@@ -240,8 +240,8 @@
     },
     {
       "path": "web/index.html",
-      "bytes": 672,
-      "sha256": "086343b9bce85e5b1ff519d8286c86aff7d59adb23d10d6ead7dd984cbe97e3d"
+      "bytes": 667,
+      "sha256": "b6a0c507f5921585e476e28af498735840d65a5470c1da63331efe11ccde8e6b"
     },
     {
       "path": "web/package-lock.json",
@@ -255,8 +255,8 @@
     },
     {
       "path": "web/src/App.jsx",
-      "bytes": 54383,
-      "sha256": "8455635de4fb71158716b81b9b0cd507b3f6e5781fb158fe109efc8db5c6ee73"
+      "bytes": 79674,
+      "sha256": "d98e44038b5a97d1b0f041486d340ef5a9c34c1e23434d9a5b9f25d16864bcaf"
     },
     {
       "path": "web/src/claim-operation.js",
@@ -264,29 +264,44 @@
       "sha256": "d6cd0ccad591d10e3a635ece673c9785c9664aed4fc9e765d3c7cc93e429b21e"
     },
     {
+      "path": "web/src/components/CrewCharterExportModal.jsx",
+      "bytes": 13199,
+      "sha256": "27c8d0dacc5af0177644ece29243792d53c3508a73dafc4553bf614046f68390"
+    },
+    {
+      "path": "web/src/components/EpistemicStencil.jsx",
+      "bytes": 1125,
+      "sha256": "dccbd9f503fb07d3db1c2740ccdb0a929641a96f8c35981fe0f0c488a5bba0f5"
+    },
+    {
       "path": "web/src/components/ModalDialog.jsx",
-      "bytes": 3111,
-      "sha256": "8817f5d86cad8e1f9731107f9bddf2dc9cf76e6c300a998ac193c0921fb111f2"
+      "bytes": 3161,
+      "sha256": "adb8b95f5c6c71167e0eb64b7252c7f8fb44a1fd3abf81c8fcd3f837289e508f"
     },
     {
       "path": "web/src/components/Overlays.jsx",
-      "bytes": 19003,
-      "sha256": "9a259c840ffb05515d8cb377291acbe783116d696b348b620c11970e4d8f7ada"
+      "bytes": 20159,
+      "sha256": "5005a4bf4677494e57318bcd3136d713fd2467ef68816639c20d26449dbdf8c9"
+    },
+    {
+      "path": "web/src/components/SolarBatonHorizon.jsx",
+      "bytes": 14299,
+      "sha256": "b579198f73716919ca5ed040500a27eaeb99489ff3757acd4888c716bfa9d950"
     },
     {
       "path": "web/src/components/TaskDagTimeline.jsx",
-      "bytes": 15280,
-      "sha256": "d752831deffd2b2e4874c677f58bfa9ecc402893e567de79406f52dfdaf8da88"
+      "bytes": 18858,
+      "sha256": "d0e2ab44606ab3775cc1276988d6b0a5808e3b4bcfc1fd6abd8a131635ad1483"
     },
     {
       "path": "web/src/ergonomics.js",
-      "bytes": 5036,
-      "sha256": "3030b8c5447bbd40a27b5cc15d67ebb1803484101fc90554666b784a0042a073"
+      "bytes": 6043,
+      "sha256": "bf7c80a60a5dce955d8ca5123e5c160094d7df730a3b8ee36ddb6ece6039e516"
     },
     {
       "path": "web/src/icons.jsx",
-      "bytes": 8347,
-      "sha256": "0f21f24828bcaa1b3d10064764c774590e5a0be7e6bf412a31f04e80f91585b1"
+      "bytes": 10387,
+      "sha256": "e4bed1a6806de5682078ba79c5510e150aaf60a499208d4de77841dd6b90dc8b"
     },
     {
       "path": "web/src/main.jsx",
@@ -295,33 +310,33 @@
     },
     {
       "path": "web/src/presets-and-catalog.js",
-      "bytes": 22402,
-      "sha256": "6a85664f105e9763ceeaa0f1816adb8970ea647ab3e84a78f81cd3299356cf0a"
+      "bytes": 24895,
+      "sha256": "9ffc8121404992a059526c5969b28a658cc4c175a960a8fc6da511fc6575533f"
     },
     {
       "path": "web/src/style.css",
-      "bytes": 43296,
-      "sha256": "683f998a7766e2994cda0eb9145c06e0e0f88c22d892ab26eb907f775a100295"
+      "bytes": 55462,
+      "sha256": "bbc96eb154568f4673962ee18851212298ba015e1bdacef4b47292831f3a6c03"
     },
     {
       "path": "web/src/views/DiscoverView.jsx",
-      "bytes": 27473,
-      "sha256": "5e2338614037e78b34c77f03ebaaed854922a9963a6f2dcc2ecefdc9ba2ed271"
+      "bytes": 28749,
+      "sha256": "0e0fda53079bf299581d62e09cafd3ac14a0d319dd05aa330a341633ef595506"
     },
     {
       "path": "web/src/views/MissionArchitectView.jsx",
-      "bytes": 32762,
-      "sha256": "9aab6a087d7cb8d780910fbdec798dea1b496abd37cdbd288c227edb81f8bccf"
+      "bytes": 35816,
+      "sha256": "f136da2d178a5b88950966cd06b08486cc9cac1aaeb04e359ab4735faa84df5f"
     },
     {
       "path": "web/src/views/ProofArenaView.jsx",
-      "bytes": 13487,
-      "sha256": "276ab532134ccd498c038b57e7112aa3c8513e62728d3444c72aebc5153f2e39"
+      "bytes": 14081,
+      "sha256": "5e83257b2881d0abe53279f31c15d197fc15af9b07974ae11e7c8aca3ed66ae6"
     },
     {
       "path": "web/src/views/SeatAuthorityView.jsx",
-      "bytes": 25216,
-      "sha256": "7c1125073d689fde4e3fef0f2af699a43fbd30083104445cf5a126ecea8c8e12"
+      "bytes": 28849,
+      "sha256": "dbb12d3e3bfb2ec8b7a637f2db7dd1b4164f4a2432b2ad26e55e555317c412b9"
     },
     {
       "path": "web/vite.config.mjs",

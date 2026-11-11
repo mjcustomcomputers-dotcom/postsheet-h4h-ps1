@@ -1,4 +1,6 @@
 import React, { useState, useMemo } from 'react';
+import SolarBatonHorizon from '../components/SolarBatonHorizon.jsx';
+import EpistemicStencil from '../components/EpistemicStencil.jsx';
 import {
   SKILLS_CATALOG,
   UTC_BUCKETS,
@@ -51,6 +53,8 @@ function LifecycleBadge({ lifecycle }) {
 }
 
 export default function DiscoverView({
+  theme = 'sbr-comfort',
+  motion = 'spring',
   eventId,
   onChangeEventId,
   onEnsureEvent,
@@ -72,6 +76,7 @@ export default function DiscoverView({
   onSendBuilderToArchitect,
   onSpawnShowcaseCrews,
   verifiedCrewMap,
+  customCrewMap,
   spawningDemo
 }) {
   const [directoryTab, setDirectoryTab] = useState('crews'); // 'crews' | 'builders' | 'both'
@@ -84,8 +89,8 @@ export default function DiscoverView({
   const [customEventDraft, setCustomEventDraft] = useState('');
 
   const enrichedCrews = useMemo(
-    () => board.map(t => deriveCrewProfile(t, verifiedCrewMap)),
-    [board, verifiedCrewMap]
+    () => board.map(t => deriveCrewProfile(t, verifiedCrewMap, customCrewMap, eventId)),
+    [board, verifiedCrewMap, customCrewMap, eventId]
   );
 
   const filteredCrews = useMemo(() => {
@@ -121,10 +126,15 @@ export default function DiscoverView({
     });
   }, [searchQuery, selectedSkill, utcFilter, contextFilter]);
 
-  const effectiveTotal = totalTeams !== null ? totalTeams : (board.length === pageSize ? (pageIndex + 2) * pageSize : pageIndex * pageSize + board.length);
+  const effectiveTotal =
+    totalTeams !== null
+      ? totalTeams
+      : board.length === pageSize
+        ? (pageIndex + 2) * pageSize
+        : pageIndex * pageSize + board.length;
   const totalPages = Math.max(1, Math.ceil(effectiveTotal / pageSize));
   const hasPrev = pageIndex > 0;
-  const hasNext = totalTeams !== null ? (pageIndex + 1) < totalPages : board.length === pageSize;
+  const hasNext = totalTeams !== null ? pageIndex + 1 < totalPages : board.length === pageSize;
 
   function clearFilters() {
     setSearchQuery('');
@@ -152,11 +162,22 @@ export default function DiscoverView({
 
   return (
     <section aria-labelledby="discover-heading" className="view-section">
+      {/* 60-FPS Solar Terminator & Firefly Baton-Pass Horizon */}
+      <SolarBatonHorizon
+        mode="discover"
+        theme={theme}
+        motion={motion}
+        crewsCount={filteredCrews.length}
+      />
+
       {/* View Banner & Live Telemetry Strip */}
       <div className="surface-card hero-strip">
         <div className="row-between wrap-gap">
           <div className="prose-measure">
-            <span className="eyebrow-tag">VIEW 1 · FAMILIAR HACK4HACK DIRECTORY + PURPOSE-FIRST INVERSION</span>
+            <div className="pill-row">
+              <span className="eyebrow-tag">VIEW 1 · FAMILIAR HACK4HACK DIRECTORY + PURPOSE-FIRST INVERSION</span>
+              <EpistemicStencil kind="SQLITE_AUTHORITY" compact />
+            </div>
             <h2 id="discover-heading" className="view-title">Discover Crews &amp; Complementary Builders</h2>
             <p className="muted-copy">
               Notice how full capacity (<code>ROSTER_CONFIRMED</code>) is explicitly separated from verified critical-path readiness (<code>PLAN_FEASIBLE_PENDING_ACCEPTANCE</code>). Inspect any live SQLite crew, test its deliverable fit in 1 click, or claim an open seat atomically.
@@ -167,7 +188,7 @@ export default function DiscoverView({
             <div className="metric-pill">
               <span className="metric-label">Board Read</span>
               <strong className="metric-value">
-                {boardLatencyMs !== null ? `${boardLatencyMs.toFixed(1)} ms` : '—'}
+                {boardLatencyMs !== null ? `${boardLatencyMs.toFixed(1)} ms` : '--'}
               </strong>
             </div>
             <div className="metric-pill">
@@ -179,7 +200,7 @@ export default function DiscoverView({
             <div className="metric-pill">
               <span className="metric-label">Committed Seats</span>
               <strong className="metric-value">
-                {totalMembers !== null ? totalMembers.toLocaleString() : '—'}
+                {totalMembers !== null ? totalMembers.toLocaleString() : '--'}
               </strong>
             </div>
             <div className="metric-pill">
@@ -221,7 +242,7 @@ export default function DiscoverView({
                 type="text"
                 value={customEventDraft}
                 onChange={e => setCustomEventDraft(e.target.value)}
-                placeholder="Custom eventId…"
+                placeholder="Custom eventId..."
                 aria-label="Custom event scope identifier"
                 className="compact-field"
               />
@@ -237,7 +258,7 @@ export default function DiscoverView({
               onClick={onSpawnShowcaseCrews}
               title="Creates 3 real open-seat crews in this event so Open Seats & 1 Final Seat Left filters have live SQLite rows"
             >
-              <PlusIcon /> {spawningDemo ? 'Spawning…' : 'Spawn Open Demo Crews'}
+              <PlusIcon /> {spawningDemo ? 'Spawning...' : 'Spawn Open Demo Crews'}
             </button>
 
             <button type="button" className="btn btn-ghost btn-compact" onClick={onRefreshBoard}>
@@ -256,7 +277,7 @@ export default function DiscoverView({
               type="search"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Search crew ID (e.g. crew-0042), leader, mission purpose, or builder…"
+              placeholder="Search crew ID (e.g. crew-0042), leader, mission purpose, or builder..."
               aria-label="Search crews and builders"
             />
           </div>
@@ -322,7 +343,7 @@ export default function DiscoverView({
             <span>Seat Availability</span>
             <select value={seatFilter} onChange={e => setSeatFilter(e.target.value)}>
               <option value="all">All Capacities</option>
-              <option value="open">Open Seats Available</option>
+              <option value="open">Open Seats Only</option>
               <option value="final-seat">1 Final Seat Left (Contention Alert)</option>
               <option value="full">Full Capacity (Check Deliverable Fit)</option>
             </select>
@@ -331,7 +352,7 @@ export default function DiscoverView({
           <label className="field-label inline-select">
             <span>
               Region / Cohort Tag{' '}
-              <em className="context-disclaimer">(Secondary Context — Never Gatekeeping)</em>
+              <em className="context-disclaimer">(Secondary Context - Never Gatekeeping)</em>
             </span>
             <select value={contextFilter} onChange={e => setContextFilter(e.target.value)}>
               {SECONDARY_CONTEXTS.map(c => (
@@ -353,7 +374,10 @@ export default function DiscoverView({
         <div className="surface-card inspector-banner" role="region" aria-label={`Authoritative roster for ${selectedTeam.teamId}`}>
           <div className="row-between wrap-gap">
             <div>
-              <span className="eyebrow-tag">AUTHORITATIVE LAYER-A SQLITE ROSTER PROJECTION</span>
+              <div className="pill-row">
+                <span className="eyebrow-tag">AUTHORITATIVE LAYER-A SQLITE ROSTER PROJECTION</span>
+                <EpistemicStencil kind="SQLITE_AUTHORITY" compact />
+              </div>
               <h3 className="card-subtitle">
                 Crew <code>{selectedTeam.teamId}</code> · {selectedTeam.members.length} / {selectedTeam.maxSize} Committed Members
               </h3>
@@ -468,23 +492,24 @@ export default function DiscoverView({
 
           {filteredCrews.length === 0 ? (
             <div className="surface-card empty-state-card">
-              <h3>No crews on this page match your active filters</h3>
-              <p className="muted-copy">
-                {seatFilter === 'open' || seatFilter === 'final-seat'
-                  ? `Note: All 2,000 baseline benchmark crews in seed-event are seeded at 5/5 full capacity (10,000 members). Click "Spawn Open Demo Crews" below to materialize live open-seat and 1-final-seat SQLite teams right now!`
-                  : 'Adjust your search query, skill filter, or navigate across pages.'}
+              <h3>No crews on this page match your active filter combination</h3>
+              <p className="muted-copy prose-measure">
+                {eventId === 'seed-event'
+                  ? 'In seed-event, all 2,000 baseline benchmark crews are seeded at 5 / 5 full capacity (10,000 committed seats). Spawn 3 live open-seat showcase crews onto Page 1 in 1 click, or reset active filters.'
+                  : 'Spawn 3 live open-seat SQLite showcase crews right now, or adjust your active filters.'}
               </p>
               <div className="pill-row">
-                {(seatFilter === 'open' || seatFilter === 'final-seat' || board.length === 0) && (
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    disabled={spawningDemo}
-                    onClick={onSpawnShowcaseCrews}
-                  >
-                    <PlusIcon /> {spawningDemo ? 'Creating Live SQLite Crews…' : 'Spawn 3 Open Showcase Crews Now'}
-                  </button>
-                )}
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={spawningDemo}
+                  onClick={() => {
+                    if (searchQuery.trim()) setSearchQuery('');
+                    onSpawnShowcaseCrews();
+                  }}
+                >
+                  <PlusIcon /> {spawningDemo ? 'Spawning Live SQLite Crews...' : 'Spawn 3 Open-Seat Showcase Crews Now'}
+                </button>
                 {activeFilterCount > 0 && (
                   <button type="button" className="btn btn-secondary" onClick={clearFilters}>
                     Reset Filters
@@ -503,14 +528,24 @@ export default function DiscoverView({
                         <h4 className="crew-id">{crew.teamId}</h4>
                         <span className="leader-tag">★ Leader: <code>{crew.leader}</code></span>
                       </div>
-                      {crew.batonPassReady && (
-                        <span className="baton-pill" title="Configured for asynchronous cross-timezone dependency handoff">
-                          Async Baton-Pass
-                        </span>
-                      )}
+                      <div className="pill-row">
+                        {crew.isCustomMission && (
+                          <span className="status-chip chip-ok" title="Judge-authored custom mission overlay">
+                            Custom Mission
+                          </span>
+                        )}
+                        {crew.batonPassReady && (
+                          <span className="baton-pill" title="Configured for asynchronous cross-timezone dependency handoff">
+                            Async Baton-Pass
+                          </span>
+                        )}
+                      </div>
                     </div>
 
-                    <LifecycleBadge lifecycle={crew.lifecycle} />
+                    <div className="pill-row">
+                      <LifecycleBadge lifecycle={crew.lifecycle} />
+                      <EpistemicStencil kind="SQLITE_AUTHORITY" compact />
+                    </div>
                     <p className="lifecycle-caption">{crew.lifecycleSub}</p>
 
                     <p className="crew-mission">{crew.mission}</p>
@@ -597,9 +632,10 @@ export default function DiscoverView({
               Complementary Builders &amp; Async UTC Relay Pool
               <span className="count-pill">{filteredBuilders.length} builders</span>
             </h3>
-            <span className="muted-copy small-copy">
-              <code>✓ skill</code> = verified evidence · <code>? skill</code> = provisional wildcard (offer micro-work-sample)
-            </span>
+            <div className="pill-row small-copy muted-copy">
+              <span><code>✓ skill</code> = verified · <code>? skill</code> = provisional</span>
+              <EpistemicStencil kind="VOI_PROVISIONAL" compact />
+            </div>
           </div>
 
           <div className="crew-grid">

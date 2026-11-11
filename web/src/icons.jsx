@@ -294,3 +294,64 @@ export function LayersIcon({ size = 16, className = '' }) {
     </svg>
   );
 }
+
+export function SunIcon({ size = 16, className = '' }) {
+  return (
+    <svg {...baseProps(size, className)}>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2" />
+      <path d="M12 20v2" />
+      <path d="m4.93 4.93 1.41 1.41" />
+      <path d="m17.66 17.66 1.41 1.41" />
+      <path d="M2 12h2" />
+      <path d="M20 12h2" />
+      <path d="m6.34 17.66-1.41 1.41" />
+      <path d="m19.07 4.93-1.41 1.41" />
+    </svg>
+  );
+}
+
+export function FileTextIcon({ size = 16, className = '' }) {
+  return (
+    <svg {...baseProps(size, className)}>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="16" y1="13" x2="8" y2="13" />
+      <line x1="16" y1="17" x2="8" y2="17" />
+      <line x1="10" y1="9" x2="8" y2="9" />
+    </svg>
+  );
+}
+
+export function ColumnsIcon({ size = 16, className = '' }) {
+  return (
+    <svg {...baseProps(size, className)}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <line x1="9.5" y1="4" x2="9.5" y2="20" />
+      <line x1="15.5" y1="4" x2="15.5" y2="20" />
+    </svg>
+  );
+}
+
+export function PaletteIcon({ size = 16, className = '' }) {
+  return (
+    <svg {...baseProps(size, className)}>
+      <circle cx="13.5" cy="6.5" r="0.8" fill="currentColor" />
+      <circle cx="17.5" cy="10.5" r="0.8" fill="currentColor" />
+      <circle cx="8.5" cy="7.5" r="0.8" fill="currentColor" />
+      <circle cx="6.5" cy="12.5" r="0.8" fill="currentColor" />
+      <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.65-.75 1.65-1.69 0-.43-.18-.84-.44-1.13-.29-.29-.44-.65-.44-1.12a1.67 1.67 0 0 1 1.67-1.67h2c3.05 0 5.56-2.5 5.56-5.56C22 6.05 17.5 2 12 2Z" />
+    </svg>
+  );
+}
+
+export function SplitWipeIcon({ size = 16, className = '' }) {
+  return (
+    <svg {...baseProps(size, className)}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <line x1="12" y1="2" x2="12" y2="22" />
+      <polyline points="9 10 7 12 9 14" />
+      <polyline points="15 10 17 12 15 14" />
+    </svg>
+  );
+}

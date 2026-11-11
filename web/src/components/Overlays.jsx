@@ -18,7 +18,8 @@ import {
   ZapIcon,
   UserIcon,
   SearchIcon,
-  ArrowRightIcon
+  ArrowRightIcon,
+  AlertTriangleIcon
 } from '../icons.jsx';
 
 export function WhyPurposeFirstModal({ open, onClose, onJumpScenario, onNavigate }) {
@@ -26,11 +27,11 @@ export function WhyPurposeFirstModal({ open, onClose, onJumpScenario, onNavigate
     <ModalDialog
       open={open}
       onClose={onClose}
-      eyebrow="POST SHEET × SYNCHRONICITY · CORE THESIS"
+      eyebrow="POST SHEET x SYNCHRONICITY · CORE THESIS"
       title="Why Purpose First? Inverting Hackathon Team Formation"
     >
       <blockquote className="thesis-quote">
-        “Start from what you are building, prove critical-path ability and UTC handoffs, and commit scarce seats atomically.”
+        "Start from what you are building, prove critical-path ability and UTC handoffs, and commit scarce seats atomically."
       </blockquote>
 
       <div className="comparison-grid">
@@ -97,6 +98,7 @@ export function AuthAccountModal({
   onClose,
   actorId,
   token,
+  authPromptMessage,
   onSwitchPersona,
   onAccountAuth,
   onLogout
@@ -109,6 +111,15 @@ export function AuthAccountModal({
   const [localError, setLocalError] = useState('');
   const [busy, setBusy] = useState(false);
   const userInputRef = useRef(null);
+
+  useEffect(() => {
+    if (open) {
+      setLocalError('');
+      if (authPromptMessage && !token) {
+        setMode('register');
+      }
+    }
+  }, [open, authPromptMessage, token]);
 
   function toggleSkill(sk) {
     setSelectedSkills(prev => (prev.includes(sk) ? prev.filter(x => x !== sk) : [...prev, sk]));
@@ -142,6 +153,23 @@ export function AuthAccountModal({
     }
   }
 
+  async function handleQuickPersona(personaId) {
+    setLocalError('');
+    setBusy(true);
+    try {
+      const ok = await onSwitchPersona(personaId);
+      if (ok !== false) {
+        onClose();
+      } else {
+        setLocalError('Demo personas are disabled (PS1_DEMO_AUTH=0). Register or sign in with salted scrypt below.');
+      }
+    } catch (err) {
+      setLocalError(err.message || 'Demo persona switch failed. Register a salted scrypt account below.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <ModalDialog
       open={open}
@@ -150,6 +178,16 @@ export function AuthAccountModal({
       eyebrow="LAYER-A BEARER HMAC + SCRYPT KDF"
       title="Judge Personas & Verified Account Session"
     >
+      {authPromptMessage && (
+        <div role="alert" className="inline-alert tone-warn">
+          <div className="pill-row">
+            <AlertTriangleIcon size={16} />
+            <strong>Queued Action Ready for Replay:</strong>
+          </div>
+          <p className="small-top">{authPromptMessage}</p>
+        </div>
+      )}
+
       <div className="subcard">
         <div className="row-between wrap-gap">
           <div>
@@ -169,7 +207,7 @@ export function AuthAccountModal({
             </button>
           )}
         </div>
-        <p className="muted-copy">
+        <p className="muted-copy small-top">
           All Layer-A mutations bind identity strictly from the verified HMAC-SHA256 Bearer subject (client-supplied <code>actorId</code> fields are ignored). Logout hashes and revokes the token in SQLite <code>ps1_revoked_tokens</code>.
         </p>
       </div>
@@ -186,11 +224,9 @@ export function AuthAccountModal({
             <button
               key={p.id}
               type="button"
-              className={`btn ${actorId === p.id ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={async () => {
-                await onSwitchPersona(p.id);
-                onClose();
-              }}
+              disabled={busy}
+              className={`btn ${actorId === p.id && token ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => handleQuickPersona(p.id)}
             >
               <UserIcon /> {p.id} <span className="btn-sub">{p.desc}</span>
             </button>
@@ -292,7 +328,11 @@ export function AuthAccountModal({
           <div className="row-end">
             <button type="submit" className="btn btn-primary" disabled={busy}>
               <ShieldCheckIcon />
-              {busy ? 'Verifying…' : mode === 'register' ? 'Create Salted scrypt Account' : 'Sign In with scrypt'}
+              {busy
+                ? 'Verifying...'
+                : mode === 'register'
+                  ? 'Create Salted scrypt Account & Continue'
+                  : 'Sign In with scrypt & Continue'}
             </button>
           </div>
         </form>
@@ -315,7 +355,7 @@ export function AccessibilityStudioDrawer({ open, onClose, settings, onChange })
       title="Accessibility & Calm-FOV Studio"
     >
       <p className="muted-copy">
-        Calibrate luminance, translucency, field-of-view scale, layout density, motion physics, and macular reading width. Persisted automatically in <code>localStorage</code> and honoring OS accessibility media queries.
+        Calibrate luminance, optical header rim vs. matte reading surfaces, field-of-view scale, panoramic workbench density, motion physics, and macular reading width. Persisted in <code>localStorage</code> and honoring OS media queries.
       </p>
 
       <div className="section-block">
@@ -370,7 +410,7 @@ export function AccessibilityStudioDrawer({ open, onClose, settings, onChange })
       </div>
 
       <div className="section-block">
-        <h3>3. Information Density &amp; Surface Architecture</h3>
+        <h3>3. Information Density &amp; Workbench Architecture</h3>
         <div className="option-pills-grid" role="radiogroup" aria-label="Information density and layout">
           {DENSITY_OPTIONS.map(d => {
             const active = settings.density === d.id;
@@ -492,7 +532,7 @@ export function CommandPaletteModal({ open, onClose, commands }) {
       variant="palette"
       initialFocusRef={inputRef}
       eyebrow="KEYBOARD COMMAND PALETTE (CTRL+K OR /)"
-      title="Jump to Any View, Scenario, Persona, or Proof"
+      title="Jump to Any View, Scenario, Theme, Panorama, or Proof"
     >
       <div className="palette-search-wrap">
         <SearchIcon size={18} className="palette-search-icon" />
@@ -505,7 +545,7 @@ export function CommandPaletteModal({ open, onClose, commands }) {
             setActiveIndex(0);
           }}
           onKeyDown={handleKeyDown}
-          placeholder="Type a command: baton, hall, omega, race 50, wan drop, high contrast…"
+          placeholder="Type a command: baton, hall, panorama, charter, race 50, sbr comfort..."
           aria-label="Filter platform commands"
           className="palette-input"
         />
@@ -538,7 +578,7 @@ export function CommandPaletteModal({ open, onClose, commands }) {
           );
         })}
         {filtered.length === 0 && (
-          <p className="muted-copy empty-pad">No commands match “{query}”. Try “Scenario”, “Race”, or “Theme”.</p>
+          <p className="muted-copy empty-pad">No commands match "{query}". Try "Scenario", "Panorama", or "Theme".</p>
         )}
       </div>
     </ModalDialog>

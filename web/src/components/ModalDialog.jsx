@@ -81,7 +81,7 @@ export default function ModalDialog({
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className={`overlay-surface surface-${variant}`}
+        className={`overlay-surface surface-${variant}${variant === 'palette' ? ' command-palette' : ''}`}
       >
         <div className="overlay-header">
           <div>

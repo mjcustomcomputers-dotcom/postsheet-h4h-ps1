@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { WALKTHROUGH_STEPS } from '../presets-and-catalog.js';
+import EpistemicStencil from '../components/EpistemicStencil.jsx';
 import {
   ZapIcon,
   AwardIcon,
@@ -39,7 +40,10 @@ export default function ProofArenaView({
       <div className="surface-card hero-strip">
         <div className="row-between wrap-gap">
           <div className="prose-measure">
-            <span className="eyebrow-tag">VIEW 4 · SERIALIZABLE RACE ORACLE &amp; 10,000-USER BENCHMARK EVIDENCE</span>
+            <div className="pill-row">
+              <span className="eyebrow-tag">VIEW 4 · SERIALIZABLE RACE ORACLE &amp; 10,000-USER BENCHMARK EVIDENCE</span>
+              <EpistemicStencil kind="SQLITE_AUTHORITY" compact />
+            </div>
             <h2 id="arena-heading" className="view-title">Concurrency &amp; Scale Proof Arena</h2>
             <p className="muted-copy">
               Verify atomic final-seat admission under a 50-way burst race inside SQLite <code>BEGIN IMMEDIATE</code> WAL, probe live board latency, and step through the 5-minute Hack4Hack judge checklist.
@@ -53,7 +57,7 @@ export default function ProofArenaView({
               disabled={probingLatency}
               onClick={onRunLatencyProbe}
             >
-              <RefreshIcon /> {probingLatency ? 'Probing…' : 'Probe Live Board Latency (5x)'}
+              <RefreshIcon /> {probingLatency ? 'Probing...' : 'Probe Live Board Latency (5x)'}
             </button>
             <button
               type="button"
@@ -61,7 +65,7 @@ export default function ProofArenaView({
               disabled={runningRace}
               onClick={onRun50WayRace}
             >
-              <ZapIcon /> {runningRace ? 'Racing 50 Claimants…' : 'Fire 50 Simultaneous Final-Seat Claimants'}
+              <ZapIcon /> {runningRace ? 'Racing 50 Claimants...' : 'Fire 50 Simultaneous Final-Seat Claimants'}
             </button>
           </div>
         </div>
@@ -100,7 +104,7 @@ export default function ProofArenaView({
             </div>
             <div className="race-kpi">
               <span className="metric-label">Rejected Contenders (HTTP 409)</span>
-              <strong>{raceReceipt.rejected} × TEAM_FULL</strong>
+              <strong>{raceReceipt.rejected} x TEAM_FULL</strong>
             </div>
             <div className="race-kpi">
               <span className="metric-label">Final Crew Occupancy</span>
@@ -113,7 +117,7 @@ export default function ProofArenaView({
           </div>
         ) : (
           <p className="muted-copy top-gap-xs">
-            Click <strong>“Fire 50 Simultaneous Final-Seat Claimants”</strong> above to mint 50 valid single-use invites on a 2-seat team (where <code>race-leader</code> already holds seat 1) and race 50 claimants concurrently for the single remaining seat.
+            Click <strong>"Fire 50 Simultaneous Final-Seat Claimants"</strong> above to mint 50 valid single-use invites on a 2-seat team (where <code>race-leader</code> already holds seat 1) and race 50 claimants concurrently for the single remaining seat.
           </p>
         )}
 
@@ -133,7 +137,7 @@ export default function ProofArenaView({
             >
               <span className="contender-num">#{String(c.index).padStart(2, '0')}</span>
               <strong className="contender-tag">
-                {c.state === 'winner' ? '★ 200 WIN' : c.state === 'rejected' ? '✕ 409 FULL' : 'READY'}
+                {c.state === 'winner' ? '★ 200 WIN' : c.state === 'rejected' ? 'x 409 FULL' : 'READY'}
               </strong>
             </div>
           ))}
@@ -182,7 +186,7 @@ export default function ProofArenaView({
             className={`tab-pill ${evidenceTab === 'walkthrough' ? 'active' : ''}`}
             onClick={() => setEvidenceTab('walkthrough')}
           >
-            5-Minute Judge Walkthrough (0:00 – 5:00)
+            5-Minute Judge Walkthrough (0:00 - 5:00)
           </button>
         </div>
 
@@ -194,7 +198,7 @@ export default function ProofArenaView({
                 <span className="eyebrow-tag">EXACT FLOAT64 100-CLIENT P95</span>
                 <strong className="giant-stat">36.68 ms</strong>
                 <p className="muted-copy small-copy">
-                  5.4× faster than the 200 ms SLA across 16,983 requests in 5.0s (<code>p50 = 28.29 ms</code>, <code>p90 = 34.31 ms</code>, <code>0</code> errors).
+                  5.4x faster than the 200 ms SLA across 16,983 requests in 5.0s (<code>p50 = 28.29 ms</code>, <code>p90 = 34.31 ms</code>, <code>0</code> errors).
                 </p>
               </div>
 
@@ -236,8 +240,18 @@ export default function ProofArenaView({
                 <thead>
                   <tr>
                     <th scope="col">Invariant / Responsibility</th>
-                    <th scope="col"><DatabaseIcon size={14} /> Layer A: Serialized SQLite Authority</th>
-                    <th scope="col"><ShieldCheckIcon size={14} /> Layer B: Encrypted Peer Continuity</th>
+                    <th scope="col">
+                      <span className="pill-row">
+                        <DatabaseIcon size={14} /> Layer A: Serialized SQLite Authority
+                        <EpistemicStencil kind="SQLITE_AUTHORITY" compact />
+                      </span>
+                    </th>
+                    <th scope="col">
+                      <span className="pill-row">
+                        <ShieldCheckIcon size={14} /> Layer B: Encrypted Peer Continuity
+                        <EpistemicStencil kind="PEER_CIPHERTEXT_ONLY" compact />
+                      </span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
