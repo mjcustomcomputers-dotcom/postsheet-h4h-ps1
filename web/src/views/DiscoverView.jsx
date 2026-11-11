@@ -243,8 +243,28 @@ export default function DiscoverView({
     () => describePlainPlanVerdict(plan, tasks, partialPreview),
     [plan, tasks, partialPreview]
   );
-  const priyaBuilder = useMemo(() => findBuilderById('priya'), []);
-  const priyaInCrew = priyaBuilder ? isBuilderInActiveCrew(priyaBuilder, teamPeople) : false;
+  const topRecEntry = useMemo(
+    () =>
+      (recs?.recommendations || []).find(
+        r => r.restoresFeasibility || r.upgradesToConditional
+      ) || null,
+    [recs]
+  );
+  const topRecBuilder = useMemo(
+    () => (topRecEntry ? findBuilderById(topRecEntry.candidateId, [candidates, teamPeople]) : null),
+    [topRecEntry, candidates, teamPeople]
+  );
+  const topRecInCrew = topRecBuilder ? isBuilderInActiveCrew(topRecBuilder, teamPeople) : false;
+  const topRecShortName = topRecBuilder
+    ? (topRecBuilder.displayName || topRecBuilder.id).split(' ')[0]
+    : '';
+  const topRecShortTz = topRecBuilder
+    ? (topRecBuilder.timezone || '').split('·')[0].trim()
+    : '';
+  const mateoInCrew = useMemo(
+    () => (teamPeople || []).some(p => normalizeBuilderId(p?.plannerId || p?.id) === 'mateo'),
+    [teamPeople]
+  );
 
   const crewsToDisplay = directoryTab === 'featured' ? featuredCrews : filteredCrews;
 
@@ -1055,19 +1075,35 @@ export default function DiscoverView({
                       </button>
                     );
                   })}
-                  {!priyaInCrew && priyaBuilder && activeScenarioKey === 'baton' && (
+                  {topRecBuilder && !topRecInCrew && plan?.status !== 'FEASIBLE_WITNESS' && (
                     <button
                       type="button"
+                      data-link-id={topRecBuilder.id}
                       className="dock-member-pill pill-suggest"
                       onClick={() => {
                         onTriggerPulse?.();
-                        onToggleBuilderInCrew(priyaBuilder);
+                        onToggleBuilderInCrew(topRecBuilder);
                       }}
                     >
-                      + Try Priya (UTC+5:30)
+                      + Try {topRecShortName} ({topRecShortTz})
                     </button>
                   )}
                 </div>
+
+                {mateoInCrew && activeScenarioKey === 'baton' && onSelectScenario && (
+                  <div className="subcard top-gap-xs">
+                    <div className="tiny-copy muted-copy">
+                      <strong>Mateo covers Database (UTC-5):</strong> Example 1 has no database task. See Mateo solve Aurora's overload:
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-compact top-gap-xs"
+                      onClick={() => onSelectScenario('hall')}
+                    >
+                      Switch to Example 2: Double-booked database &amp; API -&gt;
+                    </button>
+                  </div>
+                )}
               </div>
 
               <SolarBatonHorizon
@@ -1165,18 +1201,18 @@ export default function DiscoverView({
                   </>
                 ) : (
                   <>
-                    {priyaBuilder && !priyaInCrew && activeScenarioKey === 'baton' ? (
+                    {topRecBuilder && !topRecInCrew ? (
                       <button
                         type="button"
                         className="btn btn-primary full-width"
                         onClick={() => {
                           onTriggerPulse?.();
-                          onToggleBuilderInCrew(priyaBuilder);
+                          onToggleBuilderInCrew(topRecBuilder);
                         }}
                       >
-                        <PlusIcon size={15} /> Try Priya (UTC+5:30) in plan
+                        <PlusIcon size={15} /> Try {topRecShortName} in plan
                       </button>
-                    ) : plan?.frontier?.voiQuestion && onVerifyPersonSkill ? (
+                    ) : plan?.status !== 'FEASIBLE_WITNESS' && plan?.frontier?.voiQuestion && onVerifyPersonSkill ? (
                       <button
                         type="button"
                         className="btn btn-primary full-width"

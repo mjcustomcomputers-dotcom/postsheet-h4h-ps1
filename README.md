@@ -11,14 +11,14 @@ A race-safe, goal-conditioned team formation engine built on Node.js 24 (`node:s
     # 2. Seed 10,000 users / 2,000 teams & launch server on http://127.0.0.1:8788
     bash scripts/start-local.sh
 
-Open `http://127.0.0.1:8788` in your browser. Use the **Acting as: Aurora** menu (`leader-aurora`, `builder-kai`, `builder-priya`, or account login/registration) and **Display & A11y** controls directly in the top bar.
+Open `http://127.0.0.1:8788` in your browser. Use the **Acting as: Aurora** menu (`leader-aurora`, `builder-kai`, `builder-priya`, `relay-mateo`, or account login/registration) and **Display & A11y** controls directly in the top bar.
 
-## Run Complete Verification Suite
+## Run Complete Verification Suite (102 Automated Checks = 97 Suite Assertions + 5 Load-Gate Checks)
 
-    # Baseline (28 API + 14 Planner + SSE) -> 50-Way Final-Seat Race -> 12-Query Python SQLite Oracle
+    # 59 Gate Assertions: Baseline (28 API + 14 Planner + 1 SSE) -> 4-Check 50-Way Race -> 12-Query Python SQLite Oracle
     bash scripts/run-gates.sh scripts/baseline.sh scripts/adversarial.sh scripts/independent.sh
 
-    # Layer-B AES-GCM/P-256 Crypto, Durable Replay, Peer HTTP Relay, React Retry & Synchronicity R5 Suite
+    # 38 Layer-B AES-GCM/P-256 Crypto, Durable Replay, Peer HTTP Relay, React Retry & Synchronicity R5 Assertions (85 total Node subtests across tests/*.test.mjs)
     node --test tests/peer-envelope.test.mjs tests/peer-receipts.test.mjs tests/peer-relay.test.mjs tests/react-operation.test.mjs tests/synchronicity-r5.test.mjs
 
 ## Key Submission Artifacts

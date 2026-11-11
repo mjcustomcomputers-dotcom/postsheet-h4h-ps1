@@ -230,7 +230,11 @@ export default function App() {
   const [inviteCode, setInviteCode] = useState('');
   const [issuedInvite, setIssuedInvite] = useState(null);
   const [joining, setJoining] = useState(false);
+  const [forwardingPeer, setForwardingPeer] = useState(false);
   const joiningLock = useRef(false);
+  const lastClaimRef = useRef(null);
+  const [hasLastClaim, setHasLastClaim] = useState(false);
+  const [highlightRelayWalkthrough, setHighlightRelayWalkthrough] = useState(false);
   const [wanOffline, setWanOffline] = useState(false);
   const [queuedClaim, setQueuedClaim] = useState(null);
   const [relayedReceipt, setRelayedReceipt] = useState(null);
@@ -1491,24 +1495,117 @@ export default function App() {
     [eventId, runProtectedAction, sendGetAuth, notifyToast]
   );
 
+  async function mintDemoSession(personaId, targetEv = eventId, maxSz = eventMaxSize || 5) {
+    return readApiJson(
+      await fetch('/api/auth/demo', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ actorId: personaId, eventId: targetEv, maxSize: maxSz })
+      })
+    );
+  }
+
+  function makeUniqueTag() {
+    return `${String(Date.now()).slice(-4)}${Math.random().toString(36).slice(2, 4)}`;
+  }
+
+  async function createCleanTeamWithLead(desiredTid, initialTok, initialActor) {
+    const baseTid =
+      String(desiredTid || 'crew-alpha')
+        .replace(/[^A-Za-z0-9_.:@-]/g, '')
+        .trim() || 'crew-alpha';
+    const tag = makeUniqueTag();
+    let activeTok = await ensureToken(initialTok);
+    let activeLead = initialActor || actorRef.current || 'leader-aurora';
+    let targetTid = baseTid;
+
+    try {
+      await sendPost('/api/events', { eventId, maxSize: eventMaxSize || 5 }, activeTok);
+    } catch {
+      // Event already exists
+    }
+
+    // Pre-check if baseTid already exists in this event
+    try {
+      const checkRes = await fetch(
+        `/api/events/${encodeURIComponent(eventId)}/teams/${encodeURIComponent(targetTid)}`,
+        { cache: 'no-store' }
+      );
+      if (checkRes.ok) {
+        targetTid = `${baseTid}-${tag}`;
+      }
+    } catch {
+      // Proceed to creation attempt
+    }
+
+    const switchLeadAndRetry = async tidToCreate => {
+      const freshLead = await mintDemoSession(`aurora-lead-${tag}`, eventId, eventMaxSize || 5);
+      signedOutManuallyRef.current = false;
+      activeTok = freshLead.token;
+      activeLead = freshLead.actorId;
+      tokenRef.current = activeTok;
+      actorRef.current = activeLead;
+      setToken(activeTok);
+      setActorId(activeLead);
+      return sendPost('/api/teams', { eventId, teamId: tidToCreate }, activeTok);
+    };
+
+    let createdRes;
+    try {
+      createdRes = await sendPost('/api/teams', { eventId, teamId: targetTid }, activeTok);
+    } catch (err1) {
+      const msg1 = String(err1?.code || err1?.message || '');
+      if (msg1.includes('ONE_TEAM_PER_EVENT')) {
+        try {
+          createdRes = await switchLeadAndRetry(targetTid);
+        } catch (err2) {
+          // Global SQLite PK collision across events on teams.id -> suffix teamId
+          targetTid = `${baseTid}-${tag}`;
+          createdRes = await sendPost('/api/teams', { eventId, teamId: targetTid }, activeTok);
+        }
+      } else if (err1?.status === 500 || msg1.includes('INTERNAL_ERROR') || msg1.includes('UNIQUE') || msg1.includes('EXIST')) {
+        targetTid = `${baseTid}-${tag}`;
+        try {
+          createdRes = await sendPost('/api/teams', { eventId, teamId: targetTid }, activeTok);
+        } catch (err3) {
+          if (String(err3?.code || err3?.message || '').includes('ONE_TEAM_PER_EVENT')) {
+            createdRes = await switchLeadAndRetry(targetTid);
+          } else {
+            throw err3;
+          }
+        }
+      } else {
+        throw err1;
+      }
+    }
+
+    const finalTid = createdRes?.teamId || targetTid;
+    setTeamId(finalTid);
+    return { createdTeamId: finalTid, activeTok, activeLead };
+  }
+
   async function handleCreateTeam(customMeta = {}) {
     try {
       await runProtectedAction(`Create Team (${teamId})`, async (freshTok, freshActor) => {
-        const res = await sendPost('/api/teams', { eventId, teamId }, freshTok);
+        const { createdTeamId, activeTok, activeLead } = await createCleanTeamWithLead(
+          teamId,
+          freshTok,
+          freshActor
+        );
         if (customMeta && (customMeta.mission || customMeta.skills)) {
-          const nextCustom = saveCustomCrewOverlayEntry(eventId, res.teamId || teamId, {
+          const nextCustom = saveCustomCrewOverlayEntry(eventId, createdTeamId, {
             mission: customMeta.mission,
             skills: customMeta.skills
           });
           setCustomCrewMap(nextCustom);
         }
         setStatusMessage(
-          `Confirmed by server: created team '${res.teamId}' led by '${freshActor || actorRef.current}'.`
+          `Confirmed by server: created team '${createdTeamId}' led by '${activeLead}'.`
         );
-        notifyToast(`Confirmed by server: created team '${res.teamId}'`, 'ok');
+        notifyToast(`Confirmed by server: created team '${createdTeamId}'`, 'ok');
         await refreshBoard();
-        await inspectTeam(teamId, true);
-        await loadAudit(freshTok);
+        await inspectTeam(createdTeamId, true);
+        await loadAudit(activeTok);
       });
     } catch (e) {
       setStatusMessage(`Create team: ${e.message}`);
@@ -1520,17 +1617,206 @@ export default function App() {
     try {
       await runProtectedAction(`Create Invite (${teamId})`, async (freshTok, freshActor) => {
         const expiresAt = Date.now() + 600000;
-        const res = await sendPost('/api/invitations', { eventId, teamId, expiresAt }, freshTok);
-        const activeLead = freshActor || actorRef.current || actorId || 'leader';
-        setIssuedInvite({ ...res, teamId, eventId, issuedBy: activeLead });
+        let targetTid =
+          String(teamId || 'crew-alpha')
+            .replace(/[^A-Za-z0-9_.:@-]/g, '')
+            .trim() || 'crew-alpha';
+        let activeTok = await ensureToken(freshTok);
+        let activeLead = freshActor || actorRef.current || actorId || 'leader';
+        let res;
+
+        try {
+          res = await sendPost('/api/invitations', { eventId, teamId: targetTid, expiresAt }, activeTok);
+        } catch (invErr) {
+          const codeStr = String(invErr?.code || invErr?.message || '');
+          if (invErr?.status === 404 || codeStr.includes('NO_TEAM')) {
+            const created = await createCleanTeamWithLead(targetTid, activeTok, activeLead);
+            targetTid = created.createdTeamId;
+            activeTok = created.activeTok;
+            activeLead = created.activeLead;
+            res = await sendPost('/api/invitations', { eventId, teamId: targetTid, expiresAt }, activeTok);
+          } else if (invErr?.status === 403 || codeStr.includes('LEADER_REQUIRED')) {
+            const detail = await readApiJson(
+              await fetch(
+                `/api/events/${encodeURIComponent(eventId)}/teams/${encodeURIComponent(targetTid)}`,
+                { cache: 'no-store' }
+              )
+            );
+            if (!signedOutManuallyRef.current && detail?.leader) {
+              try {
+                const leadSession = await mintDemoSession(detail.leader, eventId, detail.maxSize || 5);
+                activeTok = leadSession.token;
+                activeLead = leadSession.actorId;
+                tokenRef.current = activeTok;
+                actorRef.current = activeLead;
+                setToken(activeTok);
+                setActorId(activeLead);
+                res = await sendPost('/api/invitations', { eventId, teamId: targetTid, expiresAt }, activeTok);
+              } catch {
+                setAuthPromptMessage(
+                  `Sign in as team lead '${detail.leader}' to create a single-use invite for '${targetTid}'.`
+                );
+                setAuthModalOpen(true);
+                throw invErr;
+              }
+            } else {
+              throw invErr;
+            }
+          } else {
+            throw invErr;
+          }
+        }
+
+        setTeamId(targetTid);
+        setIssuedInvite({ ...res, teamId: targetTid, eventId, issuedBy: activeLead });
         setInviteCode(res.code);
-        setStatusMessage(`Confirmed by server: created single-use invite for '${teamId}' (expires in 10m).`);
-        notifyToast(`Created single-use invite for '${teamId}'.`, 'ok');
-        await loadAudit(freshTok);
+        setStatusMessage(`Confirmed by server: created single-use invite for '${targetTid}' (expires in 10m).`);
+        notifyToast(`Created single-use invite for '${targetTid}'.`, 'ok');
+        await refreshBoard();
+        await inspectTeam(targetTid, true);
+        await loadAudit(activeTok);
       });
     } catch (e) {
       setStatusMessage(`Invite: ${e.message}`);
       notifyToast(`Could not create invite: ${e.message}`, 'err');
+    }
+  }
+
+  async function handleRequestInviteAndJoinOpenSpot() {
+    if (joiningLock.current) return;
+    joiningLock.current = true;
+    setJoining(true);
+    try {
+      await runProtectedAction(`Join Open Spot (${teamId})`, async (freshTok, freshActor) => {
+        const targetTid = selectedTeam?.teamId || teamId;
+        const detail = await readApiJson(
+          await fetch(
+            `/api/events/${encodeURIComponent(eventId)}/teams/${encodeURIComponent(targetTid)}`,
+            { cache: 'no-store' }
+          )
+        );
+        if ((detail.members?.length || 0) >= (detail.maxSize || 5)) {
+          throw new Error('TEAM_FULL');
+        }
+
+        const tag = makeUniqueTag();
+        let leadTok = await ensureToken(freshTok);
+        if (detail.leader && detail.leader !== (freshActor || actorRef.current)) {
+          try {
+            const leadSession = await mintDemoSession(detail.leader, eventId, detail.maxSize || 5);
+            leadTok = leadSession.token;
+          } catch {
+            // Fall back to current authenticated session if demo auth is disabled
+          }
+        }
+
+        const inv = await sendPost(
+          '/api/invitations',
+          { eventId, teamId: targetTid, expiresAt: Date.now() + 600000 },
+          leadTok
+        );
+        setIssuedInvite({ ...inv, teamId: targetTid, eventId, issuedBy: detail.leader });
+        setInviteCode(inv.code);
+
+        let claimantTok = await ensureToken(freshTok);
+        let claimantActor = freshActor || actorRef.current || '';
+        const alreadyInSelected =
+          !claimantActor ||
+          claimantActor === detail.leader ||
+          (detail.members || []).some(m => m.userId === claimantActor);
+
+        if (alreadyInSelected) {
+          const candSession = await mintDemoSession(`priya-open-${tag}`, eventId, detail.maxSize || 5);
+          signedOutManuallyRef.current = false;
+          claimantTok = candSession.token;
+          claimantActor = candSession.actorId;
+          tokenRef.current = claimantTok;
+          actorRef.current = claimantActor;
+          setToken(claimantTok);
+          setActorId(claimantActor);
+        }
+
+        const operation = await getOrCreateClaimOperation({
+          eventId,
+          teamId: targetTid,
+          code: inv.code,
+          store: sessionStorage
+        });
+
+        if (wanOffline) {
+          const armed = {
+            eventId,
+            teamId: targetTid,
+            code: inv.code,
+            opId: operation.opId,
+            key: operation.key,
+            actorId: claimantActor,
+            claimantToken: claimantTok
+          };
+          setQueuedClaim(armed);
+          lastClaimRef.current = armed;
+          setHasLastClaim(true);
+          setRelayedReceipt(null);
+          setReplayReceipt(null);
+          setStatusMessage(`Saved join request on device (${claimantActor} -> ${targetTid}). Click Send through Mateo.`);
+          notifyToast('Saved join request on device! Click Send through Mateo.', 'warn');
+          return;
+        }
+
+        let result;
+        try {
+          result = await sendPost(
+            '/api/invitations/claim',
+            { eventId, teamId: targetTid, code: inv.code, opId: operation.opId },
+            claimantTok
+          );
+        } catch (claimErr) {
+          if (String(claimErr?.code || claimErr?.message || '').includes('ONE_TEAM_PER_EVENT')) {
+            const candSession = await mintDemoSession(`priya-open-${tag}`, eventId, detail.maxSize || 5);
+            signedOutManuallyRef.current = false;
+            claimantTok = candSession.token;
+            claimantActor = candSession.actorId;
+            tokenRef.current = claimantTok;
+            actorRef.current = claimantActor;
+            setToken(claimantTok);
+            setActorId(claimantActor);
+            result = await sendPost(
+              '/api/invitations/claim',
+              { eventId, teamId: targetTid, code: inv.code, opId: operation.opId },
+              claimantTok
+            );
+          } else {
+            throw claimErr;
+          }
+        }
+
+        if (result.status === 'COMMITTED') {
+          finishClaimOperation(sessionStorage, operation.key);
+        }
+        const savedClaim = {
+          eventId,
+          teamId: targetTid,
+          code: inv.code,
+          opId: operation.opId,
+          key: operation.key,
+          actorId: result.actorId || claimantActor,
+          claimantToken: claimantTok
+        };
+        lastClaimRef.current = savedClaim;
+        setHasLastClaim(true);
+        setQueuedClaim(null);
+        setStatusMessage(`Confirmed by server: '${result.actorId || claimantActor}' joined '${targetTid}'.`);
+        notifyToast(`Confirmed by server: '${result.actorId || claimantActor}' joined '${targetTid}'!`, 'ok');
+        await refreshBoard();
+        await inspectTeam(targetTid, true);
+        await loadAudit(claimantTok);
+      });
+    } catch (e) {
+      setStatusMessage(`Open-spot join: ${e.message}`);
+      notifyToast(`Could not join open spot: ${e.message}`, 'err');
+    } finally {
+      joiningLock.current = false;
+      setJoining(false);
     }
   }
 
@@ -1539,19 +1825,13 @@ export default function App() {
     joiningLock.current = true;
     setJoining(true);
     try {
-      const suffix = String(Date.now()).slice(-4);
+      const suffix = makeUniqueTag();
       const freshCandidateId = `priya-claim-${suffix}`;
       let claimantTok = '';
       let claimantActor = freshCandidateId;
 
       try {
-        const candSession = await readApiJson(
-          await fetch('/api/auth/demo', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ actorId: freshCandidateId, eventId, maxSize: 5 })
-          })
-        );
+        const candSession = await mintDemoSession(freshCandidateId, eventId, 5);
         claimantTok = candSession.token;
         claimantActor = candSession.actorId;
         signedOutManuallyRef.current = false;
@@ -1590,7 +1870,7 @@ export default function App() {
       });
 
       if (wanOffline) {
-        setQueuedClaim({
+        const armed = {
           eventId,
           teamId,
           code: inviteCode,
@@ -1598,7 +1878,10 @@ export default function App() {
           key: operation.key,
           actorId: claimantActor,
           claimantToken: claimantTok
-        });
+        };
+        setQueuedClaim(armed);
+        lastClaimRef.current = armed;
+        setHasLastClaim(true);
         setRelayedReceipt(null);
         setReplayReceipt(null);
         setStatusMessage(`Saved on this device. Waiting to send (${claimantActor} -> ${teamId}).`);
@@ -1614,6 +1897,17 @@ export default function App() {
       if (result.status === 'COMMITTED') {
         finishClaimOperation(sessionStorage, operation.key);
       }
+      const savedClaim = {
+        eventId,
+        teamId,
+        code: inviteCode,
+        opId: operation.opId,
+        key: operation.key,
+        actorId: claimantActor,
+        claimantToken: claimantTok
+      };
+      lastClaimRef.current = savedClaim;
+      setHasLastClaim(true);
       setQueuedClaim(null);
       setStatusMessage(`Confirmed by server: '${claimantActor}' joined '${result.teamId}'.`);
       notifyToast(`Confirmed by server: '${claimantActor}' joined '${result.teamId}'!`, 'ok');
@@ -1629,17 +1923,183 @@ export default function App() {
     }
   }
 
-  async function handleJoinSeat() {
+  async function prepareCleanRelayClaim({ allowExistingInvite = true } = {}) {
+    const tag = makeUniqueTag();
+    let prepTeam = teamId;
+    let prepCode = '';
+    let reusedExisting = false;
+
+    if (
+      allowExistingInvite &&
+      issuedInvite &&
+      issuedInvite.eventId === eventId &&
+      issuedInvite.teamId === teamId &&
+      issuedInvite.code &&
+      (!issuedInvite.expiresAt || issuedInvite.expiresAt > Date.now() + 5000)
+    ) {
+      try {
+        const detail = await readApiJson(
+          await fetch(
+            `/api/events/${encodeURIComponent(eventId)}/teams/${encodeURIComponent(teamId)}`,
+            { cache: 'no-store' }
+          )
+        );
+        if ((detail.members?.length || 0) < (detail.maxSize || 5)) {
+          prepTeam = teamId;
+          prepCode = issuedInvite.code;
+          reusedExisting = true;
+        }
+      } catch {
+        reusedExisting = false;
+      }
+    }
+
+    if (!reusedExisting) {
+      prepTeam = `00-relay-crew-${tag}`;
+      const leadSession = await mintDemoSession(`aurora-lead-${tag}`, eventId, 5);
+      try {
+        await sendPost('/api/events', { eventId, maxSize: 5 }, leadSession.token);
+      } catch {
+        // Event already exists
+      }
+      await sendPost('/api/teams', { eventId, teamId: prepTeam }, leadSession.token);
+      const inv = await sendPost(
+        '/api/invitations',
+        { eventId, teamId: prepTeam, expiresAt: Date.now() + 600000 },
+        leadSession.token
+      );
+      prepCode = inv.code;
+      setTeamId(prepTeam);
+      setIssuedInvite({ ...inv, teamId: prepTeam, eventId, issuedBy: leadSession.actorId });
+      setInviteCode(inv.code);
+    }
+
+    const priyaSession = await mintDemoSession(`priya-wan-${tag}`, eventId, 5);
+    const relaySession = await mintDemoSession('relay-mateo', eventId, 5);
+
+    signedOutManuallyRef.current = false;
+    tokenRef.current = priyaSession.token;
+    actorRef.current = priyaSession.actorId;
+    setActorId(priyaSession.actorId);
+    setToken(priyaSession.token);
+    setRelayToken(relaySession.token);
+    setWanOffline(true);
+    setAuthorityHealth('wan-dropped');
+
+    const op = await getOrCreateClaimOperation({
+      eventId,
+      teamId: prepTeam,
+      code: prepCode,
+      store: sessionStorage
+    });
+
+    const armed = {
+      eventId,
+      teamId: prepTeam,
+      code: prepCode,
+      opId: op.opId,
+      key: op.key,
+      actorId: priyaSession.actorId,
+      claimantToken: priyaSession.token
+    };
+    setQueuedClaim(armed);
+    lastClaimRef.current = armed;
+    setHasLastClaim(true);
+    setReplayReceipt(null);
+
+    return { armed, relayTok: relaySession.token };
+  }
+
+  async function handleJoinSeat(opts = {}) {
     if (joiningLock.current) return;
     joiningLock.current = true;
     setJoining(true);
+    const fromStep1 = Boolean(opts?.fromWalkthroughStep1);
     try {
       await runProtectedAction(`Join ${teamId}`, async (freshTok, freshActor) => {
-        const useTok = await ensureToken(freshTok);
+        let useTok = await ensureToken(freshTok);
+        let useActor = freshActor || actorRef.current || 'builder-priya';
+        let targetTid = teamId;
+        let activeCode = String(inviteCode || '').trim();
+        const hadInviteInitially = Boolean(activeCode);
+
+        // Self-arm if inviteCode is empty when clicking Step 1B
+        if (!activeCode) {
+          const tag = makeUniqueTag();
+          let minted = false;
+          if (
+            selectedTeam &&
+            selectedTeam.teamId === targetTid &&
+            (selectedTeam.members?.length || 0) < (selectedTeam.maxSize || 5)
+          ) {
+            try {
+              const leadSession = await mintDemoSession(selectedTeam.leader, eventId, selectedTeam.maxSize || 5);
+              const inv = await sendPost(
+                '/api/invitations',
+                { eventId, teamId: targetTid, expiresAt: Date.now() + 600000 },
+                leadSession.token
+              );
+              activeCode = inv.code;
+              setIssuedInvite({ ...inv, teamId: targetTid, eventId, issuedBy: selectedTeam.leader });
+              setInviteCode(inv.code);
+              minted = true;
+            } catch {
+              minted = false;
+            }
+          }
+          if (!minted) {
+            targetTid = `00-relay-crew-${tag}`;
+            const leadSession = await mintDemoSession(`aurora-lead-${tag}`, eventId, 5);
+            try {
+              await sendPost('/api/events', { eventId, maxSize: 5 }, leadSession.token);
+            } catch {
+              // Event already exists
+            }
+            await sendPost('/api/teams', { eventId, teamId: targetTid }, leadSession.token);
+            const inv = await sendPost(
+              '/api/invitations',
+              { eventId, teamId: targetTid, expiresAt: Date.now() + 600000 },
+              leadSession.token
+            );
+            activeCode = inv.code;
+            setTeamId(targetTid);
+            setIssuedInvite({ ...inv, teamId: targetTid, eventId, issuedBy: leadSession.actorId });
+            setInviteCode(inv.code);
+          }
+        }
+
+        const actorAlreadyInTargetTeam = Boolean(
+          useActor &&
+            ((selectedTeam &&
+              selectedTeam.teamId === targetTid &&
+              (selectedTeam.leader === useActor ||
+                (selectedTeam.members || []).some(m => m.userId === useActor))) ||
+              (issuedInvite &&
+                issuedInvite.code === activeCode &&
+                issuedInvite.teamId === targetTid &&
+                issuedInvite.issuedBy === useActor))
+        );
+
+        if ((wanOffline && actorAlreadyInTargetTeam) || (!hadInviteInitially && (wanOffline || actorAlreadyInTargetTeam))) {
+          try {
+            const tag = makeUniqueTag();
+            const priyaSession = await mintDemoSession(`priya-wan-${tag}`, eventId, 5);
+            signedOutManuallyRef.current = false;
+            useTok = priyaSession.token;
+            useActor = priyaSession.actorId;
+            tokenRef.current = useTok;
+            actorRef.current = useActor;
+            setToken(useTok);
+            setActorId(useActor);
+          } catch {
+            // Keep current token when demo auth is disabled
+          }
+        }
+
         const operation = await getOrCreateClaimOperation({
           eventId,
-          teamId,
-          code: inviteCode,
+          teamId: targetTid,
+          code: activeCode,
           store: sessionStorage
         });
 
@@ -1649,38 +2109,83 @@ export default function App() {
             unauth.status = 401;
             throw unauth;
           }
-          setQueuedClaim({
+          const armed = {
             eventId,
-            teamId,
-            code: inviteCode,
+            teamId: targetTid,
+            code: activeCode,
             opId: operation.opId,
             key: operation.key,
-            actorId: freshActor || actorRef.current || 'builder-priya',
+            actorId: useActor,
             claimantToken: useTok
-          });
+          };
+          setQueuedClaim(armed);
+          lastClaimRef.current = armed;
+          setHasLastClaim(true);
           setRelayedReceipt(null);
           setReplayReceipt(null);
-          setStatusMessage('Saved on this device. Waiting to send (not joined on server yet).');
+          setStatusMessage(`Saved on this device. Waiting to send (${useActor} -> ${targetTid}).`);
           notifyToast('Saved on this device. Waiting to send.', 'warn');
           return;
         }
 
-        const result = await sendPost(
-          '/api/invitations/claim',
-          {
-            eventId,
-            teamId,
-            code: inviteCode,
-            opId: operation.opId
-          },
-          useTok
-        );
+        let result;
+        try {
+          result = await sendPost(
+            '/api/invitations/claim',
+            {
+              eventId,
+              teamId: targetTid,
+              code: activeCode,
+              opId: operation.opId
+            },
+            useTok
+          );
+        } catch (claimErr) {
+          if (
+            (fromStep1 || !hadInviteInitially) &&
+            String(claimErr?.code || claimErr?.message || '').includes('ONE_TEAM_PER_EVENT')
+          ) {
+            const tag = makeUniqueTag();
+            const candSession = await mintDemoSession(`priya-claim-${tag}`, eventId, 5);
+            signedOutManuallyRef.current = false;
+            useTok = candSession.token;
+            useActor = candSession.actorId;
+            tokenRef.current = useTok;
+            actorRef.current = useActor;
+            setToken(useTok);
+            setActorId(useActor);
+            result = await sendPost(
+              '/api/invitations/claim',
+              {
+                eventId,
+                teamId: targetTid,
+                code: activeCode,
+                opId: operation.opId
+              },
+              useTok
+            );
+          } else {
+            throw claimErr;
+          }
+        }
+
         if (result.status === 'COMMITTED') {
           finishClaimOperation(sessionStorage, operation.key);
         }
         if (result.replayed) {
           setReplayReceipt(result);
         }
+        const savedClaim = {
+          eventId,
+          teamId: targetTid,
+          code: activeCode,
+          opId: operation.opId,
+          key: operation.key,
+          actorId: result.actorId || useActor,
+          claimantToken: useTok
+        };
+        lastClaimRef.current = savedClaim;
+        setHasLastClaim(true);
         setQueuedClaim(null);
         setStatusMessage(
           result.replayed
@@ -1694,7 +2199,7 @@ export default function App() {
           'ok'
         );
         await refreshBoard();
-        await inspectTeam(teamId, true);
+        await inspectTeam(targetTid, true);
         await loadAudit(useTok);
       });
     } catch (e) {
@@ -1707,52 +2212,112 @@ export default function App() {
   }
 
   async function handleForwardViaPeer() {
-    if (!queuedClaim) return;
+    if (joiningLock.current || forwardingPeer) return;
+    setForwardingPeer(true);
     try {
       await runProtectedAction('Send Request Through Mateo', async freshTok => {
-        const claimantTok = queuedClaim.claimantToken || (await ensureToken(freshTok));
+        let activeClaim = queuedClaim;
         let useRelayTok = relayToken;
-        if (!useRelayTok) {
+
+        // Check whether activeClaim is missing or its actor is already on target team
+        let needsSelfArm = !activeClaim || !activeClaim.code || !activeClaim.opId;
+        if (!needsSelfArm && activeClaim) {
           try {
-            const relay = await readApiJson(
-              await fetch('/api/auth/demo', {
-                method: 'POST',
-                headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({ actorId: 'relay-mateo', eventId: queuedClaim.eventId, maxSize: 5 })
-              })
+            const detail = await readApiJson(
+              await fetch(
+                `/api/events/${encodeURIComponent(activeClaim.eventId)}/teams/${encodeURIComponent(activeClaim.teamId)}`,
+                { cache: 'no-store' }
+              )
             );
-            useRelayTok = relay.token;
-            setRelayToken(useRelayTok);
+            const alreadyMember =
+              detail.leader === activeClaim.actorId ||
+              (detail.members || []).some(m => m.userId === activeClaim.actorId);
+            if (alreadyMember && !relayedReceipt) {
+              needsSelfArm = true;
+            }
           } catch {
-            useRelayTok = claimantTok;
+            needsSelfArm = true;
           }
         }
 
-        const res = await sendPost(
-          '/api/peer/relay-claim',
-          {
-            claimantToken: claimantTok,
-            eventId: queuedClaim.eventId,
-            teamId: queuedClaim.teamId,
-            code: queuedClaim.code,
-            opId: queuedClaim.opId
-          },
-          useRelayTok
-        );
+        if (needsSelfArm) {
+          const prepped = await prepareCleanRelayClaim({ allowExistingInvite: true });
+          activeClaim = prepped.armed;
+          useRelayTok = prepped.relayTok;
+        } else if (!useRelayTok) {
+          try {
+            const relay = await mintDemoSession('relay-mateo', activeClaim.eventId, 5);
+            useRelayTok = relay.token;
+            setRelayToken(useRelayTok);
+          } catch {
+            useRelayTok = activeClaim.claimantToken || (await ensureToken(freshTok));
+          }
+        }
+
+        const claimantTok = activeClaim.claimantToken || (await ensureToken(freshTok));
+        let res;
+        try {
+          res = await sendPost(
+            '/api/peer/relay-claim',
+            {
+              claimantToken: claimantTok,
+              eventId: activeClaim.eventId,
+              teamId: activeClaim.teamId,
+              code: activeClaim.code,
+              opId: activeClaim.opId
+            },
+            useRelayTok
+          );
+        } catch (relayErr) {
+          const errCode = String(relayErr?.code || relayErr?.message || '');
+          if (
+            errCode.includes('INVALID_INVITE') ||
+            errCode.includes('INVITE_EXPIRED') ||
+            errCode.includes('TEAM_FULL') ||
+            errCode.includes('NO_TEAM') ||
+            errCode.includes('ONE_TEAM_PER_EVENT')
+          ) {
+            const freshPrep = await prepareCleanRelayClaim({ allowExistingInvite: false });
+            activeClaim = freshPrep.armed;
+            useRelayTok = freshPrep.relayTok;
+            res = await sendPost(
+              '/api/peer/relay-claim',
+              {
+                claimantToken: activeClaim.claimantToken,
+                eventId: activeClaim.eventId,
+                teamId: activeClaim.teamId,
+                code: activeClaim.code,
+                opId: activeClaim.opId
+              },
+              useRelayTok
+            );
+          } else {
+            throw relayErr;
+          }
+        }
+
+        lastClaimRef.current = activeClaim;
+        setHasLastClaim(true);
         setRelayedReceipt(res);
+        setForwardingPeer(false);
         setStatusMessage(
           `Sent through Mateo. Confirmed by server for '${res.actorId}' on '${res.teamId}'. Now run Step 3 to reconnect.`
         );
         notifyToast('Sent through Mateo. Confirmed by server!', 'ok');
+        await refreshBoard();
+        await inspectTeam(activeClaim.teamId, true);
+        await loadAudit(useRelayTok);
       });
     } catch (e) {
       setStatusMessage(`Forwarding failed: ${e.message}`);
       notifyToast(`Forwarding failed: ${e.message}`, 'err');
+    } finally {
+      setForwardingPeer(false);
     }
   }
 
   async function handleReconnectAndRetryDirect() {
-    const targetClaim = queuedClaim;
+    const targetClaim = queuedClaim || lastClaimRef.current;
     setWanOffline(false);
     setAuthorityHealth('online');
     if (!targetClaim) {
@@ -1776,9 +2341,13 @@ export default function App() {
         if (result.status === 'COMMITTED') {
           finishClaimOperation(sessionStorage, targetClaim.key);
         }
+        lastClaimRef.current = targetClaim;
+        setHasLastClaim(true);
         setReplayReceipt(result);
         setQueuedClaim(null);
-        setStatusMessage('The server returned the original result for this request (0 duplicate spots).');
+        setStatusMessage(
+          `The server returned the original result for '${result.actorId}' on '${result.teamId}' (replayed=${String(result.replayed)}, 0 duplicate spots).`
+        );
         notifyToast('The server returned the original result for this request!', 'ok');
         await refreshBoard();
         await inspectTeam(targetClaim.teamId, true);
@@ -1793,15 +2362,14 @@ export default function App() {
   async function handleAutoSetupRelayDemo() {
     try {
       await runProtectedAction('Prepare Example Team', async freshTok => {
-        const suffix = String(Date.now()).slice(-4);
+        const suffix = makeUniqueTag();
         const demoTeam = `00-relay-crew-${suffix}`;
-        const leadSession = await readApiJson(
-          await fetch('/api/auth/demo', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ actorId: `aurora-lead-${suffix}`, eventId, maxSize: 5 })
-          })
-        );
+        const leadSession = await mintDemoSession(`aurora-lead-${suffix}`, eventId, 5);
+        try {
+          await sendPost('/api/events', { eventId, maxSize: 5 }, leadSession.token);
+        } catch {
+          // Event already exists
+        }
         await sendPost('/api/teams', { eventId, teamId: demoTeam }, leadSession.token);
         const inv = await sendPost(
           '/api/invitations',
@@ -1809,20 +2377,8 @@ export default function App() {
           leadSession.token
         );
 
-        const priyaSession = await readApiJson(
-          await fetch('/api/auth/demo', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ actorId: `priya-wan-${suffix}`, eventId, maxSize: 5 })
-          })
-        );
-        const relaySession = await readApiJson(
-          await fetch('/api/auth/demo', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ actorId: 'relay-mateo', eventId, maxSize: 5 })
-          })
-        );
+        const priyaSession = await mintDemoSession(`priya-wan-${suffix}`, eventId, 5);
+        const relaySession = await mintDemoSession('relay-mateo', eventId, 5);
 
         signedOutManuallyRef.current = false;
         tokenRef.current = priyaSession.token;
@@ -1833,6 +2389,8 @@ export default function App() {
         setTeamId(demoTeam);
         setIssuedInvite({ ...inv, teamId: demoTeam, eventId, issuedBy: leadSession.actorId });
         setInviteCode(inv.code);
+        lastClaimRef.current = null;
+        setHasLastClaim(false);
         setQueuedClaim(null);
         setRelayedReceipt(null);
         setReplayReceipt(null);
@@ -1854,16 +2412,55 @@ export default function App() {
   async function handleTransferLeader(newLeaderId) {
     try {
       await runProtectedAction(`Transfer Team Lead to ${newLeaderId}`, async freshTok => {
-        const res = await sendPost('/api/teams/transfer', { eventId, teamId, newLeaderId }, freshTok);
+        let activeTok = await ensureToken(freshTok);
+        let res;
+        try {
+          res = await sendPost('/api/teams/transfer', { eventId, teamId, newLeaderId }, activeTok);
+        } catch (trErr) {
+          if (
+            (trErr?.status === 403 || String(trErr?.code || trErr?.message || '').includes('LEADER_REQUIRED')) &&
+            !signedOutManuallyRef.current &&
+            selectedTeam?.teamId === teamId &&
+            selectedTeam?.leader
+          ) {
+            const leadSession = await mintDemoSession(selectedTeam.leader, eventId, selectedTeam.maxSize || 5);
+            activeTok = leadSession.token;
+            tokenRef.current = activeTok;
+            actorRef.current = leadSession.actorId;
+            setToken(activeTok);
+            setActorId(leadSession.actorId);
+            res = await sendPost('/api/teams/transfer', { eventId, teamId, newLeaderId }, activeTok);
+          } else {
+            throw trErr;
+          }
+        }
         setStatusMessage(`Confirmed by server: '${res.leader}' is now team lead for '${teamId}'.`);
         notifyToast(`'${res.leader}' is now team lead for '${teamId}'.`, 'ok');
         await refreshBoard();
         await inspectTeam(teamId, true);
-        await loadAudit(freshTok);
+        await loadAudit(activeTok);
       });
     } catch (e) {
       setStatusMessage(`Transfer lead: ${e.message}`);
       notifyToast(`Could not transfer lead: ${e.message}`, 'err');
+    }
+  }
+
+  function handleOpenOfflineWalkthrough() {
+    setActiveView('authority');
+    setHighlightRelayWalkthrough(true);
+    notifyToast('Opened Step 3: Offline Join Walkthrough (Mateo teammate relay ready).', 'info');
+    if (typeof window !== 'undefined') {
+      requestAnimationFrame(() => {
+        const el = document.getElementById('offline-join-walkthrough');
+        if (el && typeof el.scrollIntoView === 'function') {
+          el.scrollIntoView({
+            behavior: isMotionFrozen(ergonomics.motion) ? 'auto' : 'smooth',
+            block: 'nearest'
+          });
+        }
+      });
+      setTimeout(() => setHighlightRelayWalkthrough(false), 1600);
     }
   }
 
@@ -2255,6 +2852,7 @@ export default function App() {
       { id: 'p-aurora', group: 'Switch Profile', label: 'Acting as: Aurora (Team lead)', keywords: 'aurora demo', run: () => switchPersona('leader-aurora') },
       { id: 'p-kai', group: 'Switch Profile', label: 'Acting as: Kai (Frontend)', keywords: 'kai demo', run: () => switchPersona('builder-kai') },
       { id: 'p-priya', group: 'Switch Profile', label: 'Acting as: Priya (Integration)', keywords: 'priya demo', run: () => switchPersona('builder-priya') },
+      { id: 'p-mateo', group: 'Switch Profile', label: 'Acting as: Mateo (Teammate Relay · Database)', keywords: 'mateo relay database demo', run: () => switchPersona('relay-mateo') },
       { id: 'sc-auto', group: 'Display & Scale', label: 'Scale: Auto (60% Desktop / 100% Mobile)', keywords: 'auto scale 60 100', run: () => setErgonomics(s => ({ ...s, scaleLocked: false, scale: '60' })) },
       { id: 'sc-60', group: 'Display & Scale', label: 'Scale: 60% Panorama', keywords: '60 panorama compact', run: () => setErgonomics(s => ({ ...s, scaleLocked: true, scale: '60' })) },
       { id: 'sc-100', group: 'Display & Scale', label: 'Scale: 100% Standard', keywords: '100 standard large', run: () => setErgonomics(s => ({ ...s, scaleLocked: true, scale: '100' })) },
@@ -2277,9 +2875,40 @@ export default function App() {
     [plan, tasks, panoramaPartialPreview]
   );
 
-  const priyaBuilder = useMemo(() => findBuilderById('priya'), []);
-  const priyaInCrew = useMemo(
-    () => teamPeople.some(p => normalizeBuilderId(p.id) === 'priya'),
+  const topRecEntry = useMemo(
+    () =>
+      (recs?.recommendations || []).find(
+        r => r.restoresFeasibility || r.upgradesToConditional
+      ) || null,
+    [recs]
+  );
+  const topRecBuilder = useMemo(
+    () => (topRecEntry ? findBuilderById(topRecEntry.candidateId, [candidates, teamPeople]) : null),
+    [topRecEntry, candidates, teamPeople]
+  );
+  const topRecInCrew = useMemo(
+    () =>
+      topRecBuilder
+        ? teamPeople.some(p => normalizeBuilderId(p.id) === normalizeBuilderId(topRecBuilder.id))
+        : false,
+    [teamPeople, topRecBuilder]
+  );
+  const topRecShortName = useMemo(
+    () =>
+      topRecBuilder
+        ? String(topRecBuilder.displayName || topRecBuilder.id).split(' ')[0]
+        : '',
+    [topRecBuilder]
+  );
+  const topRecShortTz = useMemo(
+    () =>
+      topRecBuilder
+        ? String(topRecBuilder.timezone || '').split('·')[0].trim()
+        : '',
+    [topRecBuilder]
+  );
+  const mateoInCrew = useMemo(
+    () => teamPeople.some(p => normalizeBuilderId(p.id) === 'mateo'),
     [teamPeople]
   );
 
@@ -2668,6 +3297,9 @@ export default function App() {
               onCreateInvite={handleCreateInvite}
               onJoinSeat={handleJoinSeat}
               joining={joining}
+              forwardingPeer={forwardingPeer}
+              hasLastClaim={hasLastClaim}
+              highlightWalkthrough={highlightRelayWalkthrough}
               onTransferLeader={handleTransferLeader}
               onLeaveTeam={handleLeaveTeam}
               wanOffline={wanOffline}
@@ -2700,6 +3332,7 @@ export default function App() {
               onLoadAudit={() => loadAudit(undefined, true)}
               onOpenCharterExport={() => setCharterOpen(true)}
               onClaimAsFreshCandidate={handleClaimAsFreshCandidate}
+              onRequestInviteAndJoinOpenSpot={handleRequestInviteAndJoinOpenSpot}
               onNotify={notifyToast}
             />
           )}
@@ -2805,19 +3438,38 @@ export default function App() {
                     </button>
                   );
                 })}
-                {!priyaInCrew && priyaBuilder && activeScenarioKey === 'baton' && (
+                {topRecBuilder && !topRecInCrew && plan?.status !== 'FEASIBLE_WITNESS' && (
                   <button
                     type="button"
-                    data-link-id="priya"
-                    onMouseEnter={() => setActiveLinkId('priya')}
+                    data-link-id={topRecBuilder.id}
+                    onMouseEnter={() => setActiveLinkId(topRecBuilder.id)}
                     onMouseLeave={() => setActiveLinkId(null)}
+                    onFocus={() => setActiveLinkId(topRecBuilder.id)}
                     className="dock-member-pill pill-suggest"
-                    onClick={() => handleToggleBuilderInCrew(priyaBuilder)}
+                    onClick={() => handleToggleBuilderInCrew(topRecBuilder)}
                   >
-                    + Try Priya (UTC+5:30)
+                    + Try {topRecShortName} ({topRecShortTz})
                   </button>
                 )}
               </div>
+
+              {mateoInCrew && activeScenarioKey === 'baton' && (
+                <div className="subcard top-gap-xs small-copy">
+                  <div>
+                    <strong>Mateo (Database · UTC-5)</strong> is in your plan preview. Example 1 needs{' '}
+                    <code>integrate</code> (Priya); see Mateo resolve Aurora&apos;s parallel database &amp; API overload in 1 click:
+                  </div>
+                  <div className="top-gap-xs">
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-compact"
+                      onClick={() => selectScenario('hall')}
+                    >
+                      Switch to Example 2: Double-booked database &amp; API -&gt;
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div className="top-gap-xs">
                 <SolarBatonHorizon
@@ -2841,11 +3493,18 @@ export default function App() {
                   const asg = (plan?.witness?.assignments || []).find(a => a.taskId === t.id);
                   const prevAsg = asg || panoramaPartialPreview.get(t.id) || null;
                   const assigneeId = prevAsg?.personId || null;
+                  const normHover = activeLinkId ? normalizeBuilderId(activeLinkId) : '';
+                  const hoverBuilder = normHover
+                    ? findBuilderById(normHover, [candidates, teamPeople])
+                    : null;
+                  const hoverCoversTask = Boolean(
+                    hoverBuilder?.skills && hoverBuilder.skills[t.skill]
+                  );
                   const isLinked =
                     Boolean(activeLinkId) &&
                     (activeLinkId === t.id ||
-                      (assigneeId && normalizeBuilderId(activeLinkId) === normalizeBuilderId(assigneeId)) ||
-                      (!prevAsg && activeLinkId === 'priya' && t.skill === 'integrate'));
+                      (assigneeId && normHover === normalizeBuilderId(assigneeId)) ||
+                      (!prevAsg && hoverCoversTask));
 
                   return (
                     <div
@@ -2889,15 +3548,15 @@ export default function App() {
                     <ShieldCheckIcon size={14} />{' '}
                     {lockingPlan ? 'Creating...' : 'Create team & invite'}
                   </button>
-                ) : !priyaInCrew && priyaBuilder && activeScenarioKey === 'baton' ? (
+                ) : topRecBuilder && !topRecInCrew ? (
                   <button
                     type="button"
                     className="btn btn-primary btn-compact"
-                    onClick={() => handleToggleBuilderInCrew(priyaBuilder)}
+                    onClick={() => handleToggleBuilderInCrew(topRecBuilder)}
                   >
-                    <PlusIcon size={14} /> Try Priya in plan
+                    <PlusIcon size={14} /> Try {topRecShortName} in plan
                   </button>
-                ) : plan?.frontier?.voiQuestion ? (
+                ) : plan?.status !== 'FEASIBLE_WITNESS' && plan?.frontier?.voiQuestion ? (
                   <button
                     type="button"
                     className="btn btn-primary btn-compact"
@@ -2941,7 +3600,12 @@ export default function App() {
             >
               {/* 3-Coordinate Network Continuity Header */}
               <div className="row-between wrap-gap">
-                <div className="col3-network-strip small-copy">
+                <button
+                  type="button"
+                  className="col3-network-strip small-copy"
+                  onClick={handleOpenOfflineWalkthrough}
+                  title="Open Step 3: Offline Join Walkthrough & Mateo teammate relay"
+                >
                   <span className={`coord-item ${wanOffline ? 'coord-warn' : authorityHealth === 'online' ? 'coord-ok' : ''}`}>
                     <DatabaseIcon size={12} />
                     <span>{wanOffline ? 'Disconnected' : authorityHealth === 'online' ? 'Server online' : 'Checking'}</span>
@@ -2956,7 +3620,7 @@ export default function App() {
                     <OutboxIcon size={12} />
                     <span>{queuedClaim ? '1 saved' : '0 saved'}</span>
                   </span>
-                </div>
+                </button>
 
                 <button
                   type="button"
@@ -3110,7 +3774,9 @@ export default function App() {
                       <div>
                         <strong>Wildcard |Omega|:</strong>{' '}
                         {plan?.frontier ? `${plan.frontier.worldsCovered}/${plan.frontier.omegaSize}` : '1/1'}
-                        {plan?.frontier?.voiQuestion ? ` · VOI=${plan.frontier.voiQuestion.informationGainBits}b` : ''}
+                        {plan?.status !== 'FEASIBLE_WITNESS' && plan?.frontier?.voiQuestion
+                          ? ` · VOI=${plan.frontier.voiQuestion.informationGainBits}b`
+                          : ''}
                       </div>
                     </div>
 

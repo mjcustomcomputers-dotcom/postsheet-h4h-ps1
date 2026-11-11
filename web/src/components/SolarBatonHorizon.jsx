@@ -131,7 +131,24 @@ export default function SolarBatonHorizon({
 }) {
   const canvasRef = useRef(null);
   const lastPulseRef = useRef(pulseTrigger);
+  const prevCrewIdsRef = useRef(new Set((teamPeople || []).map(p => p.id)));
+  const pulsedNodeIdsRef = useRef(new Set());
   const frozen = isMotionFrozen(motion);
+
+  useEffect(() => {
+    const curIds = new Set((teamPeople || []).map(p => p.id));
+    const prevIds = prevCrewIdsRef.current;
+    const diff = new Set();
+    for (const id of curIds) {
+      if (!prevIds.has(id)) diff.add(id);
+    }
+    if (diff.size > 0) {
+      pulsedNodeIdsRef.current = diff;
+    } else {
+      pulsedNodeIdsRef.current = curIds;
+    }
+    prevCrewIdsRef.current = curIds;
+  }, [teamPeople, pulseTrigger]);
 
   const scene = useMemo(() => {
     if (mode === 'architect') {
@@ -188,6 +205,25 @@ export default function SolarBatonHorizon({
           }
         });
       });
+
+      // Ensure nearby-timezone pairs (e.g. Aurora UTC-6 <-> Mateo UTC-5) also display a clean handoff arc
+      if (arcs.length === 0 && upstream[0]) {
+        const anchor = upstream[0];
+        const partner =
+          nodes.find(n => n.kind === 'crew' && n.id !== anchor.id && Math.abs(n.offset - anchor.offset) >= 0.5) ||
+          nodes.find(
+            n => n.kind === 'candidate-baton' && n.id !== anchor.id && Math.abs(n.offset - anchor.offset) >= 0.5
+          ) ||
+          nodes.find(n => n.kind === 'crew' && n.id !== anchor.id);
+        if (partner) {
+          arcs.push({
+            from: anchor,
+            to: partner,
+            activeCrewHandoff: partner.kind === 'crew',
+            phaseOffset: 0.08
+          });
+        }
+      }
 
       return { nodes, arcs };
     }
@@ -355,12 +391,28 @@ export default function SolarBatonHorizon({
         const x = xForUtc(n.offset);
         const y = baseNodeY + n.rowBias;
         const isLinked = Boolean(activeLinkId && n.id === activeLinkId);
+        const isPulsedNode =
+          typeof pulseProgress === 'number' &&
+          n.kind === 'crew' &&
+          pulsedNodeIdsRef.current.has(n.id);
         const color =
           n.kind === 'crew'
             ? palette.nodeCrew
             : n.kind === 'candidate-baton'
               ? palette.nodeCand
               : palette.nodePool;
+
+        if (isPulsedNode) {
+          const haloR = (compact ? 6.8 : 7.8) + Math.sin(pulseProgress * Math.PI) * (compact ? 4.8 : 6.0);
+          ctx.save();
+          ctx.globalAlpha = Math.max(0.22, 1 - pulseProgress * 0.72);
+          ctx.beginPath();
+          ctx.arc(x, y, haloR, 0, Math.PI * 2);
+          ctx.strokeStyle = palette.focusRing;
+          ctx.lineWidth = 2.1;
+          ctx.stroke();
+          ctx.restore();
+        }
 
         if (isLinked) {
           ctx.beginPath();

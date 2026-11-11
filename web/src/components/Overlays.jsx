@@ -76,7 +76,8 @@ export function ActingAsMenuPopover({
   const profiles = [
     { id: 'leader-aurora', name: 'Aurora', role: 'Team lead · Backend & API (UTC-6)' },
     { id: 'builder-kai', name: 'Kai', role: 'Accessible UI · Frontend (UTC-6)' },
-    { id: 'builder-priya', name: 'Priya', role: 'E2E Integration · Handoff (UTC+5:30)' }
+    { id: 'builder-priya', name: 'Priya', role: 'E2E Integration · Handoff (UTC+5:30)' },
+    { id: 'relay-mateo', name: 'Mateo', role: 'Connected Teammate Relay · Database (UTC-5)' }
   ];
 
   return (
@@ -516,7 +517,8 @@ export function AuthAccountModal({
           {[
             { id: 'leader-aurora', name: 'Aurora', desc: 'Team lead · Backend (UTC-6)' },
             { id: 'builder-kai', name: 'Kai', desc: 'Frontend · Accessible UI (UTC-6)' },
-            { id: 'builder-priya', name: 'Priya', desc: 'Integration · Handoff (UTC+5:30)' }
+            { id: 'builder-priya', name: 'Priya', desc: 'Integration · Handoff (UTC+5:30)' },
+            { id: 'relay-mateo', name: 'Mateo', desc: 'Connected Teammate Relay · Database (UTC-5)' }
           ].map(p => (
             <button
               key={p.id}

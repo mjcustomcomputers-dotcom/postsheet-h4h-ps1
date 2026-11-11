@@ -627,7 +627,7 @@ export const WALKTHROUGH_STEPS = [
     time: '0:00 - 0:45',
     title: '1. Find teammates & test schedule fit in place',
     detail:
-      'Open "1. Find teammates", toggle Purpose + Time Fit vs Profile-Only Board, then click "+ Try in plan" on Priya Nair (UTC+5:30) to watch "Plan incomplete: 2 of 3 tasks covered" turn into "Plan works: all tasks and hours line up" in Column 2.',
+      'Open "1. Find teammates", toggle "Purpose-First View" vs "Compare Profile-Only", then click "Try in plan" on Priya Nair (UTC+5:30) to watch "Plan incomplete: 2 of 3 tasks covered" turn into "Plan works: all tasks and hours line up" in Column 2.',
     targetView: 'discover',
     actionLabel: 'Open 1. Find teammates'
   },
@@ -635,37 +635,94 @@ export const WALKTHROUGH_STEPS = [
     time: '0:45 - 1:45',
     title: '2. Cross-timezone handoff & Compare Before / After Wipe',
     detail:
-      'Open "2. Plan the work" on example "1. Cross-timezone handoff", add Priya so Arkansas (UTC-6) hands off cleanly to India (UTC+5:30) with 0m live overlap, then click "Compare Before / After Wipe" to drag the timeline comparison.',
+      'Open "2. Plan the work" on example "1. Different time zones, clean handoff", add Priya so Arkansas (UTC-6) hands off cleanly to Bengaluru (UTC+5:30) with 0m simultaneous overlap, then click "Compare Before / After Wipe" to drag the timeline comparison.',
     targetView: 'architect',
     scenarioKey: 'baton',
     actionLabel: 'Open 2. Plan the work (Handoff)'
   },
   {
     time: '1:45 - 2:35',
-    title: '3. Schedule overload fix & zero-question skill check',
+    title: '3. Double-booked fix (+ Try Mateo) & zero-question skill check',
     detail:
-      'Try example "2. Two tasks at the same time" (adds Mateo without replacing current teammates) and example "3. Unverified skill check" in "2. Plan the work" to see when 1 quick check is needed vs 0 questions when backup is verified.',
+      'Switch to example "2. One person double-booked on two tasks" and click "+ Try Mateo (UTC-5)" or "Try Mateo in plan" in Column 2 (fixes overload with 0 teammates replaced), then inspect example "3. Unverified skill: when backup covers it vs. quick check".',
     targetView: 'architect',
     scenarioKey: 'hall',
-    actionLabel: 'Open 2. Plan the work (Overload)'
+    actionLabel: 'Open 2. Plan the work (Double-booked)'
   },
   {
     time: '2:35 - 3:45',
     title: '4. Offline outbox -> Send through Mateo -> Reconnect check',
     detail:
-      'Open "3. Manage your team", click "Prepare example team", then run Step 1 ("Save join request on device"), Step 2 ("Send through Mateo"), and Step 3 ("Reconnect & check request") to confirm zero duplicate spots.',
+      'Open "3. Manage your team": click "Send through Mateo" directly (self-arming) or run "Prepare example team" -> "1B. Save join request on device" -> "Send through Mateo" -> "Reconnect & check request" (replayed: true, 0 duplicate spots), or click "Request Invite & Join Open Spot" on any open team.',
     targetView: 'authority',
     actionLabel: 'Open 3. Manage your team'
   },
   {
     time: '3:45 - 5:00',
-    title: '5. 50-person last-spot test & 10,000-person speed proof',
+    title: '5. 50-person last-spot test & 102-check verification proof',
     detail:
       'Open "4. Test the last spot" and click "Run 50-person last-spot test" to watch 50 simultaneous requests hit 1 open spot: 1 joined, 49 turned away cleanly at 2/2, with oversize=0, orphanLeader=0, and eventMismatch=0.',
     targetView: 'arena',
     actionLabel: 'Open 4. Test the last spot'
   }
 ];
+
+function extractWindows(person, horizonMin = 480) {
+  const cap = Math.max(15, Math.round(Number(horizonMin) || 480));
+  if (!person) return [];
+  if (Array.isArray(person.windows) && person.windows.length > 0) {
+    return person.windows
+      .map(w => ({
+        start: Math.max(0, Math.min(cap, Math.round(Number(w.start) || 0))),
+        end: Math.max(0, Math.min(cap, Math.round(Number(w.end) || cap)))
+      }))
+      .filter(w => w.end > w.start);
+  }
+  const s = Math.max(0, Math.min(cap, Math.round(Number(person.startMin ?? 0))));
+  const e = Math.max(0, Math.min(cap, Math.round(Number(person.endMin ?? cap))));
+  return e > s ? [{ start: s, end: e }] : [];
+}
+
+export function computeWallClockOverlapMin(cand, teamPeople = [], horizonMin = 480) {
+  const cap = Math.max(15, Math.round(Number(horizonMin) || 480));
+  const candWins = extractWindows(cand, cap);
+  if (candWins.length === 0 || !Array.isArray(teamPeople) || teamPeople.length === 0) return 0;
+
+  const teamWins = teamPeople.filter(p => p && p.consent !== false).flatMap(p => extractWindows(p, cap));
+  if (teamWins.length === 0) return 0;
+
+  const overlaps = [];
+  for (const cw of candWins) {
+    for (const tw of teamWins) {
+      const s = Math.max(cw.start, tw.start);
+      const e = Math.min(cw.end, tw.end);
+      if (e > s) overlaps.push({ start: s, end: e });
+    }
+  }
+  if (overlaps.length === 0) return 0;
+
+  overlaps.sort((a, b) => a.start - b.start || a.end - b.end);
+  const merged = [overlaps[0]];
+  for (let i = 1; i < overlaps.length; i++) {
+    const cur = overlaps[i];
+    const last = merged[merged.length - 1];
+    if (cur.start <= last.end) {
+      last.end = Math.max(last.end, cur.end);
+    } else {
+      merged.push({ ...cur });
+    }
+  }
+  const total = merged.reduce((sum, iv) => sum + (iv.end - iv.start), 0);
+  return Math.min(cap, total);
+}
+
+export function formatRecommendationExplanation(rec, cand, teamPeople = [], horizonMin = 480) {
+  const raw = String(rec?.explanation || '');
+  if (!raw) return '';
+  if (rec?.asyncBatonPass) return raw;
+  const wallMin = computeWallClockOverlapMin(cand, teamPeople, horizonMin);
+  return raw.replace(/Shares\s+\d+m\s+synchronous\s+UTC\s+overlap/gi, `Shares ${wallMin}m synchronous UTC overlap`);
+}
 
 export function findBuilderById(idOrBuilder, extraPools = []) {
   const rawKey =
@@ -777,21 +834,59 @@ export function computePartialTaskPreview(tasks = [], teamPeople = [], horizonMi
       skills: p.skills || {}
     }));
 
-  // Topological order of tasks so upstream tasks claim earliest slots cleanly
+  // Topological + EDD (tightest latestStartMin first) order so urgent tasks claim slots first
   const byId = new Map(tasks.map(t => [t.id, t]));
-  const visited = new Set();
-  const active = new Set();
-  const topo = [];
-  function visit(id) {
-    if (active.has(id) || visited.has(id) || !byId.has(id)) return;
-    active.add(id);
-    const t = byId.get(id);
-    for (const dep of t.after || []) visit(dep);
-    active.delete(id);
-    visited.add(id);
-    topo.push(t);
+  const inDeg = new Map();
+  const children = new Map();
+  for (const t of tasks) {
+    inDeg.set(t.id, 0);
+    children.set(t.id, []);
   }
-  for (const t of tasks) visit(t.id);
+  for (const t of tasks) {
+    const validDeps = Array.from(new Set((t.after || []).filter(d => d !== t.id && byId.has(d))));
+    inDeg.set(t.id, validDeps.length);
+    for (const d of validDeps) {
+      children.get(d).push(t.id);
+    }
+  }
+
+  function eddKey(taskObj) {
+    const cp = cpById.get(taskObj.id);
+    const dur = Math.max(1, Math.round(Number(taskObj.durationMin) || 60));
+    const latestFin = cp ? Math.min(horizonMin, cp.latestFinishMin) : horizonMin;
+    const latestStart = cp && typeof cp.latestStartMin === 'number' ? cp.latestStartMin : latestFin - dur;
+    return { latestStart, latestFin, dur };
+  }
+
+  const readyQueue = tasks.filter(t => (inDeg.get(t.id) || 0) === 0);
+  const topo = [];
+  const queuedIds = new Set(readyQueue.map(t => t.id));
+
+  while (readyQueue.length > 0) {
+    readyQueue.sort((a, b) => {
+      const ka = eddKey(a);
+      const kb = eddKey(b);
+      return (
+        ka.latestStart - kb.latestStart ||
+        ka.latestFin - kb.latestFin ||
+        kb.dur - ka.dur ||
+        String(a.id).localeCompare(String(b.id))
+      );
+    });
+    const nextTask = readyQueue.shift();
+    topo.push(nextTask);
+    for (const childId of children.get(nextTask.id) || []) {
+      const rem = (inDeg.get(childId) || 1) - 1;
+      inDeg.set(childId, rem);
+      if (rem === 0 && !queuedIds.has(childId) && byId.has(childId)) {
+        queuedIds.add(childId);
+        readyQueue.push(byId.get(childId));
+      }
+    }
+  }
+  for (const t of tasks) {
+    if (!queuedIds.has(t.id)) topo.push(t);
+  }
 
   const busyByPerson = new Map();
   const completedEnd = new Map();

@@ -253,9 +253,9 @@ export default function ProofArenaView({
 
               <div className="subcard tone-ok">
                 <span className="eyebrow-tag">AUTOMATED CHECKS</span>
-                <strong className="giant-stat">97 / 97 PASS</strong>
+                <strong className="giant-stat">102 / 102 PASS</strong>
                 <p className="muted-copy small-copy">
-                  43 baseline checks + 4 race checks + 12 independent SQLite checks + 38 encryption/relay/planner tests.
+                  97 suite assertions (43 baseline + 4 race + 12 SQLite oracle + 38 crypto/relay/R5) + 5 load-gate checks.
                 </p>
               </div>
             </div>

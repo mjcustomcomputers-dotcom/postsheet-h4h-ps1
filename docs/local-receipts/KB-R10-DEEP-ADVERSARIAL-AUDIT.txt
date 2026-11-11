@@ -1,0 +1,33 @@
+================================================================================
+H4H-PS1 R10 DEEP ADVERSARIAL & HEADLESS ALL-BUTTON CLICK CRAWL RECEIPT
+Generated: 2026-11-11T10:39:09.992Z
+Node: v24.19.0 | OS: win32 10.0.26300 (x64)
+================================================================================
+
+[PILLAR 1] 200 Random Monte Carlo DAGs vs. Brute-Force Ground-Truth Oracle
+  PASS: 200/200 Monte Carlo DAGs verified | falseWitnesses=0 | feasible=39, conditional=20, infeasible=141 | oracleCrossChecked=135
+  PASS: Scenario 4 merged wall-clock overlap = 180m (<= 360m horizon; raw 390m double-count eliminated)
+
+[PILLAR 2] 100-Way Mixed SQLite Chaos Burst
+  PASS: 100/100 concurrent mixed chaos ops completed | HTTP_500=0 | oversize=0, orphanLeader=0, eventMismatch=0
+
+[PILLAR 3] 5-Member Cascading Leader Succession + 50-Round AES-GCM/P-256 Fuzzing + HTTP Torture
+  PASS: Cascading leader succession verified: 5(lead:m1) -> 4(lead:m2) -> 3(lead:m3) -> 2(lead:m4) -> 1(lead:m5) -> 0(dissolved)
+  PASS: 50/50 AES-256-GCM + P-256 ECDSA bit-flip / key-swap / expiry / replay payloads rejected
+  PASS: HTTP torture verified (traversal blocked, 413 oversized, 400 bad JSON/SQLi, 401 forged token, CSP="default-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'")
+
+[PILLAR 4] Live Headless Browser All-Button Click Crawl on http://127.0.0.1:8788
+  PASS [Flow 4.1]: Cold-click `Send through Mateo` self-armed & confirmed + Step 3 replay proved zero duplicates
+  PASS [Flow 4.2]: `Prepare example team -> 1B -> Send through Mateo -> Reconnect & check request` (x2) verified
+  PASS [Flow 4.3]: Example 2 showed "+ Try Mateo (UTC-5)" & "Try Mateo in plan" -> resolved to READY · ALL TASKS COVERED
+  PASS [Flow 4.4]: Mateo card `Try in plan` on Step 1 pulsed SolarBatonHorizon & surfaced 1-click Example 2 switch
+  PASS [Flow 4.5]: Column 3 `Mateo ready` strip navigated to `#offline-join-walkthrough` & `Acting as: Mateo` switched cleanly
+  PASS [Flow 4.6]: `Invite / Join team` -> `Request Invite & Join Open Spot` confirmed server membership in 1 click
+  PASS [Flow 4.7]: `Create single-use invite` on fresh ID "r10-inv-zlahg" auto-created team & minted invite
+  PASS [Flow 4.8 Run #1]: SQLite BEGIN IMMEDIATE Invariant Check (POST /api/demo/race-50) SQLITE_AUTHORITY winner=claimant-0 (HTTP 200) · rejected=49 x HTTP 409 TEAM_FULL · oversize=0 · orphanLeader=0 · eventMismatch=0
+  PASS [Flow 4.8 Run #2]: SQLite BEGIN IMMEDIATE Invariant Check (POST /api/demo/race-50) SQLITE_AUTHORITY winner=claimant-0 (HTTP 200) · rejected=49 x HTTP 409 TEAM_FULL · oversize=0 · orphanLeader=0 · eventMismatch=0
+  PASS [Browser Hygiene]: consoleErrors=0 · pageExceptions=0 · cspViolations=0
+
+================================================================================
+OVERALL R10 VERDICT: PASS (ALL 4 PILLARS + ALL 8 LIVE HEADLESS UI FLOWS GREEN)
+================================================================================

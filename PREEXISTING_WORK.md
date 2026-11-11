@@ -10,7 +10,7 @@ All source modules, SQLite schemas, cryptographic adapters, React UI components,
 - `src/synchronicity-solvers.mjs` & `src/goal-planner.mjs`: Directed DAG backward-slack (EDD) scheduler, Wildcard Omega quantifier partition, VOI question selector, Hall capacity-deficit repair solver, complementary UTC baton-pass recommender, and overlap obstruction checker.
 - `src/peer-envelope.mjs`, `src/peer-receipts.mjs`, `src/peer-relay.mjs`, `src/synchronicity-ext.mjs`: `AES-256-GCM` + `P-256` signed peer collaboration, durable SQLite replay ledger, `scrypt` account authentication, leader transfer, and WAN-drop peer-relayed seat claims.
 - `web/src/App.jsx` & `web/src/claim-operation.js`: Low-luminance accessible React workstation, SSE live board, SHA-256 idempotent claim retry storage, and interactive WAN-drop / 50-way race workspace.
-- `tests/*` & `scripts/*`: 98+ automated assertions, 12-query independent Python SQLite race oracle, 10,000-user / 2,000-team deterministic seed, and 100-client `p95` latency benchmark.
+- `tests/*` & `scripts/*`: 102 automated checks (97 suite assertions + 5 load-gate checks), 12-query independent Python SQLite race oracle, 10,000-user / 2,000-team deterministic seed, and 100-client `p95` latency benchmark.
 
 ## AI Assistance Disclosure
 AI collaboration (Google Gemini and OpenAI ChatGPT) was used under the applicant's direct architectural specification, adversarial testing, and local Linux verification in accordance with Hack4Hack rules.

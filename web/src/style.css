@@ -1094,6 +1094,20 @@ kbd {
   align-items: center;
   flex-wrap: wrap;
   gap: 5px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 3px 6px;
+  margin: -3px -6px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+
+.col3-network-strip:hover {
+  background: var(--bg-elevated);
+  border-color: var(--border-strong);
 }
 
 .memory-anchor-bar {
@@ -1346,8 +1360,12 @@ kbd {
   transition: background var(--motion-dur), border-color var(--motion-dur), box-shadow var(--motion-dur);
 }
 
-.btn:disabled {
-  opacity: 0.56;
+.btn:disabled,
+.btn-primary:disabled {
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  border-color: var(--border-inner-subtle);
+  opacity: 0.72;
   cursor: not-allowed;
   box-shadow: none;
 }

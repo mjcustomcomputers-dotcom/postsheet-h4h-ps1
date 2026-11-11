@@ -7,6 +7,9 @@ import {
   TIMEZONE_PRESETS,
   MISSION_SCENARIOS,
   normalizeBuilderId,
+  findBuilderById,
+  computeWallClockOverlapMin,
+  formatRecommendationExplanation,
   computePartialTaskPreview,
   describePlainPlanVerdict,
   visualTasksToApi,
@@ -377,7 +380,21 @@ export default function MissionArchitectView({
   }
 
   function updateTask(idx, patch, toastMsg) {
-    const next = tasks.map((t, i) => (i === idx ? { ...t, ...patch } : t));
+    const oldId = tasks[idx]?.id;
+    const newId = patch.id !== undefined ? patch.id : oldId;
+    const renamed = patch.id !== undefined && Boolean(oldId) && Boolean(newId) && oldId !== newId;
+    const next = tasks.map((t, i) => {
+      if (i === idx) return { ...t, ...patch };
+      if (renamed && Array.isArray(t.after) && t.after.includes(oldId)) {
+        return {
+          ...t,
+          after: Array.from(new Set(t.after.map(dep => (dep === oldId ? newId : dep)))).filter(
+            dep => dep !== t.id
+          )
+        };
+      }
+      return t;
+    });
     onChangeTasks(next);
     onTriggerPulse?.();
     onRunSolveAndRecommend({ tasks: next, toastMessage: toastMsg });
@@ -708,8 +725,8 @@ export default function MissionArchitectView({
             </div>
           )}
 
-          {/* One quick skill check */}
-          {plan.frontier?.voiQuestion && (
+          {/* One quick skill check (suppressed whenever full FEASIBLE_WITNESS already holds) */}
+          {plan.status !== 'FEASIBLE_WITNESS' && plan.frontier?.voiQuestion && (
             <div className="subcard tone-warn top-gap-sm">
               <div className="row-between wrap-gap">
                 <div className="prose-measure">
@@ -802,7 +819,7 @@ export default function MissionArchitectView({
                   <span className="metric-label">P9R Policy</span>
                   <strong className="metric-value mono-cell">{plan.frontier?.minimumSufficientStop || 'BOUNDED'}</strong>
                 </div>
-                {plan.frontier?.voiQuestion && (
+                {plan.status !== 'FEASIBLE_WITNESS' && plan.frontier?.voiQuestion && (
                   <div className="metric-pill">
                     <span className="metric-label">Shannon VOI</span>
                     <strong className="metric-value mono-cell">{plan.frontier.voiQuestion.informationGainBits} bits</strong>
@@ -836,6 +853,18 @@ export default function MissionArchitectView({
               {recs.recommendations.map((r, rankIdx) => {
                 const isLinked =
                   activeLinkId && normalizeBuilderId(activeLinkId) === normalizeBuilderId(r.candidateId);
+                const candObj =
+                  (candidates || []).find(
+                    c => normalizeBuilderId(c.id) === normalizeBuilderId(r.candidateId)
+                  ) || findBuilderById(r.candidateId, [candidates, teamPeople]);
+                const wallOverlapMin = computeWallClockOverlapMin(candObj, teamPeople, horizonMin);
+                const cleanExplanation = formatRecommendationExplanation(
+                  r,
+                  candObj,
+                  teamPeople,
+                  horizonMin
+                );
+
                 return (
                   <article
                     key={r.candidateId}
@@ -873,8 +902,12 @@ export default function MissionArchitectView({
                       {r.upgradesToConditional && (
                         <span className="status-chip chip-warn">Covers hours (needs 1 skill check)</span>
                       )}
-                      {r.asyncBatonPass && (
+                      {r.asyncBatonPass ? (
                         <span className="baton-pill">Clean time-zone handoff (0m overlap)</span>
+                      ) : (
+                        wallOverlapMin > 0 && (
+                          <span className="status-chip chip-neutral">{wallOverlapMin}m shared hours</span>
+                        )
                       )}
                       {r.slackGainMin > 0 && (
                         <span className="status-chip chip-ok">+{r.slackGainMin}m buffer</span>
@@ -882,7 +915,7 @@ export default function MissionArchitectView({
                       <span className="status-chip chip-neutral">Replaces 0 teammates</span>
                     </div>
 
-                    <p className="prose-measure muted-copy small-top">{r.explanation}</p>
+                    <p className="prose-measure muted-copy small-top">{cleanExplanation}</p>
                   </article>
                 );
               })}

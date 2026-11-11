@@ -1,7 +1,7 @@
 {
   "project": "Post Sheet | Ability & Purpose Crew Network (H4H-PS1)",
-  "generatedAt": "2026-11-11T09:51:03.606Z",
-  "fileCount": 71,
+  "generatedAt": "2026-11-11T10:41:22.599Z",
+  "fileCount": 73,
   "files": [
     {
       "path": ".github/workflows/ci.yml",
@@ -15,8 +15,8 @@
     },
     {
       "path": "DESIGN.md",
-      "bytes": 4043,
-      "sha256": "4095502fb30438f8f68b1cc4afdcd97833735b92bd6866fcdf1f63f3d868ec67"
+      "bytes": 4080,
+      "sha256": "accd8436ec265f3c9a1681c4dafb9132f40cd3c6c7dfdc5d8787fe22c69508e1"
     },
     {
       "path": "Dockerfile",
@@ -30,23 +30,33 @@
     },
     {
       "path": "PREEXISTING_WORK.md",
-      "bytes": 2312,
-      "sha256": "94e9dac7ec04eab4dc26963a18b300128d704df9a419039b80a38255b958eade"
+      "bytes": 2351,
+      "sha256": "0ed2b0a3dc129b472f8fea13112cdb21f665af9a267713bfc0b31e35b9c1455c"
     },
     {
       "path": "README.md",
-      "bytes": 1808,
-      "sha256": "6813682f343a31cda0cd325afe6e47039a1b2a9ab5f89c851e2db1005ee5af60"
+      "bytes": 1965,
+      "sha256": "c98281a302ba2420b3024b80b23f65569ea09862fbb2cc0577b71ed1b017181c"
     },
     {
       "path": "docs/DECISION_AND_EXPERIMENT_LEDGER.md",
-      "bytes": 11039,
-      "sha256": "7d4899db3f9fcc639647962b08472757c04b834a65634c530ccedf9ee9d75b98"
+      "bytes": 12770,
+      "sha256": "9e2a84347edcc3a358e76f242a64610f63d5fb7594ec6e50a15a850c536f3838"
     },
     {
       "path": "docs/PSS-H4H-CRR-01.R1-SUPPLEMENT.md",
       "bytes": 14253,
       "sha256": "534db7b5ffcfdcc1179546f16e0c03bcc8575e0fedd37510c6c08126176d6610"
+    },
+    {
+      "path": "docs/adversarial-deep-audit.mjs",
+      "bytes": 51023,
+      "sha256": "334c00394ff1021f220990fa5ce130ec9ef04d37f7c0b7bbd1a28550d4cff3a9"
+    },
+    {
+      "path": "docs/local-receipts/KB-R10-DEEP-ADVERSARIAL-AUDIT.txt",
+      "bytes": 2997,
+      "sha256": "3ecbf7a27aa47132ba7b99a17edf23339d62bf794efb8ebba65c00bbb56b5d57"
     },
     {
       "path": "docs/local-receipts/KB-R6-LOAD-RECOVERY-20261110T230518Z.txt",
@@ -265,8 +275,8 @@
     },
     {
       "path": "web/src/App.jsx",
-      "bytes": 128233,
-      "sha256": "db75758f2e651ae18e5cdf67a49b45db60fbe701d023bf70c3581617c51fa779"
+      "bytes": 153044,
+      "sha256": "71c1e219d7171b1d2d70692071563c21babdf64adb58fe3518cdc5edf07de3f0"
     },
     {
       "path": "web/src/claim-operation.js",
@@ -295,13 +305,13 @@
     },
     {
       "path": "web/src/components/Overlays.jsx",
-      "bytes": 30522,
-      "sha256": "77ef3a4815ece24be886674a1f5c1d5ea2ba39772f7ab6497591e71e2ff2c07c"
+      "bytes": 30722,
+      "sha256": "6a12e48088d080d904457290f6bea2ef0abfe8df7336fa70047ed67ee6070d2b"
     },
     {
       "path": "web/src/components/SolarBatonHorizon.jsx",
-      "bytes": 17352,
-      "sha256": "277915ca690ccce6a56457d82c17d10ed3090fc6af92a6429a88671cfd5d689f"
+      "bytes": 19259,
+      "sha256": "ff393b1c6fbe9b275d1c0ad26797df60c8191bb0bffabcb8d3e5cdcb0b0a5fa6"
     },
     {
       "path": "web/src/components/TaskDagTimeline.jsx",
@@ -325,33 +335,33 @@
     },
     {
       "path": "web/src/presets-and-catalog.js",
-      "bytes": 37436,
-      "sha256": "52b03751ff6a7c84a15f9744d4d92cad197f59ed437ef8a011beb9831f96beb8"
+      "bytes": 41160,
+      "sha256": "f54ab6c50c5816b45327d1cc3550812f2fe5ca229e5c3c3278b0f4ab2e224fe6"
     },
     {
       "path": "web/src/style.css",
-      "bytes": 84934,
-      "sha256": "9164699d2d789344943100b0fce00effb08e7429717c144e2119cad8635378b5"
+      "bytes": 85412,
+      "sha256": "8962588b8b1430818f33cff01b405fe974dc3383cde34fab93d948dbf25d51ce"
     },
     {
       "path": "web/src/views/DiscoverView.jsx",
-      "bytes": 52108,
-      "sha256": "39fda37af4bb28744b08e566fb181800235386b56ed614807040150b5bb5d501"
+      "bytes": 53613,
+      "sha256": "b4ad5584052a2c3dca26e4cc2d112dafd91499c128cb06b922033e79a1320a34"
     },
     {
       "path": "web/src/views/MissionArchitectView.jsx",
-      "bytes": 42672,
-      "sha256": "d04ac4ffe0c0a0b1db68f160ff54f8928f2b7c125f027c7164710a8edb6915c0"
+      "bytes": 44141,
+      "sha256": "dd5e7b3f46a675d38da674b973f16f0b15260a53d104331cad31823603c05da6"
     },
     {
       "path": "web/src/views/ProofArenaView.jsx",
-      "bytes": 14474,
-      "sha256": "22ccce567ac7f1385c02af8431e413e739e9e93e68536a11e60224b00069263f"
+      "bytes": 14478,
+      "sha256": "718978f7f3c1213fbc33ac88248bf1b13f9a3e1c0485014fe4de2c6718d505ac"
     },
     {
       "path": "web/src/views/SeatAuthorityView.jsx",
-      "bytes": 32996,
-      "sha256": "5634ef95c75da552e6b98f28bdf6ac21d6fee77154cc7793887b9ccd1cf7eaf7"
+      "bytes": 37226,
+      "sha256": "009598f61ad44111cb65bb40b9400642abf40958b4e30c5ecfcd3d3970c0bfe4"
     },
     {
       "path": "web/vite.config.mjs",

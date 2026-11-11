@@ -43,6 +43,9 @@ export default function SeatAuthorityView({
   onCreateInvite,
   onJoinSeat,
   joining,
+  forwardingPeer = false,
+  hasLastClaim = false,
+  highlightWalkthrough = false,
   onTransferLeader,
   onLeaveTeam,
   wanOffline,
@@ -64,6 +67,7 @@ export default function SeatAuthorityView({
   onLoadAudit,
   onOpenCharterExport,
   onClaimAsFreshCandidate,
+  onRequestInviteAndJoinOpenSpot,
   onNotify
 }) {
   const [nowMs, setNowMs] = useState(Date.now());
@@ -79,6 +83,13 @@ export default function SeatAuthorityView({
   useEffect(() => {
     const t = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedTeam && teamId) {
+      onInspectTeam?.(teamId, true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -145,20 +156,39 @@ export default function SeatAuthorityView({
 
   const countdown = issuedInvite?.expiresAt ? formatCountdown(issuedInvite.expiresAt, nowMs) : null;
   const expired = issuedInvite?.expiresAt && nowMs >= issuedInvite.expiresAt;
-  const actorAlreadyInTargetTeam = Boolean(
+  const isSelectedTeamCurrent = Boolean(selectedTeam && selectedTeam.teamId === teamId);
+  const actorOnSelectedTeam = Boolean(
     actorId &&
-      ((selectedTeam &&
-        selectedTeam.teamId === teamId &&
-        (selectedTeam.leader === actorId ||
-          (selectedTeam.members || []).some(m => m.userId === actorId))) ||
-        (issuedInvite &&
-          issuedInvite.code === inviteCode &&
-          issuedInvite.teamId === teamId &&
-          issuedInvite.issuedBy === actorId))
+      isSelectedTeamCurrent &&
+      (selectedTeam.leader === actorId ||
+        (selectedTeam.members || []).some(m => m.userId === actorId))
   );
+  const actorAlreadyInTargetTeam = Boolean(
+    actorOnSelectedTeam ||
+      (actorId &&
+        issuedInvite &&
+        issuedInvite.code === inviteCode &&
+        issuedInvite.teamId === teamId &&
+        issuedInvite.issuedBy === actorId)
+  );
+  const hasMatchingInviteForSelected = Boolean(
+    inviteCode &&
+      issuedInvite &&
+      issuedInvite.teamId === selectedTeam?.teamId &&
+      issuedInvite.code === inviteCode &&
+      !expired
+  );
+  const hasOpenSpotWithoutInvite = Boolean(
+    isSelectedTeamCurrent &&
+      (selectedTeam.members?.length || 0) < (selectedTeam.maxSize || 5) &&
+      !hasMatchingInviteForSelected
+  );
+  const eligibleTransferMembers = isSelectedTeamCurrent
+    ? (selectedTeam.members || []).filter(m => !m.isLeader && m.userId !== selectedTeam.leader)
+    : [];
 
   // CRR-08 Salience Transfer: amplify only the single current step; completed steps step back calmly
-  const activeStep = replayReceipt
+  const activeStep = replayReceipt && !queuedClaim
     ? 0
     : relayedReceipt
       ? 3
@@ -204,7 +234,12 @@ export default function SeatAuthorityView({
       </div>
 
       {/* Guided 3-Step Salience-Transfer Path (CRR-08) */}
-      <div className="surface-card theater-card" role="region" aria-label="Offline request forwarding walkthrough">
+      <div
+        id="offline-join-walkthrough"
+        className={`surface-card theater-card ${highlightWalkthrough ? 'is-linked-ridge' : ''}`}
+        role="region"
+        aria-label="Offline request forwarding walkthrough"
+      >
         <div className="row-between wrap-gap">
           <div className="prose-measure">
             <span className="eyebrow-tag">OFFLINE JOIN WALKTHROUGH · ZERO DUPLICATE SPOTS</span>
@@ -219,6 +254,7 @@ export default function SeatAuthorityView({
           <button
             type="button"
             className="btn btn-primary btn-compact"
+            disabled={joining || forwardingPeer}
             onClick={onAutoSetupRelayDemo}
           >
             <SparklesIcon size={15} /> Prepare example team
@@ -258,9 +294,9 @@ export default function SeatAuthorityView({
               </button>
               <button
                 type="button"
-                className="btn btn-primary btn-compact"
-                disabled={joining || !inviteCode}
-                onClick={onJoinSeat}
+                className={`btn btn-compact ${activeStep === 1 ? 'btn-primary' : 'btn-secondary'}`}
+                disabled={joining || forwardingPeer}
+                onClick={() => onJoinSeat({ fromWalkthroughStep1: true })}
               >
                 <OutboxIcon size={14} />{' '}
                 {wanOffline ? '1B. Save join request on device' : '1B. Join team directly'}
@@ -307,11 +343,11 @@ export default function SeatAuthorityView({
             <div className="stack-actions">
               <button
                 type="button"
-                className="btn btn-primary btn-compact"
-                disabled={!queuedClaim}
+                className={`btn btn-compact ${activeStep === 2 ? 'btn-primary' : 'btn-secondary'}`}
+                disabled={joining || forwardingPeer}
                 onClick={onForwardViaPeer}
               >
-                <MeshIcon size={14} /> Send through Mateo
+                <MeshIcon size={14} /> {forwardingPeer ? 'Sending through Mateo...' : 'Send through Mateo'}
               </button>
             </div>
 
@@ -352,8 +388,12 @@ export default function SeatAuthorityView({
             <div className="stack-actions">
               <button
                 type="button"
-                className="btn btn-primary btn-compact"
-                disabled={!queuedClaim && !relayedReceipt}
+                className={`btn btn-compact ${activeStep === 3 ? 'btn-primary' : 'btn-secondary'}`}
+                disabled={
+                  joining ||
+                  forwardingPeer ||
+                  (!queuedClaim && !relayedReceipt && !hasLastClaim && !wanOffline)
+                }
                 onClick={onReconnectAndRetryDirect}
               >
                 <CheckCircleIcon size={15} /> Reconnect &amp; check request
@@ -396,6 +436,29 @@ export default function SeatAuthorityView({
           </div>
 
           <div className="stack-form top-gap-sm">
+            {hasOpenSpotWithoutInvite && onRequestInviteAndJoinOpenSpot && (
+              <div className="subcard tone-ok" role="region" aria-label="Join open team spot">
+                <div className="row-between wrap-gap">
+                  <div className="small-copy">
+                    <strong>
+                      Open spot on <code>{selectedTeam.teamId}</code> ({selectedTeam.members.length}/
+                      {selectedTeam.maxSize} spots filled):
+                    </strong>{' '}
+                    Request a single-use invite from team lead <code>{selectedTeam.leader}</code> and claim an open spot in one click.
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-compact"
+                    disabled={joining || forwardingPeer}
+                    onClick={onRequestInviteAndJoinOpenSpot}
+                  >
+                    <SparklesIcon size={14} />{' '}
+                    {joining ? 'Joining open spot...' : 'Request Invite & Join Open Spot'}
+                  </button>
+                </div>
+              </div>
+            )}
+
             <label className="field-label">
               <span>Team ID (in <code>{eventId}</code>)</span>
               <div className="inline-form">
@@ -464,14 +527,32 @@ export default function SeatAuthorityView({
               <button
                 type="button"
                 className="btn btn-primary btn-compact"
+                disabled={joining || forwardingPeer}
                 onClick={() => onCreateTeam({ mission: customMissionDraft, skills: customSkillsDraft })}
               >
                 Create team
               </button>
-              <button type="button" className="btn btn-secondary btn-compact" onClick={onCreateInvite}>
+              <button
+                type="button"
+                className="btn btn-secondary btn-compact"
+                disabled={joining || forwardingPeer}
+                onClick={onCreateInvite}
+              >
                 Create single-use invite
               </button>
-              <button type="button" className="btn btn-danger-outline btn-compact" onClick={onLeaveTeam}>
+              <button
+                type="button"
+                className="btn btn-danger-outline btn-compact"
+                disabled={joining || forwardingPeer || !actorOnSelectedTeam}
+                title={
+                  actorOnSelectedTeam
+                    ? `Leave team ${teamId}`
+                    : `${humanActor} (${actorId || 'guest'}) is not currently a member of ${
+                        selectedTeam?.teamId || teamId
+                      }`
+                }
+                onClick={onLeaveTeam}
+              >
                 Leave team
               </button>
             </div>
@@ -553,7 +634,7 @@ export default function SeatAuthorityView({
                   type="button"
                   className={inviteCode && actorAlreadyInTargetTeam ? 'btn btn-secondary btn-compact' : 'btn btn-primary btn-compact'}
                   disabled={joining || !inviteCode}
-                  onClick={onJoinSeat}
+                  onClick={() => onJoinSeat({ fromWalkthroughStep1: false })}
                 >
                   <ShieldCheckIcon size={15} /> {joining ? 'Sending request...' : `Join as ${humanActor}`}
                 </button>
@@ -619,11 +700,30 @@ export default function SeatAuthorityView({
               )}
 
               <div className="inline-form top-gap-sm">
+                {eligibleTransferMembers.length > 0 && (
+                  <select
+                    aria-label="Choose eligible member to become team lead"
+                    value={eligibleTransferMembers.some(m => m.userId === transferTarget) ? transferTarget : ''}
+                    onChange={e => setTransferTarget(e.target.value)}
+                    className="compact-select"
+                  >
+                    <option value="">Choose member ({eligibleTransferMembers.length})...</option>
+                    {eligibleTransferMembers.map(m => (
+                      <option key={m.userId} value={m.userId}>
+                        {m.userId}
+                      </option>
+                    ))}
+                  </select>
+                )}
                 <input
                   type="text"
                   value={transferTarget}
                   onChange={e => setTransferTarget(e.target.value)}
-                  placeholder="Make another member team lead (user ID)..."
+                  placeholder={
+                    eligibleTransferMembers.length > 0
+                      ? 'Or enter member user ID...'
+                      : 'Add a 2nd member to transfer lead...'
+                  }
                   aria-label="New team lead user ID"
                 />
                 <button
