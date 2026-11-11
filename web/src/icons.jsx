@@ -355,3 +355,34 @@ export function SplitWipeIcon({ size = 16, className = '' }) {
     </svg>
   );
 }
+
+export function DownloadIcon({ size = 16, className = '' }) {
+  return (
+    <svg {...baseProps(size, className)}>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  );
+}
+
+export function KeyboardIcon({ size = 16, className = '' }) {
+  return (
+    <svg {...baseProps(size, className)}>
+      <rect x="2" y="5" width="20" height="14" rx="2" />
+      <line x1="6" y1="9" x2="6.01" y2="9" />
+      <line x1="10" y1="9" x2="10.01" y2="9" />
+      <line x1="14" y1="9" x2="14.01" y2="9" />
+      <line x1="18" y1="9" x2="18.01" y2="9" />
+      <line x1="8" y1="15" x2="16" y2="15" />
+    </svg>
+  );
+}
+
+export function ChevronDownIcon({ size = 14, className = '' }) {
+  return (
+    <svg {...baseProps(size, className)}>
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
+  );
+}

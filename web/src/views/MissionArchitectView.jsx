@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import TaskDagTimeline from '../components/TaskDagTimeline.jsx';
 import SolarBatonHorizon from '../components/SolarBatonHorizon.jsx';
 import EpistemicStencil from '../components/EpistemicStencil.jsx';
@@ -6,6 +6,9 @@ import {
   SKILLS_CATALOG,
   TIMEZONE_PRESETS,
   MISSION_SCENARIOS,
+  normalizeBuilderId,
+  computePartialTaskPreview,
+  describePlainPlanVerdict,
   visualTasksToApi,
   visualPeopleToApi,
   tasksToDsl,
@@ -34,17 +37,27 @@ const NEXT_SKILL_STATE = {
   unknown: 'none'
 };
 
+const PLAIN_REPAIR_HEADINGS = {
+  HALL_CAPACITY_CONTENTION_REPAIR: 'Schedule overload fix (keep current teammates)',
+  EVIDENCE_REPAIR: 'Confirm unverified skill',
+  COMPLEMENTARY_CANDIDATE: 'Suggested teammate for uncovered task',
+  DEADLINE_EXTENSION: 'Adjust deadline or task hours'
+};
+
 function ContributorListEditor({
   title,
   subtitle,
   people,
   horizonMin,
+  activeLinkId,
+  onLinkHover,
+  onTriggerPulse,
   onChange,
-  onNotify,
-  addDefaultLabel = 'Add Builder'
+  addDefaultLabel = 'Add person'
 }) {
   function updatePerson(idx, patch, toastMsg) {
     const next = people.map((p, i) => (i === idx ? { ...p, ...patch } : p));
+    onTriggerPulse?.();
     onChange(next, toastMsg);
   }
 
@@ -57,16 +70,16 @@ function ContributorListEditor({
     else nextSkills[skillId] = nextState;
     const stateLabel =
       nextState === 'supported'
-        ? '✓ Supported'
+        ? '✓ Verified'
         : nextState === 'unknown'
-          ? '? Provisional'
-          : '- Not Claimed';
+          ? 'Unverified (quick check)'
+          : '- Not listed';
     updatePerson(idx, { skills: nextSkills }, `${person.id} · ${skillId} -> ${stateLabel}`);
   }
 
   function addPerson() {
     const n = people.length + 1;
-    const newId = `${addDefaultLabel.toLowerCase().includes('candidate') ? 'cand' : 'builder'}-${n}`;
+    const newId = `${addDefaultLabel.toLowerCase().includes('candidate') ? 'cand' : 'member'}-${n}`;
     const next = [
       ...people,
       {
@@ -77,13 +90,15 @@ function ContributorListEditor({
         skills: { backend: 'supported' }
       }
     ];
+    onTriggerPulse?.();
     onChange(next, `Added '${newId}' to ${title.split('(')[0].trim()}.`);
   }
 
   function removePerson(idx) {
     const removed = people[idx];
     const next = people.filter((_, i) => i !== idx);
-    onChange(next, `Removed '${removed?.id || 'builder'}' from ${title.split('(')[0].trim()}.`);
+    onTriggerPulse?.();
+    onChange(next, `Removed '${removed?.id || 'person'}' from ${title.split('(')[0].trim()}.`);
   }
 
   return (
@@ -98,11 +113,11 @@ function ContributorListEditor({
         </button>
       </div>
 
-      <div className="skill-legend-bar" aria-label="Skill evidence legend">
-        <span>Click any skill chip to cycle state:</span>
-        <span className="skill-badge skill-verified">✓ Supported (Verified)</span>
-        <span className="skill-badge skill-unknown">? Provisional (Offer micro-work-sample)</span>
-        <span className="skill-badge skill-none">- Not Claimed</span>
+      <div className="skill-legend-bar" aria-label="Skill state legend">
+        <span>Click any skill tag to change state:</span>
+        <span className="skill-badge skill-verified">✓ Verified</span>
+        <span className="skill-badge skill-unknown">Unverified (quick check)</span>
+        <span className="skill-badge skill-none">- Not listed</span>
       </div>
 
       <div className="contributor-cards-stack">
@@ -112,12 +127,22 @@ function ContributorListEditor({
             4,
             Math.min(100 - startPct, Math.round(((person.endMin - person.startMin) / Math.max(60, horizonMin)) * 100))
           );
+          const isLinked =
+            activeLinkId && normalizeBuilderId(activeLinkId) === normalizeBuilderId(person.id);
 
           return (
-            <div key={`${person.id}-${idx}`} className="contributor-card">
+            <div
+              key={`${person.id}-${idx}`}
+              data-reactive-surface="true"
+              data-link-id={person.id}
+              onMouseEnter={() => onLinkHover?.(person.id)}
+              onMouseLeave={() => onLinkHover?.(null)}
+              onFocus={() => onLinkHover?.(person.id)}
+              className={`contributor-card ${isLinked ? 'is-linked-ridge' : ''}`}
+            >
               <div className="contributor-header-row">
                 <label className="field-label compact-grow">
-                  <span>Builder ID</span>
+                  <span>Name / ID</span>
                   <input
                     type="text"
                     value={person.id}
@@ -126,7 +151,7 @@ function ContributorListEditor({
                 </label>
 
                 <label className="field-label compact-grow">
-                  <span>UTC Timezone Context</span>
+                  <span>Time Zone</span>
                   <select
                     value={TIMEZONE_PRESETS.some(t => t.value === person.timezone) ? person.timezone : 'custom'}
                     onChange={e => {
@@ -161,19 +186,18 @@ function ContributorListEditor({
                 )}
               </div>
 
-              {/* 3-state skill pills */}
               <div className="pill-row" role="group" aria-label={`Skills for ${person.id}`}>
                 {SKILLS_CATALOG.map(sk => {
                   const st = person.skills?.[sk.id] || 'none';
                   const stText =
-                    st === 'supported' ? 'Supported' : st === 'unknown' ? 'Provisional Unknown' : 'Not Claimed';
+                    st === 'supported' ? 'Verified' : st === 'unknown' ? 'Unverified' : 'Not listed';
                   return (
                     <button
                       key={sk.id}
                       type="button"
                       className={`skill-state-btn state-${st}`}
                       onClick={() => cycleSkill(idx, sk.id)}
-                      aria-label={`${person.id} ${sk.short}: ${stText}. Activate to cycle state.`}
+                      aria-label={`${person.id} ${sk.short}: ${stText}. Click to change.`}
                     >
                       {st === 'supported' ? '✓ ' : st === 'unknown' ? '? ' : '- '}
                       {sk.short}
@@ -182,11 +206,10 @@ function ContributorListEditor({
                 })}
               </div>
 
-              {/* Visual Wake-Window Bar & Sliders */}
               <div className="wake-editor-box">
                 <div className="row-between small-copy wrap-gap">
                   <span>
-                    <ClockIcon size={13} /> Active Wake Window: <strong>T+{person.startMin}m .. T+{person.endMin}m</strong> ({Math.max(0, person.endMin - person.startMin)}m available)
+                    <ClockIcon size={13} /> Available hours: <strong>{person.startMin}m .. {person.endMin}m</strong> ({Math.max(0, person.endMin - person.startMin)}m)
                   </span>
                   <div className="pill-row">
                     <button
@@ -196,11 +219,11 @@ function ContributorListEditor({
                         updatePerson(
                           idx,
                           { startMin: 0, endMin: Math.round(horizonMin * 0.5) },
-                          `${person.id}: Set wake window to Shift 1 (0..${Math.round(horizonMin * 0.5)}m)`
+                          `${person.id}: Set hours to first half (0..${Math.round(horizonMin * 0.5)}m)`
                         )
                       }
                     >
-                      Shift 1 (0-50%)
+                      First half (0-50%)
                     </button>
                     <button
                       type="button"
@@ -209,11 +232,11 @@ function ContributorListEditor({
                         updatePerson(
                           idx,
                           { startMin: Math.round(horizonMin * 0.5), endMin: horizonMin },
-                          `${person.id}: Set wake window to Baton Relay (${Math.round(horizonMin * 0.5)}..${horizonMin}m)`
+                          `${person.id}: Set hours to second half (${Math.round(horizonMin * 0.5)}..${horizonMin}m)`
                         )
                       }
                     >
-                      Baton Relay (50-100%)
+                      Second half (50-100%)
                     </button>
                     <button
                       type="button"
@@ -222,11 +245,11 @@ function ContributorListEditor({
                         updatePerson(
                           idx,
                           { startMin: 0, endMin: horizonMin },
-                          `${person.id}: Set wake window to Full Horizon (0..${horizonMin}m)`
+                          `${person.id}: Set hours to full window (0..${horizonMin}m)`
                         )
                       }
                     >
-                      Full Horizon
+                      All hours
                     </button>
                   </div>
                 </div>
@@ -277,6 +300,10 @@ function ContributorListEditor({
 export default function MissionArchitectView({
   theme = 'h4h-glass',
   motion = 'spring',
+  activeLinkId = null,
+  onLinkHover,
+  pulseTrigger = 0,
+  onTriggerPulse,
   activeScenarioKey,
   omegaMode,
   onSelectScenario,
@@ -304,11 +331,21 @@ export default function MissionArchitectView({
   onNotify
 }) {
   const [showDsl, setShowDsl] = useState(false);
+  const [showProof, setShowProof] = useState(false);
   const [dslTasksDraft, setDslTasksDraft] = useState('');
   const [dslTeamDraft, setDslTeamDraft] = useState('');
   const [dslCandDraft, setDslCandDraft] = useState('');
 
   const horizonMin = Math.max(60, Math.round(Number(horizonHours || 4) * 60));
+
+  const partialPreview = useMemo(
+    () => computePartialTaskPreview(tasks, teamPeople, horizonMin, plan),
+    [tasks, teamPeople, horizonMin, plan]
+  );
+  const plainVerdict = useMemo(
+    () => describePlainPlanVerdict(plan, tasks, partialPreview),
+    [plan, tasks, partialPreview]
+  );
 
   function openDslInspector() {
     const nextOpen = !showDsl;
@@ -318,7 +355,7 @@ export default function MissionArchitectView({
       setDslCandDraft(peopleToDsl(candidates));
     }
     setShowDsl(nextOpen);
-    onNotify?.(nextOpen ? 'Opened Advanced DSL & API JSON Inspector.' : 'Closed Advanced DSL Inspector.', 'info');
+    onNotify?.(nextOpen ? 'Opened text DSL & API JSON editor.' : 'Closed text DSL editor.', 'info');
   }
 
   function applyDslChanges() {
@@ -330,17 +367,19 @@ export default function MissionArchitectView({
     if (nextTasks.length > 0) onChangeTasks(resolvedTasks);
     if (nextTeam.length > 0) onChangeTeamPeople(resolvedTeam);
     onChangeCandidates(nextCand);
+    onTriggerPulse?.();
     onRunSolveAndRecommend({
       tasks: resolvedTasks,
       teamPeople: resolvedTeam,
       candidates: nextCand,
-      toastMessage: 'Synced DSL to visual studio & re-evaluated critical-path DAG!'
+      toastMessage: 'Applied text schedule edits and re-checked the plan.'
     });
   }
 
   function updateTask(idx, patch, toastMsg) {
     const next = tasks.map((t, i) => (i === idx ? { ...t, ...patch } : t));
     onChangeTasks(next);
+    onTriggerPulse?.();
     onRunSolveAndRecommend({ tasks: next, toastMessage: toastMsg });
   }
 
@@ -366,7 +405,7 @@ export default function MissionArchitectView({
       ...tasks,
       {
         id: newId,
-        title: `Deliverable Step ${n}`,
+        title: `Task ${n}`,
         skill: 'integrate',
         durationMin: 60,
         lagMin: 0,
@@ -374,9 +413,10 @@ export default function MissionArchitectView({
       }
     ];
     onChangeTasks(next);
+    onTriggerPulse?.();
     onRunSolveAndRecommend({
       tasks: next,
-      toastMessage: `Added deliverable task '${newId}' & re-evaluated DAG.`
+      toastMessage: `Added task '${newId}' and re-checked the schedule.`
     });
   }
 
@@ -386,9 +426,10 @@ export default function MissionArchitectView({
       .filter((_, i) => i !== idx)
       .map(t => ({ ...t, after: (t.after || []).filter(d => d !== removedId) }));
     onChangeTasks(next);
+    onTriggerPulse?.();
     onRunSolveAndRecommend({
       tasks: next,
-      toastMessage: `Removed task '${removedId}' & re-evaluated DAG.`
+      toastMessage: `Removed task '${removedId}' and re-checked the schedule.`
     });
   }
 
@@ -411,17 +452,13 @@ export default function MissionArchitectView({
   const currentScenario = MISSION_SCENARIOS[activeScenarioKey];
 
   const statusTone =
-    plan?.status === 'FEASIBLE_WITNESS'
+    plainVerdict.tone === 'ok'
       ? 'tone-ok'
-      : plan?.status === 'CONDITIONAL_WITNESS'
-        ? 'tone-warn'
-        : plan
-          ? 'tone-error'
-          : '';
+      : 'tone-warn';
 
   return (
     <section aria-labelledby="architect-heading" className="view-section">
-      {/* 60-FPS Solar Terminator & Luminous Firefly Baton-Pass Horizon */}
+      {/* Calm-at-Rest Solar Terminator & Bounded 850ms Handoff Horizon */}
       <SolarBatonHorizon
         mode="architect"
         theme={theme}
@@ -430,52 +467,53 @@ export default function MissionArchitectView({
         teamPeople={teamPeople}
         candidates={candidates}
         recommendations={recs?.recommendations || []}
+        pulseTrigger={pulseTrigger}
+        activeLinkId={activeLinkId}
       />
 
-      {/* Header & 4 Interactive Scenario Cards */}
+      {/* Plain-Language Header & 4 Example Scenarios */}
       <div className="surface-card hero-strip">
         <div className="row-between wrap-gap">
           <div className="prose-measure">
-            <div className="pill-row">
-              <span className="eyebrow-tag">VIEW 2 · SYNCHRONICITY R5 COUPLED SOLVER STUDIO</span>
-              <EpistemicStencil kind="SQLITE_AUTHORITY" compact />
-              <EpistemicStencil kind="VOI_PROVISIONAL" compact />
-            </div>
-            <h2 id="architect-heading" className="view-title">Mission &amp; Ability Architect</h2>
+            <span className="eyebrow-tag">STEP 2 · SCHEDULE, TIME ZONES &amp; SKILL FIT</span>
+            <h2 id="architect-heading" className="view-title">Plan the work</h2>
             <p className="muted-copy">
-              Start from what your crew is trying to build. Model critical-path task dependencies, 24-hour UTC wake windows, provisional <code>?skill</code> wildcards, and Hall capacity contention, then add complementary builders in 1 click.
+              List the tasks, check everyone's available hours across time zones, and see who completes the schedule without replacing current teammates.
             </p>
           </div>
 
           <div className="pill-row">
             <button
               type="button"
-              className="btn btn-secondary"
+              className="btn btn-secondary btn-compact"
               onClick={onOpenCharterExport}
             >
-              <FileTextIcon size={15} /> Export Crew Charter
+              <FileTextIcon size={15} /> Preview / Print Plan
             </button>
             <button
               type="button"
-              className="btn btn-secondary"
+              className="btn btn-secondary btn-compact"
               aria-expanded={showDsl}
               onClick={openDslInspector}
             >
-              <LayersIcon /> {showDsl ? 'Hide Advanced DSL / JSON' : 'Advanced DSL / JSON'}
+              <LayersIcon size={15} /> {showDsl ? 'Hide Text / JSON' : 'Text / JSON'}
             </button>
             <button
               type="button"
-              className="btn btn-primary"
+              className="btn btn-primary btn-compact"
               disabled={solving}
-              onClick={() => onRunSolveAndRecommend({ explicitEvaluate: true })}
+              onClick={() => {
+                onTriggerPulse?.();
+                onRunSolveAndRecommend({ explicitEvaluate: true });
+              }}
             >
-              <PlayIcon /> {solving ? 'Syncing DAG...' : 'Evaluate Plan & Recommendations'}
+              <PlayIcon size={15} /> {solving ? 'Checking...' : 'Check plan & suggestions'}
             </button>
           </div>
         </div>
 
-        {/* 4 Pre-Loaded Judge Scenario Cards */}
-        <div className="scenario-cards-grid" role="group" aria-label="Pre-loaded judge scenarios">
+        {/* 4 Plain-Language Scenario Buttons */}
+        <div className="scenario-cards-grid" role="group" aria-label="Example team planning scenarios">
           {Object.values(MISSION_SCENARIOS).map(sc => {
             const active = activeScenarioKey === sc.id;
             return (
@@ -483,12 +521,16 @@ export default function MissionArchitectView({
                 key={sc.id}
                 type="button"
                 aria-pressed={active}
+                data-reactive-surface="true"
                 className={`scenario-card ${active ? 'active' : ''}`}
-                onClick={() => onSelectScenario(sc.id)}
+                onClick={() => {
+                  onTriggerPulse?.();
+                  onSelectScenario(sc.id);
+                }}
               >
                 <div className="row-between">
-                  <span className="scenario-code">{sc.code}</span>
-                  {active && <span className="badge-pill">Loaded</span>}
+                  <span className="scenario-code">Example {sc.code}</span>
+                  {active && <span className="badge-pill">Active</span>}
                 </div>
                 <strong className="scenario-title">{sc.title}</strong>
                 <span className="scenario-sub">{sc.subtitle}</span>
@@ -500,40 +542,49 @@ export default function MissionArchitectView({
         {currentScenario && (
           <div className="scenario-explainer">
             <p className="prose-measure">
-              <strong>{currentScenario.code} · {currentScenario.title}:</strong> {currentScenario.summary}
+              <strong>{currentScenario.title}:</strong> {currentScenario.summary}
             </p>
 
-            {/* Scenario C Special Sub-Mode Switcher */}
+            {/* Scenario 3 Sub-Mode Switcher */}
             {activeScenarioKey === 'omega' && (
-              <div className="pill-row top-gap-sm" role="group" aria-label="Wildcard Omega quantifier comparison">
+              <div className="pill-row top-gap-sm" role="group" aria-label="Compare unverified skill with and without backup">
                 <button
                   type="button"
                   aria-pressed={omegaMode === 'contingent'}
                   className={`btn btn-compact ${omegaMode === 'contingent' ? 'btn-primary' : 'btn-secondary'}`}
-                  onClick={() => onToggleOmegaMode('contingent')}
+                  onClick={() => {
+                    onTriggerPulse?.();
+                    onToggleOmegaMode('contingent');
+                  }}
                 >
-                  Mode C1: Contingent (?frontend -&gt; Emits 1.0-bit VOI Prompt)
+                  Case 3A: No backup for frontend (prompts 1 quick check)
                 </button>
                 <button
                   type="button"
                   aria-pressed={omegaMode === 'robust'}
                   className={`btn btn-compact ${omegaMode === 'robust' ? 'btn-primary' : 'btn-secondary'}`}
-                  onClick={() => onToggleOmegaMode('robust')}
+                  onClick={() => {
+                    onTriggerPulse?.();
+                    onToggleOmegaMode('robust');
+                  }}
                 >
-                  Mode C2: Robust Backup Present (EXISTS_FORALL_ROBUST -&gt; Zero Questions!)
+                  Case 3B: Kai covers frontend with verified work (asks 0 questions)
                 </button>
               </div>
             )}
 
-            {/* Scenario D Preventive Prerequisite 1-Click Unlock */}
+            {/* Scenario 4 Early Setup Unlock */}
             {activeScenarioKey === 'prereq' && (
               <div className="pill-row top-gap-sm">
                 <button
                   type="button"
                   className="btn btn-primary btn-compact"
-                  onClick={() => onVerifyPersonSkill('aurora', 'devops')}
+                  onClick={() => {
+                    onTriggerPulse?.();
+                    onVerifyPersonSkill('aurora', 'devops');
+                  }}
                 >
-                  <CheckCircleIcon size={15} /> Grant Preventive Cloud/A11y Sandbox to Aurora (0 Members Displaced)
+                  <CheckCircleIcon size={15} /> Confirm Aurora's cloud setup skill (keeps all 3 teammates)
                 </button>
               </div>
             )}
@@ -541,31 +592,31 @@ export default function MissionArchitectView({
         )}
       </div>
 
-      {/* Optional Advanced DSL / JSON Inspector */}
+      {/* Optional Text / JSON Inspector */}
       {showDsl && (
-        <div className="surface-card dsl-drawer" role="region" aria-label="Advanced DSL and JSON payload inspector">
+        <div className="surface-card dsl-drawer" role="region" aria-label="Text schedule and API JSON inspector">
           <div className="row-between wrap-gap">
-            <h3>Advanced Power-User DSL &amp; API Payload Inspector</h3>
+            <h3>Text Schedule &amp; API Request Payload</h3>
             <button type="button" className="btn btn-primary btn-compact" onClick={applyDslChanges}>
-              Sync DSL to Visual Studio &amp; Re-Solve
+              Apply Text &amp; Re-Check
             </button>
           </div>
           <div className="dsl-grid">
             <label className="field-label">
-              <span>Tasks DSL (<code>id,skill,durationMin,dep1|dep2,lagMin</code>)</span>
+              <span>Tasks (<code>id,skill,durationMin,dep1|dep2,lagMin</code>)</span>
               <textarea rows={4} spellCheck={false} value={dslTasksDraft} onChange={e => setDslTasksDraft(e.target.value)} />
             </label>
             <label className="field-label">
-              <span>Current Roster DSL (<code>id@start-end:skill|?unknown</code>)</span>
+              <span>People in Plan (<code>id@start-end:skill|?unverified</code>)</span>
               <textarea rows={4} spellCheck={false} value={dslTeamDraft} onChange={e => setDslTeamDraft(e.target.value)} />
             </label>
             <label className="field-label">
-              <span>Candidate Pool DSL</span>
+              <span>Candidate Pool</span>
               <textarea rows={4} spellCheck={false} value={dslCandDraft} onChange={e => setDslCandDraft(e.target.value)} />
             </label>
           </div>
           <details className="json-preview-details">
-            <summary>View Exact <code>POST /api/plan</code> JSON Request Body</summary>
+            <summary>Inspect <code>POST /api/plan</code> JSON Body</summary>
             <pre className="code-block">
               {JSON.stringify(
                 {
@@ -587,57 +638,44 @@ export default function MissionArchitectView({
         </div>
       )}
 
-      {/* Live Solver Verdict, Wildcard Omega Frontier, Repairs & Lock-to-View-3 Action */}
+      {/* Honest Plain-Language Plan Result + Level-3 Engineering Proof Toggle */}
       {plan && (
-        <div className={`surface-card verdict-banner ${statusTone}`} role="region" aria-label="Synchronicity R5 Solver Verdict">
+        <div className={`surface-card verdict-banner ${statusTone}`} role="region" aria-label="Plan readiness summary">
           <div className="row-between wrap-gap">
             <div>
-              <div className="pill-row">
-                <span className="eyebrow-tag">AUTHORITATIVE /API/PLAN SOLVER WITNESS</span>
-                <EpistemicStencil
-                  kind={plan.status === 'CONDITIONAL_WITNESS' ? 'VOI_PROVISIONAL' : 'SQLITE_AUTHORITY'}
-                  compact
-                />
-              </div>
+              <span className="eyebrow-tag">PLAN CHECK RESULT (PREVIEW UNTIL TEAM IS CREATED ON SERVER)</span>
               <h3 className="verdict-headline">
-                {plan.status === 'FEASIBLE_WITNESS' ? (
-                  <CheckCircleIcon size={22} />
+                {plainVerdict.tone === 'ok' ? (
+                  <CheckCircleIcon size={20} />
                 ) : (
-                  <AlertTriangleIcon size={22} />
+                  <AlertTriangleIcon size={20} />
                 )}
-                <span>{plan.status}</span>
-                <span className="verdict-sub">({plan.classification})</span>
+                <span>{plainVerdict.headline}</span>
               </h3>
+              <p className="muted-copy small-copy small-top">{plainVerdict.detail}</p>
             </div>
 
-            <div className="telemetry-cluster">
-              <div className="metric-pill">
-                <span className="metric-label">Search Nodes</span>
-                <strong className="metric-value">{plan.search?.nodes} / {plan.search?.limit}</strong>
-              </div>
-              <div className="metric-pill">
-                <span className="metric-label">Wildcard |Omega|</span>
-                <strong className="metric-value">
-                  {plan.frontier ? `${plan.frontier.worldsCovered} / ${plan.frontier.omegaSize} worlds` : '1 / 1'}
-                </strong>
-              </div>
-              <div className="metric-pill">
-                <span className="metric-label">Quantifier</span>
-                <strong className="metric-value">{plan.frontier?.quantifierStatus || 'DETERMINISTIC'}</strong>
-              </div>
-              <div className="metric-pill">
-                <span className="metric-label">P9R Question Policy</span>
-                <strong className="metric-value">{plan.frontier?.minimumSufficientStop || 'BOUNDED'}</strong>
-              </div>
+            <div className="pill-row">
+              <span className="badge-pill">
+                {plainVerdict.coveredCount} of {plainVerdict.totalCount} tasks covered
+              </span>
+              <button
+                type="button"
+                aria-expanded={showProof}
+                className="btn btn-secondary btn-compact"
+                onClick={() => setShowProof(v => !v)}
+              >
+                {showProof ? 'Hide Engineering Proof' : 'Engineering Proof'}
+              </button>
             </div>
           </div>
 
-          {/* FEASIBLE_WITNESS -> Lock Plan & Mint Invite into View 3 */}
+          {/* Ready -> Create team & single-use invite on server */}
           {plan.status === 'FEASIBLE_WITNESS' && (
             <div className="subcard tone-ok top-gap-sm">
               <div className="row-between wrap-gap">
                 <div className="prose-measure">
-                  <strong>Critical-Path Schedule Verified:</strong> Ready to commit this deliverable crew on Layer-A SQLite and mint a protected single-use SHA-256 invite token.
+                  <strong>All tasks and hours fit together:</strong> Create this team on the server and generate a single-use invite link in Step 3.
                 </div>
                 <div className="pill-row">
                   <button
@@ -647,7 +685,7 @@ export default function MissionArchitectView({
                     onClick={onLockPlanAndMintInvite}
                   >
                     <ShieldCheckIcon size={16} />
-                    {lockingPlan ? 'Locking Crew & Minting...' : 'Lock Feasible Plan & Mint Invite -> View 3'}
+                    {lockingPlan ? 'Creating team & invite...' : 'Create team & invite -> Step 3'}
                     <ArrowRightIcon size={14} />
                   </button>
                   <button
@@ -655,146 +693,209 @@ export default function MissionArchitectView({
                     className="btn btn-secondary btn-compact"
                     onClick={onOpenCharterExport}
                   >
-                    <FileTextIcon size={14} /> Export Crew Charter
+                    <FileTextIcon size={14} /> Preview / Print Plan
                   </button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Zero-Question Gate Celebration when Robust with Wildcards */}
+          {/* Backup covers unverified skill -> zero unnecessary questions */}
           {plan.frontier?.actionStable && (plan.frontier?.wildcards?.length || 0) > 0 && (
             <div className="subcard tone-ok top-gap-sm">
-              <strong>P9R Minimum-Sufficient Zero-Question Gate Active:</strong> Even though{' '}
-              <code>{plan.frontier.wildcards.map(w => `${w.personId}:?${w.skill}`).join(', ')}</code> is unresolved, an unconditional supported schedule covers all {plan.frontier.omegaSize}/{plan.frontier.omegaSize} Wildcard Omega worlds (<code>EXISTS_FORALL_ROBUST</code>). <strong>0 verification questions emitted!</strong>
+              <strong>Zero extra questions needed:</strong> Even though{' '}
+              <code>{plan.frontier.wildcards.map(w => `${w.personId} (${w.skill})`).join(', ')}</code> is unverified, a teammate with verified work already covers every required task.
             </div>
           )}
 
-          {/* Shannon VOI Verification Prompt */}
+          {/* One quick skill check */}
           {plan.frontier?.voiQuestion && (
             <div className="subcard tone-warn top-gap-sm">
               <div className="row-between wrap-gap">
                 <div className="prose-measure">
-                  <div className="pill-row">
-                    <strong>
-                      Highest-Gain Shannon VOI Verification Prompt ({plan.frontier.voiQuestion.informationGainBits} bits)
-                    </strong>
-                    <EpistemicStencil kind="VOI_PROVISIONAL" compact />
-                  </div>
-                  <p className="small-top">
-                    Offer a 5-minute micro-work-sample to confirm <code>{plan.frontier.voiQuestion.personId}</code> on{' '}
-                    <code>?{plan.frontier.voiQuestion.skill}</code> ({plan.frontier.voiQuestion.reason}).
+                  <strong>
+                    Quick skill check needed: {plan.frontier.voiQuestion.personId} ({plan.frontier.voiQuestion.skill})
+                  </strong>
+                  <p className="small-top small-copy">
+                    Confirming <code>{plan.frontier.voiQuestion.personId}</code>'s <code>{plan.frontier.voiQuestion.skill}</code> skill with a 5-minute sample locks the schedule ({plan.frontier.voiQuestion.reason}).
                   </p>
                 </div>
                 <button
                   type="button"
                   className="btn btn-primary btn-compact"
-                  onClick={() =>
-                    onVerifyPersonSkill(plan.frontier.voiQuestion.personId, plan.frontier.voiQuestion.skill)
-                  }
+                  onClick={() => {
+                    onTriggerPulse?.();
+                    onVerifyPersonSkill(plan.frontier.voiQuestion.personId, plan.frontier.voiQuestion.skill);
+                  }}
                 >
-                  <CheckCircleIcon size={15} /> Simulate Work-Sample Pass (?{plan.frontier.voiQuestion.skill} -&gt; ✓)
+                  <CheckCircleIcon size={15} /> Confirm {plan.frontier.voiQuestion.skill} skill
                 </button>
               </div>
             </div>
           )}
 
-          {/* Diagnostic & Hall Contention Repairs */}
+          {/* Plain-language bottleneck explanations */}
           {(plan.repairs || []).length > 0 && (
             <div className="repairs-stack top-gap-sm">
               {plan.repairs.map((rep, i) => (
                 <div key={i} className="subcard tone-warn">
                   <div className="row-between wrap-gap">
-                    <strong>{rep.kind}</strong>
+                    <strong>{PLAIN_REPAIR_HEADINGS[rep.kind] || 'How to unblock this plan'}</strong>
                     <span className="status-chip chip-ok">
-                      {rep.displacedCommittedMembers ?? 0} Committed Members Displaced
+                      Keeps current teammates ({rep.displacedCommittedMembers ?? 0} replaced)
                     </span>
                   </div>
-                  <p className="prose-measure small-top">{rep.explanation}</p>
+                  <p className="prose-measure small-top small-copy">{rep.explanation || rep.action}</p>
                   {rep.kind === 'EVIDENCE_REPAIR' && rep.personId && rep.skill && (
                     <button
                       type="button"
                       className="btn btn-secondary btn-compact top-gap-xs"
-                      onClick={() => onVerifyPersonSkill(rep.personId, rep.skill)}
+                      onClick={() => {
+                        onTriggerPulse?.();
+                        onVerifyPersonSkill(rep.personId, rep.skill);
+                      }}
                     >
-                      Verify {rep.personId}'s {rep.skill} Evidence Now
+                      Confirm {rep.personId}'s {rep.skill} skill
                     </button>
                   )}
                 </div>
               ))}
             </div>
           )}
-        </div>
-      )}
 
-      {/* Ranked Complementary & Async Baton-Pass Recommendations */}
-      {recs && (
-        <div className="surface-card" role="region" aria-label="Complementary skill and async UTC baton-pass recommendations">
-          <div className="row-between wrap-gap">
-            <div>
-              <span className="eyebrow-tag">EXPLAINED COMPLEMENTARY &amp; BATON-PASS RANKING (/API/RECOMMENDATIONS)</span>
-              <h3 className="card-subtitle">
-                Recommended Builders to Unlock or Strengthen Your Deliverable
-              </h3>
-            </div>
-            <span className="badge-pill">Baseline: {recs.baselineStatus}</span>
-          </div>
-
-          {(recs.recommendations || []).length === 0 ? (
-            <p className="muted-copy top-gap-sm">
-              All candidates in your pool have already been added to the active simulation roster!
-            </p>
-          ) : (
-            <div className="rec-cards-grid top-gap-sm">
-              {recs.recommendations.map((r, rankIdx) => (
-                <article
-                  key={r.candidateId}
-                  className={`rec-card ${r.restoresFeasibility ? 'rec-featured' : ''}`}
-                >
-                  <div className="row-between wrap-gap">
-                    <div>
-                      <span className="rank-badge">#{rankIdx + 1}</span>{' '}
-                      <strong className="crew-id">{r.candidateId}</strong>
-                      <span className="muted-copy"> · <GlobeIcon size={13} /> {r.timezoneLabel}</span>
-                    </div>
-                    <button
-                      type="button"
-                      className={`btn btn-compact ${r.restoresFeasibility ? 'btn-primary' : 'btn-secondary'}`}
-                      onClick={() => onAddCandidateToTeam(r.candidateId)}
-                    >
-                      <SparklesIcon size={14} /> Add Candidate to Simulation
-                    </button>
+          {/* Level-3 Engineering Proof Sub-Panel (CRR-10 Static Anchor) */}
+          {showProof && (
+            <div className="subcard engineering-proof-box top-gap-sm" role="region" aria-label="Level 3 Engineering Proof">
+              <div className="row-between wrap-gap">
+                <strong>Engineering Proof (<code>/api/plan</code> Solver Witness)</strong>
+                <div className="pill-row">
+                  <EpistemicStencil
+                    kind={plan.status === 'CONDITIONAL_WITNESS' ? 'VOI_PROVISIONAL' : 'SQLITE_AUTHORITY'}
+                    compact
+                  />
+                </div>
+              </div>
+              <div className="telemetry-cluster top-gap-xs">
+                <div className="metric-pill">
+                  <span className="metric-label">Status</span>
+                  <strong className="metric-value mono-cell">{plan.status}</strong>
+                </div>
+                <div className="metric-pill">
+                  <span className="metric-label">Classification</span>
+                  <strong className="metric-value mono-cell">{plan.classification}</strong>
+                </div>
+                <div className="metric-pill">
+                  <span className="metric-label">Search Nodes</span>
+                  <strong className="metric-value mono-cell">{plan.search?.nodes ?? 0} / {plan.search?.limit ?? 5000}</strong>
+                </div>
+                <div className="metric-pill">
+                  <span className="metric-label">Wildcard |Omega|</span>
+                  <strong className="metric-value mono-cell">
+                    {plan.frontier ? `${plan.frontier.worldsCovered} / ${plan.frontier.omegaSize}` : '1 / 1'}
+                  </strong>
+                </div>
+                <div className="metric-pill">
+                  <span className="metric-label">Quantifier</span>
+                  <strong className="metric-value mono-cell">{plan.frontier?.quantifierStatus || 'DETERMINISTIC'}</strong>
+                </div>
+                <div className="metric-pill">
+                  <span className="metric-label">P9R Policy</span>
+                  <strong className="metric-value mono-cell">{plan.frontier?.minimumSufficientStop || 'BOUNDED'}</strong>
+                </div>
+                {plan.frontier?.voiQuestion && (
+                  <div className="metric-pill">
+                    <span className="metric-label">Shannon VOI</span>
+                    <strong className="metric-value mono-cell">{plan.frontier.voiQuestion.informationGainBits} bits</strong>
                   </div>
-
-                  <div className="tag-cluster top-gap-xs">
-                    {r.restoresFeasibility && (
-                      <span className="status-chip chip-ok">✓ Restores Full Feasibility</span>
-                    )}
-                    {r.upgradesToConditional && (
-                      <span className="status-chip chip-warn">Upgrades to Conditional Witness</span>
-                    )}
-                    {r.asyncBatonPass && (
-                      <span className="baton-pill">Async UTC Baton-Pass (0m Overlap!)</span>
-                    )}
-                    {r.slackGainMin > 0 && (
-                      <span className="status-chip chip-ok">+{r.slackGainMin}m Deadline Slack</span>
-                    )}
-                    <span className="status-chip chip-neutral">0 Committed Members Displaced</span>
-                  </div>
-
-                  <p className="prose-measure muted-copy small-top">{r.explanation}</p>
-                </article>
-              ))}
+                )}
+              </div>
             </div>
           )}
         </div>
       )}
 
-      {/* Mission Objective + Spatial DAG Visualizer (with Before / After Wipe) */}
+      {/* Suggested People to Complete the Plan */}
+      {recs && (
+        <div className="surface-card" role="region" aria-label="Suggested people to complete your plan">
+          <div className="row-between wrap-gap">
+            <div>
+              <span className="eyebrow-tag">SUGGESTED TEAMMATES</span>
+              <h3 className="card-subtitle">
+                People who unblock or strengthen this plan
+              </h3>
+            </div>
+            <span className="badge-pill">{(recs.recommendations || []).length} candidates</span>
+          </div>
+
+          {(recs.recommendations || []).length === 0 ? (
+            <p className="muted-copy top-gap-sm">
+              Everyone in the candidate pool is already included in your plan preview.
+            </p>
+          ) : (
+            <div className="rec-cards-grid top-gap-sm">
+              {recs.recommendations.map((r, rankIdx) => {
+                const isLinked =
+                  activeLinkId && normalizeBuilderId(activeLinkId) === normalizeBuilderId(r.candidateId);
+                return (
+                  <article
+                    key={r.candidateId}
+                    data-reactive-surface="true"
+                    data-link-id={r.candidateId}
+                    onMouseEnter={() => onLinkHover?.(r.candidateId)}
+                    onMouseLeave={() => onLinkHover?.(null)}
+                    onFocus={() => onLinkHover?.(r.candidateId)}
+                    className={`rec-card ${r.restoresFeasibility ? 'rec-featured' : ''} ${
+                      isLinked ? 'is-linked-ridge' : ''
+                    }`}
+                  >
+                    <div className="row-between wrap-gap">
+                      <div>
+                        <span className="rank-badge">#{rankIdx + 1}</span>{' '}
+                        <strong className="crew-id">{r.candidateId}</strong>
+                        <span className="muted-copy"> · <GlobeIcon size={13} /> {r.timezoneLabel}</span>
+                      </div>
+                      <button
+                        type="button"
+                        className={`btn btn-compact ${r.restoresFeasibility ? 'btn-primary' : 'btn-secondary'}`}
+                        onClick={() => {
+                          onTriggerPulse?.();
+                          onAddCandidateToTeam(r.candidateId);
+                        }}
+                      >
+                        <SparklesIcon size={14} /> Try in plan
+                      </button>
+                    </div>
+
+                    <div className="tag-cluster top-gap-xs">
+                      {r.restoresFeasibility && (
+                        <span className="status-chip chip-ok">✓ Completes all tasks</span>
+                      )}
+                      {r.upgradesToConditional && (
+                        <span className="status-chip chip-warn">Covers hours (needs 1 skill check)</span>
+                      )}
+                      {r.asyncBatonPass && (
+                        <span className="baton-pill">Clean time-zone handoff (0m overlap)</span>
+                      )}
+                      {r.slackGainMin > 0 && (
+                        <span className="status-chip chip-ok">+{r.slackGainMin}m buffer</span>
+                      )}
+                      <span className="status-chip chip-neutral">Replaces 0 teammates</span>
+                    </div>
+
+                    <p className="prose-measure muted-copy small-top">{r.explanation}</p>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Goal + Task Timeline & Dependencies */}
       <div className="surface-card">
         <div className="mission-meta-grid">
           <label className="field-label">
-            <span>What is your crew trying to build? (Mission Deliverable)</span>
+            <span>What is your team building?</span>
             <input
               type="text"
               value={goalDescription}
@@ -804,7 +905,7 @@ export default function MissionArchitectView({
           </label>
 
           <label className="field-label">
-            <span>Deadline Horizon: <strong>{horizonHours} hours ({horizonMin} minutes)</strong></span>
+            <span>Total Time Window: <strong>{horizonHours} hours ({horizonMin} minutes)</strong></span>
             <div className="inline-slider-group">
               <input
                 type="range"
@@ -821,7 +922,7 @@ export default function MissionArchitectView({
                 value={horizonHours}
                 onChange={e => handleHorizonChange(Number(e.target.value))}
                 className="compact-num-in"
-                aria-label="Deadline horizon in hours"
+                aria-label="Time window in hours"
               />
             </div>
           </label>
@@ -833,17 +934,19 @@ export default function MissionArchitectView({
           horizonMin={horizonMin}
           plan={plan}
           beforeSnapshot={beforeSnapshot}
+          activeLinkId={activeLinkId}
+          onLinkHover={onLinkHover}
           onNotify={onNotify}
         />
       </div>
 
-      {/* Visual Task Dependency Builder */}
+      {/* Task Editor */}
       <div className="surface-card">
         <div className="row-between wrap-gap">
           <div>
-            <h3 className="card-subtitle">Visual Deliverable Task Builder ({tasks.length} / 8 Tasks)</h3>
+            <h3 className="card-subtitle">Tasks &amp; Handoff Order ({tasks.length} / 8 tasks)</h3>
             <p className="muted-copy small-copy">
-              Configure required skills, durations, handoff lag minutes, and prerequisite dependencies visually.
+              Set the skill, duration, handoff gap, and which earlier tasks must finish first.
             </p>
           </div>
           <button
@@ -852,15 +955,24 @@ export default function MissionArchitectView({
             disabled={tasks.length >= 8}
             onClick={addTask}
           >
-            <PlusIcon size={15} /> Add Deliverable Task
+            <PlusIcon size={15} /> Add task
           </button>
         </div>
 
         <div className="tasks-editor-grid top-gap-sm">
           {tasks.map((task, idx) => {
             const otherTasks = tasks.filter((_, i) => i !== idx);
+            const isLinked = activeLinkId === task.id;
             return (
-              <div key={idx} className="task-editor-card">
+              <div
+                key={idx}
+                data-reactive-surface="true"
+                data-link-id={task.id}
+                onMouseEnter={() => onLinkHover?.(task.id)}
+                onMouseLeave={() => onLinkHover?.(null)}
+                onFocus={() => onLinkHover?.(task.id)}
+                className={`task-editor-card ${isLinked ? 'is-linked-ridge' : ''}`}
+              >
                 <div className="row-between">
                   <span className="eyebrow-tag">TASK {idx + 1}</span>
                   {tasks.length > 1 && (
@@ -877,7 +989,7 @@ export default function MissionArchitectView({
 
                 <div className="task-fields-row">
                   <label className="field-label">
-                    <span>Task ID</span>
+                    <span>Task Name / ID</span>
                     <input
                       type="text"
                       value={task.id}
@@ -886,7 +998,7 @@ export default function MissionArchitectView({
                   </label>
 
                   <label className="field-label">
-                    <span>Required Skill</span>
+                    <span>Needed Skill</span>
                     <select value={task.skill} onChange={e => updateTask(idx, { skill: e.target.value })}>
                       {SKILLS_CATALOG.map(sk => (
                         <option key={sk.id} value={sk.id}>{sk.label} ({sk.id})</option>
@@ -909,7 +1021,7 @@ export default function MissionArchitectView({
                   </label>
 
                   <label className="field-label">
-                    <span>Handoff Lag (min)</span>
+                    <span>Handoff Gap (min)</span>
                     <input
                       type="number"
                       min={0}
@@ -923,7 +1035,7 @@ export default function MissionArchitectView({
 
                 {otherTasks.length > 0 && (
                   <fieldset className="deps-fieldset">
-                    <legend>Depends On (Upstream Prerequisites)</legend>
+                    <legend>Starts After</legend>
                     <div className="pill-row">
                       {otherTasks.map(ot => {
                         const checked = (task.after || []).includes(ot.id);
@@ -935,7 +1047,7 @@ export default function MissionArchitectView({
                             className={`chip-toggle ${checked ? 'active' : ''}`}
                             onClick={() => toggleTaskDep(idx, ot.id)}
                           >
-                            {checked ? '✓ ' : ''}after:{ot.id}
+                            {checked ? '✓ ' : ''}after {ot.id}
                           </button>
                         );
                       })}
@@ -948,26 +1060,30 @@ export default function MissionArchitectView({
         </div>
       </div>
 
-      {/* Two-Column Visual Contributor & Candidate Studio */}
+      {/* Two-Column People in Plan & Candidate Pool */}
       <div className="two-col-studio">
         <ContributorListEditor
-          title={`Current Crew Roster (${teamPeople.length})`}
-          subtitle="Accepted or active simulation teammates"
+          title={`People in Plan Preview (${teamPeople.length})`}
+          subtitle="Teammates currently included in the schedule check"
           people={teamPeople}
           horizonMin={horizonMin}
+          activeLinkId={activeLinkId}
+          onLinkHover={onLinkHover}
+          onTriggerPulse={onTriggerPulse}
           onChange={handleTeamPeopleEdit}
-          onNotify={onNotify}
-          addDefaultLabel="Add Teammate"
+          addDefaultLabel="Add teammate"
         />
 
         <ContributorListEditor
-          title={`Complementary Candidate Pool (${candidates.length})`}
-          subtitle="Ranked by /api/recommendations for feasibility & async UTC baton-pass"
+          title={`Candidate Pool (${candidates.length})`}
+          subtitle="Additional people ranked by schedule and skill fit"
           people={candidates}
           horizonMin={horizonMin}
+          activeLinkId={activeLinkId}
+          onLinkHover={onLinkHover}
+          onTriggerPulse={onTriggerPulse}
           onChange={handleCandidatesEdit}
-          onNotify={onNotify}
-          addDefaultLabel="Add Candidate"
+          addDefaultLabel="Add candidate"
         />
       </div>
     </section>

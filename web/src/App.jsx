@@ -3,29 +3,36 @@ import { planGoal } from '../../src/goal-planner.mjs';
 import { recommendComplementary, contextGlueOrExplain } from '../../src/synchronicity-solvers.mjs';
 import { getOrCreateClaimOperation, finishClaimOperation } from './claim-operation.js';
 import {
-  THEME_OPTIONS,
   loadErgonomics,
   saveErgonomics,
-  applyErgonomicsToDocument
+  applyErgonomicsToDocument,
+  resolveEffectiveScale,
+  isMotionFrozen
 } from './ergonomics.js';
 import {
   MISSION_SCENARIOS,
   normalizeBuilderId,
   findBuilderById,
   computePartialTaskPreview,
+  describePlainPlanVerdict,
   visualTasksToApi,
   visualPeopleToApi,
   loadCustomCrewOverlay,
   saveCustomCrewOverlayEntry
 } from './presets-and-catalog.js';
 import {
+  formatHumanActorName,
+  ActingAsMenuPopover,
+  DisplayComfortPopover,
   WhyPurposeFirstModal,
   AuthAccountModal,
   AccessibilityStudioDrawer,
   CommandPaletteModal
 } from './components/Overlays.jsx';
-import CrewCharterExportModal from './components/CrewCharterExportModal.jsx';
+import CrewCharterExportModal, { triggerTeamPlanDownload } from './components/CrewCharterExportModal.jsx';
 import EpistemicStencil from './components/EpistemicStencil.jsx';
+import SolarBatonHorizon from './components/SolarBatonHorizon.jsx';
+import KeyboardLightRibbon from './components/KeyboardLightRibbon.jsx';
 import DiscoverView from './views/DiscoverView.jsx';
 import MissionArchitectView from './views/MissionArchitectView.jsx';
 import SeatAuthorityView from './views/SeatAuthorityView.jsx';
@@ -39,23 +46,23 @@ import {
   DatabaseIcon,
   MeshIcon,
   OutboxIcon,
-  SlidersIcon,
-  CommandIcon,
   UserIcon,
   HelpIcon,
-  PaletteIcon,
-  ColumnsIcon,
+  EyeIcon,
+  DownloadIcon,
+  ChevronDownIcon,
   RefreshIcon,
   FileTextIcon,
+  PlusIcon,
   CheckCircleIcon,
   AlertTriangleIcon
 } from './icons.jsx';
 
 const PRIMARY_TABS = [
-  { id: 'discover', num: '1', label: 'Teammates & Crews', short: 'Teammates & Crews', hotkey: 'Alt+1', Icon: CompassIcon },
-  { id: 'architect', num: '2', label: 'Mission Planner', short: 'Mission Planner', hotkey: 'Alt+2', Icon: GitBranchIcon },
-  { id: 'authority', num: '3', label: 'Seat & Mesh Relay', short: 'Seat & Mesh Relay', hotkey: 'Alt+3', Icon: ShieldCheckIcon },
-  { id: 'arena', num: '4', label: '50x Race Proof', short: '50x Race Proof', hotkey: 'Alt+4', Icon: ZapIcon }
+  { id: 'discover', num: '1', label: 'Find teammates', short: 'Find teammates', hotkey: 'Alt+1', Icon: CompassIcon },
+  { id: 'architect', num: '2', label: 'Plan the work', short: 'Plan the work', hotkey: 'Alt+2', Icon: GitBranchIcon },
+  { id: 'authority', num: '3', label: 'Manage your team', short: 'Manage your team', hotkey: 'Alt+3', Icon: ShieldCheckIcon },
+  { id: 'arena', num: '4', label: 'Test the last spot', short: 'Test the last spot', hotkey: 'Alt+4', Icon: ZapIcon }
 ];
 
 function computeLocalSolve({ goalDescription, horizonHours, tasks, teamPeople, candidates }) {
@@ -82,7 +89,7 @@ function computeLocalSolve({ goalDescription, horizonHours, tasks, teamPeople, c
         classification: 'INFEASIBLE_WITHIN_SCOPE',
         witness: null,
         residuals: [],
-        repairs: [{ code: 'NO_TASKS', action: 'Add at least 1 mission task (up to 8 tasks).' }]
+        repairs: [{ code: 'NO_TASKS', action: 'Add at least 1 task (up to 8 tasks).' }]
       },
       recRes: { recommendations: [] }
     };
@@ -113,7 +120,7 @@ function computeLocalSolve({ goalDescription, horizonHours, tasks, teamPeople, c
         classification: 'INFEASIBLE_WITHIN_SCOPE',
         witness: null,
         residuals: [],
-        repairs: [{ code: err?.message || 'SOLVER_SCOPE', action: 'Adjust task dependencies or wake windows.' }]
+        repairs: [{ code: err?.message || 'SOLVER_SCOPE', action: 'Adjust task dependencies or available hours.' }]
       },
       recRes: { recommendations: [] }
     };
@@ -140,11 +147,23 @@ async function readApiJson(response) {
 }
 
 export default function App() {
-  // Ergonomics & Accessibility Studio State
+  // Ergonomics, Viewport Calibration & CRR State
   const [ergonomics, setErgonomics] = useState(() => loadErgonomics());
+  const [viewportWidth, setViewportWidth] = useState(() =>
+    typeof window !== 'undefined' && window.innerWidth ? window.innerWidth : 1440
+  );
   const [activeView, setActiveView] = useState('discover');
 
-  // Modals & Drawers
+  // Popovers, Modals & CRR Link/Pulse State
+  const [actingMenuOpen, setActingMenuOpen] = useState(false);
+  const [displayPopoverOpen, setDisplayPopoverOpen] = useState(false);
+  const [mobileInspectOpen, setMobileInspectOpen] = useState(false);
+  const [col3Tab, setCol3Tab] = useState('summary'); // 'summary' | 'proof'
+  const col3ScrollRef = useRef(null);
+  const savedCol3ScrollRef = useRef({ summary: 0, proof: 0 });
+  const [activeLinkId, setActiveLinkId] = useState(null);
+  const [horizonPulse, setHorizonPulse] = useState(0);
+
   const [whyOpen, setWhyOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [studioOpen, setStudioOpen] = useState(false);
@@ -184,7 +203,7 @@ export default function App() {
   const [verifiedCrewMap, setVerifiedCrewMap] = useState({});
   const [customCrewMap, setCustomCrewMap] = useState(() => loadCustomCrewOverlay());
 
-  // Mission & Ability Architect State (View 2) - Instant <2ms Client Solver Initialized
+  // Step 2: Plan the work state (Instant <2ms Client Solver Initialized)
   const [activeScenarioKey, setActiveScenarioKey] = useState('baton');
   const [omegaMode, setOmegaMode] = useState('contingent');
   const [goalDescription, setGoalDescription] = useState(MISSION_SCENARIOS.baton.goalDescription);
@@ -198,7 +217,7 @@ export default function App() {
     plan: INITIAL_BATON_SOLVE.planRes,
     tasks: MISSION_SCENARIOS.baton.tasks,
     horizonMin: INITIAL_BATON_SOLVE.horizonMin,
-    label: `Baseline roster (${MISSION_SCENARIOS.baton.teamPeople.map(p => p.id).join(', ')})`
+    label: `Baseline (${MISSION_SCENARIOS.baton.teamPeople.map(p => p.id).join(', ')})`
   });
   const [recs, setRecs] = useState(() => INITIAL_BATON_SOLVE.recRes);
   const [solving, setSolving] = useState(false);
@@ -206,7 +225,7 @@ export default function App() {
   const [lockingPlan, setLockingPlan] = useState(false);
   const [evaluatingCrewId, setEvaluatingCrewId] = useState(null);
 
-  // Seat Authority & Peer Mesh State (View 3)
+  // Step 3: Manage your team & offline forwarding state
   const [teamId, setTeamId] = useState('crew-alpha');
   const [inviteCode, setInviteCode] = useState('');
   const [issuedInvite, setIssuedInvite] = useState(null);
@@ -221,21 +240,27 @@ export default function App() {
   const [glueResult, setGlueResult] = useState(null);
   const [auditRows, setAuditRows] = useState([]);
 
-  // Concurrency & Scale Proof Arena State (View 4)
+  // Step 4: Test the last spot state
   const [raceReceipt, setRaceReceipt] = useState(null);
   const [runningRace, setRunningRace] = useState(false);
   const [probeStats, setProbeStats] = useState(null);
   const [probingLatency, setProbingLatency] = useState(false);
 
-  // Global Polite Status, Center-Top Low-Vision Toast & Authority Health
+  // Global Polite Status, Center-Top Toast & Server Health
   const [statusMessage, setStatusMessage] = useState(
-    'Ready. Browse live SQLite crews, model a mission DAG, test WAN-drop peer relay, or fire the 50-claimant race.'
+    'Ready. Find teammates whose skills fit the work, plan the schedule, manage team spots, or test the 50-person race.'
   );
   const [toast, setToast] = useState(null);
   const toastTimerRef = useRef(null);
-  const [authorityHealth, setAuthorityHealth] = useState('checking'); // 'online' | 'wan-dropped' | 'unreachable' | 'checking'
+  const [authorityHealth, setAuthorityHealth] = useState('checking');
   const [retryingServer, setRetryingServer] = useState(false);
   const tabRefs = useRef({});
+  const proxRafRef = useRef(null);
+  const lastSurfaceRef = useRef(null);
+
+  const triggerHorizonPulse = useCallback(() => {
+    setHorizonPulse(c => c + 1);
+  }, []);
 
   const notifyToast = useCallback((message, tone = 'info') => {
     if (!message) return;
@@ -248,20 +273,73 @@ export default function App() {
     toastTimerRef.current = setTimeout(() => {
       setToast(null);
       toastTimerRef.current = null;
-    }, 3500);
+    }, 3400);
   }, []);
 
   useEffect(() => {
     return () => {
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      if (proxRafRef.current) cancelAnimationFrame(proxRafRef.current);
     };
   }, []);
 
-  // Apply Ergonomics to <html> and persist
+  // Track viewport width for smart 60% Desktop <-> Tablet <-> Mobile conversion
   useEffect(() => {
-    applyErgonomicsToDocument(ergonomics);
+    if (typeof window === 'undefined') return undefined;
+    const onResize = () => {
+      setViewportWidth(window.innerWidth || 1440);
+    };
+    window.addEventListener('resize', onResize, { passive: true });
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  // Apply Ergonomics & Viewport Calibration to <html> and persist
+  useEffect(() => {
+    applyErgonomicsToDocument(ergonomics, viewportWidth);
     saveErgonomics(ergonomics);
-  }, [ergonomics]);
+  }, [ergonomics, viewportWidth]);
+
+  const resolvedScale = useMemo(
+    () => resolveEffectiveScale(ergonomics, viewportWidth),
+    [ergonomics, viewportWidth]
+  );
+
+  // Scoped rAF pointer proximity handler (0 React re-renders, 0 idle frames, disabled when motion frozen)
+  const handleShellPointerMove = useCallback(
+    e => {
+      if (isMotionFrozen(ergonomics.motion) || ergonomics.crrMode === 'flat') return;
+      const clientX = e.clientX;
+      const clientY = e.clientY;
+      const target = e.target;
+      if (proxRafRef.current) return;
+      proxRafRef.current = requestAnimationFrame(() => {
+        proxRafRef.current = null;
+        const surface = target?.closest?.('[data-reactive-surface]');
+        if (!surface) return;
+        const rect = surface.getBoundingClientRect();
+        const rx = Math.round(clientX - rect.left);
+        const ry = Math.round(clientY - rect.top);
+        surface.style.setProperty('--rx', `${rx}px`);
+        surface.style.setProperty('--ry', `${ry}px`);
+        lastSurfaceRef.current = surface;
+      });
+    },
+    [ergonomics.motion, ergonomics.crrMode]
+  );
+
+  // Preserve scroll position when switching Column 3 between Activity Summary & Engineering Proof (CRR-10)
+  function handleSwitchCol3Tab(nextTab) {
+    if (nextTab === col3Tab) return;
+    if (col3ScrollRef.current) {
+      savedCol3ScrollRef.current[col3Tab] = col3ScrollRef.current.scrollTop;
+    }
+    setCol3Tab(nextTab);
+    requestAnimationFrame(() => {
+      if (col3ScrollRef.current) {
+        col3ScrollRef.current.scrollTop = savedCol3ScrollRef.current[nextTab] || 0;
+      }
+    });
+  }
 
   // Authenticated API helpers + HTTP 401 Interceptor & Queued Replay
   const ensureToken = useCallback(
@@ -292,7 +370,6 @@ export default function App() {
         setRelayToken(relay.token);
         return demo.token;
       } catch {
-        // When PS1_DEMO_AUTH=0, return empty so protected endpoint returns HTTP 401 and opens AuthAccountModal
         return '';
       }
     },
@@ -339,7 +416,6 @@ export default function App() {
           tokenRef.current = '';
           setToken('');
 
-          // Silently auto-refresh expired 2h demo bearer token when demo auth is enabled and user did not manually sign out
           if (!signedOutManuallyRef.current) {
             try {
               const refreshActor = actorRef.current || 'leader-aurora';
@@ -356,17 +432,17 @@ export default function App() {
               setToken(refreshed.token);
               return await actionFn(refreshed.token, refreshed.actorId);
             } catch {
-              // Demo auth disabled (PS1_DEMO_AUTH=0) -> fall through to AuthAccountModal
+              // Fall through to AuthAccountModal when demo auth is disabled
             }
           }
 
           pendingAuthReplayRef.current = { label, actionFn };
           setAuthPromptMessage(
-            `HTTP 401 UNAUTHORIZED while attempting "${label}". Sign in, register a salted scrypt account, or select a Judge Persona below; "${label}" will replay automatically.`
+            `Sign in or choose a demo profile below to continue "${label}". Your action will run automatically.`
           );
           setAuthModalOpen(true);
-          setStatusMessage(`AUTH REQUIRED (401) | Queued "${label}" for immediate replay upon sign-in.`);
-          notifyToast(`Authentication required for "${label}" - queued for automatic replay.`, 'warn');
+          setStatusMessage(`Sign-in needed for "${label}" - saved and ready to run.`);
+          notifyToast(`Sign in required for "${label}" - saved for replay.`, 'warn');
           return null;
         }
         throw err;
@@ -383,7 +459,7 @@ export default function App() {
     try {
       await pending.actionFn(freshToken, freshActor);
     } catch (err) {
-      setStatusMessage(`REPLAY (${pending.label}) | ${err.message}`);
+      setStatusMessage(`Replay (${pending.label}): ${err.message}`);
     }
   }, []);
 
@@ -393,7 +469,7 @@ export default function App() {
       if (wanOffline) {
         setAuthorityHealth('wan-dropped');
         if (manual === true) {
-          notifyToast('Direct WAN is currently simulated offline (View 3 Theater).', 'warn');
+          notifyToast('Direct connection is currently turned off in Step 3.', 'warn');
         }
         return false;
       }
@@ -417,14 +493,14 @@ export default function App() {
         setBoardLatencyMs(dt);
         setAuthorityHealth('online');
         if (manual === true) {
-          notifyToast(`Synced live SQLite board (${dt.toFixed(1)} ms).`, 'ok');
+          notifyToast(`Refreshed server team list (${dt.toFixed(1)} ms).`, 'ok');
         }
         return true;
       } catch (e) {
         setAuthorityHealth('unreachable');
-        setStatusMessage(`BOARD | ${e.message}`);
+        setStatusMessage(`Server connection: ${e.message}`);
         if (manual === true) {
-          notifyToast('Local SQLite server (:8788) unreachable - client-side solver remains active.', 'err');
+          notifyToast('Local server (:8788) offline - plan preview still works locally.', 'err');
         }
         return false;
       }
@@ -440,9 +516,9 @@ export default function App() {
       }
       const ok = await refreshBoard(false);
       if (ok) {
-        notifyToast('Connected to live SQLite Authority server (:8788)!', 'ok');
+        notifyToast('Connected to local server (:8788).', 'ok');
       } else {
-        notifyToast('Server :8788 still offline - launch LAUNCH_H4H_PS1.cmd on Desktop.', 'err');
+        notifyToast('Server (:8788) still offline - run LAUNCH_H4H_PS1.cmd on Desktop.', 'err');
       }
     } finally {
       setRetryingServer(false);
@@ -473,7 +549,7 @@ export default function App() {
     };
   }, [eventId, wanOffline, refreshBoard]);
 
-  // Auto-bootstrap judge persona & initial solver witness on first mount
+  // Auto-bootstrap profile & initial solver check on first mount
   const bootstrapped = useRef(false);
   useEffect(() => {
     if (bootstrapped.current) return;
@@ -536,11 +612,10 @@ export default function App() {
             plan: pRes,
             tasks: sc.tasks,
             horizonMin: hMin,
-            label: `Baseline roster (${sc.teamPeople.map(p => p.id).join(', ')})`
+            label: `Baseline (${sc.teamPeople.map(p => p.id).join(', ')})`
           };
         }
 
-        // Auto-spawn 3 open-seat showcase crews once on first boot if seed-event Page 1 starts at crew-0000
         try {
           const checkBoard = await readApiJson(
             await fetch('/api/events/seed-event/board?limit=5&offset=0', { cache: 'no-store' })
@@ -553,7 +628,7 @@ export default function App() {
                 tid: `00-open-baton-${bootTag}`,
                 lead: `lead-baton-${bootTag}`,
                 extraCount: 1,
-                mission: 'Async Hot Springs (UTC-6) <-> Bengaluru (UTC+5:30) Mesh API & Accessible UI',
+                mission: 'Cross-timezone Hot Springs (UTC-6) <-> Bengaluru (UTC+5:30) API & Accessible UI',
                 skills: ['backend', 'frontend', 'integrate'],
                 utcBucket: 'baton'
               },
@@ -569,7 +644,7 @@ export default function App() {
                 tid: `02-final-seat-${bootTag}`,
                 lead: `lead-scarce-${bootTag}`,
                 extraCount: 3,
-                mission: 'Scarce final-seat WCAG 2.2 AAA lab notebook & schedule verifier',
+                mission: 'Accessible lab notebook & schedule verifier (1 last spot open)',
                 skills: ['frontend', 'design', 'integrate'],
                 utcBucket: 'baton'
               }
@@ -638,7 +713,7 @@ export default function App() {
             if (typeof refreshed.maxSize === 'number') setEventMaxSize(refreshed.maxSize);
           }
         } catch {
-          // Non-fatal if seed-event already has open crews or demo auth is disabled
+          // Non-fatal if seed-event already has open teams
         }
       } catch {
         // Graceful fallback when PS1_DEMO_AUTH=0
@@ -646,7 +721,7 @@ export default function App() {
     })();
   }, []);
 
-  // Persona & Account Auth Handlers
+  // Profile & Account Auth Handlers
   const switchPersona = useCallback(
     async persona => {
       try {
@@ -670,14 +745,15 @@ export default function App() {
         setActorId(main.actorId);
         setToken(main.token);
         setRelayToken(relay.token);
-        setStatusMessage(`AUTH | Active persona switched to '${main.actorId}' (peer relay 'relay-mateo' armed).`);
-        notifyToast(`Active persona: ${main.actorId} (relay-mateo armed)`, 'ok');
+        const niceName = formatHumanActorName(main.actorId, true);
+        setStatusMessage(`Acting as ${niceName} (${main.actorId}). Teammate relay Mateo ready.`);
+        notifyToast(`Now acting as ${niceName}`, 'ok');
         refreshBoard();
         await replayPendingAuthAction(main.token, main.actorId);
         return true;
       } catch (e) {
-        setStatusMessage(`AUTH | ${e.message} (Sign in or register via Account modal when PS1_DEMO_AUTH=0).`);
-        notifyToast(`Demo auth unavailable (${e.message}) - sign in via Account modal.`, 'warn');
+        setStatusMessage(`Sign-in needed (${e.message}).`);
+        notifyToast('Demo profiles disabled - sign in with an account.', 'warn');
         setAuthModalOpen(true);
         return false;
       }
@@ -699,9 +775,9 @@ export default function App() {
     setActorId(res.actorId);
     setToken(res.token);
     setStatusMessage(
-      `AUTH | ${mode === 'register' ? 'Registered salted scrypt account' : 'Signed in'} as '${res.actorId}'.`
+      `${mode === 'register' ? 'Created account and signed in' : 'Signed in'} as '${res.actorId}'.`
     );
-    notifyToast(`${mode === 'register' ? 'Registered' : 'Signed in'} as ${res.actorId}`, 'ok');
+    notifyToast(`${mode === 'register' ? 'Created account' : 'Signed in'} as ${res.actorId}`, 'ok');
     refreshBoard();
     await replayPendingAuthAction(res.token, res.actorId);
     return res;
@@ -723,39 +799,39 @@ export default function App() {
       actorRef.current = '';
       setActorId('');
       setToken('');
-      setStatusMessage('AUTH | Session token revoked in SQLite ps1_revoked_tokens.');
-      notifyToast('Signed out & revoked Bearer token in SQLite.', 'info');
-    } catch (e) {
+      setStatusMessage('Signed out and revoked session token on server.');
+      notifyToast('Signed out.', 'info');
+    } catch {
       tokenRef.current = '';
       actorRef.current = '';
       setActorId('');
       setToken('');
-      setStatusMessage(`AUTH | Signed out (${e.message}).`);
-      notifyToast('Signed out locally.', 'info');
+      setStatusMessage('Signed out locally.');
+      notifyToast('Signed out.', 'info');
     }
   }
 
   // Event Scope Handlers
   async function handleEnsureEvent(nextEv) {
     if (!/^[A-Za-z0-9_.:@-]{1,128}$/.test(nextEv)) {
-      setStatusMessage('EVENT | Invalid event identifier.');
-      notifyToast('Invalid event scope identifier.', 'err');
+      setStatusMessage('Invalid event ID.');
+      notifyToast('Invalid event ID.', 'err');
       return;
     }
     try {
-      await runProtectedAction(`Create/Switch Event Scope (${nextEv})`, async freshTok => {
+      await runProtectedAction(`Switch Event (${nextEv})`, async freshTok => {
         await sendPost('/api/events', { eventId: nextEv, maxSize: 5 }, freshTok);
         setEventId(nextEv);
         setPageIndex(0);
         setSelectedTeam(null);
-        setStatusMessage(`EVENT | Active event scope set to '${nextEv}'.`);
-        notifyToast(`Event scope switched to '${nextEv}'.`, 'ok');
+        setStatusMessage(`Switched active event to '${nextEv}'.`);
+        notifyToast(`Switched event to '${nextEv}'.`, 'ok');
       });
-    } catch (e) {
+    } catch {
       setEventId(nextEv);
       setPageIndex(0);
-      setStatusMessage(`EVENT | Switched scope to '${nextEv}' (${e.message}).`);
-      notifyToast(`Event scope set to '${nextEv}'.`, 'info');
+      setStatusMessage(`Switched event to '${nextEv}'.`);
+      notifyToast(`Event set to '${nextEv}'.`, 'info');
     }
   }
 
@@ -763,9 +839,8 @@ export default function App() {
     handleEnsureEvent(nextEv);
   }
 
-  // Spawn 3 real open-seat SQLite crews at top of Page 1
   async function spawnShowcaseCrews() {
-    await runProtectedAction('Spawn 3 Open-Seat Showcase Crews', async freshTok => {
+    await runProtectedAction('Add 3 Example Open Teams', async freshTok => {
       setSpawningDemo(true);
       try {
         await sendPost('/api/events', { eventId, maxSize: 5 }, freshTok);
@@ -775,7 +850,7 @@ export default function App() {
             tid: `00-open-baton-${tag}`,
             lead: `lead-baton-${tag}`,
             extraCount: 1,
-            mission: 'Async Hot Springs (UTC-6) <-> Bengaluru (UTC+5:30) Mesh API & Accessible UI',
+            mission: 'Cross-timezone Hot Springs (UTC-6) <-> Bengaluru (UTC+5:30) API & Accessible UI',
             skills: ['backend', 'frontend', 'integrate'],
             utcBucket: 'baton'
           },
@@ -791,7 +866,7 @@ export default function App() {
             tid: `02-final-seat-${tag}`,
             lead: `lead-scarce-${tag}`,
             extraCount: Math.max(0, (eventMaxSize || 5) - 2),
-            mission: 'Scarce final-seat WCAG 2.2 AAA lab notebook & tactile schedule verifier',
+            mission: 'Accessible lab notebook & schedule verifier (1 last spot open)',
             skills: ['frontend', 'design', 'integrate'],
             utcBucket: 'baton'
           }
@@ -836,7 +911,6 @@ export default function App() {
             });
             spawnedCount += 1;
           } catch (demoErr) {
-            // Fallback when PS1_DEMO_AUTH=0: create open showcase crew with authenticated judge session
             if (spawnedCount === 0 && freshTok) {
               const fallbackTid = `00-open-crew-${tag}`;
               await sendPost('/api/teams', { eventId, teamId: fallbackTid }, freshTok);
@@ -855,22 +929,20 @@ export default function App() {
         setCustomCrewMap(nextCustom);
         setPageIndex(0);
         await refreshBoard();
-        const msg = `Spawned ${spawnedCount} live SQLite open-seat showcase ${
-          spawnedCount === 1 ? 'crew' : 'crews'
-        } on Page 1 of '${eventId}'.`;
-        setStatusMessage(`BOARD | ${msg}`);
+        const msg = `Added ${spawnedCount} open example ${spawnedCount === 1 ? 'team' : 'teams'} on Page 1.`;
+        setStatusMessage(msg);
         notifyToast(msg, 'ok');
       } catch (e) {
         if (e?.status === 401 || e?.message === 'UNAUTHORIZED') throw e;
-        setStatusMessage(`SPAWN | ${e.message}`);
-        notifyToast(`Spawn crews failed: ${e.message}`, 'err');
+        setStatusMessage(`Create teams: ${e.message}`);
+        notifyToast(`Could not create example teams: ${e.message}`, 'err');
       } finally {
         setSpawningDemo(false);
       }
     });
   }
 
-  // Mission Architect Solver Execution: Instant <2ms Client-Side Solver + Non-Blocking /api/plan Sync
+  // Instant <2ms Client-Side Solver + Non-Blocking /api/plan Sync
   const runSolveAndRecommend = useCallback(
     async (overrides = {}) => {
       const useGoal = overrides.goalDescription ?? goalDescription;
@@ -881,7 +953,6 @@ export default function App() {
       const useCrewTag = overrides.crewId !== undefined ? overrides.crewId : evaluatingCrewId;
       const resetComparison = Boolean(overrides.resetComparison);
 
-      // 1. Synchronous <2ms client-side critical-path & complementary recommendation solve
       const local = computeLocalSolve({
         goalDescription: useGoal,
         horizonHours: useHours,
@@ -908,7 +979,7 @@ export default function App() {
             plan: nextPlan,
             tasks: useTasks,
             horizonMin: local.horizonMin,
-            label: `Blocked state (${useTeam.map(p => p.id).join(', ')})`
+            label: `Incomplete (${useTeam.map(p => p.id).join(', ')})`
           };
           setBeforeSnapshot(null);
         } else if (
@@ -929,34 +1000,17 @@ export default function App() {
           [useCrewTag]: local.planRes.status
         }));
       }
-      setStatusMessage(
-        `SOLVER | ${local.planRes.status} (${local.planRes.classification}) · Quantifier: ${
-          local.planRes.frontier?.quantifierStatus || 'BOUNDED'
-        } · Ranked ${local.recRes.recommendations?.length || 0} complementary builders.`
-      );
+
+      const localPreview = computePartialTaskPreview(useTasks, useTeam, local.horizonMin, local.planRes);
+      const plain = describePlainPlanVerdict(local.planRes, useTasks, localPreview);
+      setStatusMessage(`${plain.headline} · ${local.recRes.recommendations?.length || 0} suggested people.`);
 
       if (overrides.toastMessage) {
-        const tone =
-          local.planRes.status === 'FEASIBLE_WITNESS'
-            ? 'ok'
-            : local.planRes.status === 'CONDITIONAL_WITNESS'
-              ? 'warn'
-              : 'info';
-        notifyToast(overrides.toastMessage, tone);
+        notifyToast(overrides.toastMessage, plain.tone === 'ok' ? 'ok' : 'info');
       } else if (overrides.explicitEvaluate) {
-        const tone =
-          local.planRes.status === 'FEASIBLE_WITNESS'
-            ? 'ok'
-            : local.planRes.status === 'CONDITIONAL_WITNESS'
-              ? 'warn'
-              : 'warn';
-        notifyToast(
-          `Evaluated DAG: ${local.planRes.status} (${local.planRes.classification})`,
-          tone
-        );
+        notifyToast(plain.headline, plain.tone === 'ok' ? 'ok' : 'warn');
       }
 
-      // 2. Non-blocking authoritative /api/plan + /api/recommendations verification when online
       if (wanOffline || local.apiTeam.length === 0 || local.goalPayload.tasks.length === 0) {
         return local;
       }
@@ -980,7 +1034,7 @@ export default function App() {
             setToken(refreshed.token);
             setActorId(refreshed.actorId);
           } catch {
-            // Keep instant client-side solve without interrupting user
+            // Keep instant local solve
           }
         }
         if (!activeTok) return local;
@@ -1048,7 +1102,7 @@ export default function App() {
           setAuthorityHealth('online');
         }
       } catch {
-        // Never wipe local instant solve on transient network or offline state
+        // Keep instant local solve on transient network error
       } finally {
         if (seq === solveSeqRef.current) {
           setSolving(false);
@@ -1072,6 +1126,7 @@ export default function App() {
       setTasks(sc.tasks);
       setTeamPeople(sc.teamPeople);
       setCandidates(sc.candidates);
+      triggerHorizonPulse();
       const solved = computeLocalSolve({
         goalDescription: sc.goalDescription,
         horizonHours: sc.horizonHours,
@@ -1079,6 +1134,8 @@ export default function App() {
         teamPeople: sc.teamPeople,
         candidates: sc.candidates
       });
+      const prevMap = computePartialTaskPreview(sc.tasks, sc.teamPeople, sc.horizonHours * 60, solved.planRes);
+      const plain = describePlainPlanVerdict(solved.planRes, sc.tasks, prevMap);
       runSolveAndRecommend({
         goalDescription: sc.goalDescription,
         horizonHours: sc.horizonHours,
@@ -1087,10 +1144,10 @@ export default function App() {
         candidates: sc.candidates,
         crewId: null,
         resetComparison: true,
-        toastMessage: `Loaded ${sc.code} (${sc.title}) -> ${solved.planRes.status}`
+        toastMessage: `${sc.title} -> ${plain.headline}`
       });
     },
-    [runSolveAndRecommend]
+    [runSolveAndRecommend, triggerHorizonPulse]
   );
 
   function handleToggleOmegaMode(nextMode) {
@@ -1098,6 +1155,7 @@ export default function App() {
     setOmegaMode(nextMode);
     const nextRoster = nextMode === 'robust' ? sc.robustTeamPeople : sc.teamPeople;
     setTeamPeople(nextRoster);
+    triggerHorizonPulse();
     runSolveAndRecommend({
       goalDescription: sc.goalDescription,
       horizonHours: sc.horizonHours,
@@ -1106,8 +1164,8 @@ export default function App() {
       candidates: sc.candidates,
       toastMessage:
         nextMode === 'robust'
-          ? 'Mode C2: Robust backup active (EXISTS_FORALL_ROBUST -> 0 VOI questions!)'
-          : 'Mode C1: Contingent ?frontend active (1.0-bit Shannon VOI prompt)'
+          ? 'Backup covers frontend with verified work -> 0 extra questions needed!'
+          : 'Unverified frontend without backup -> prompts 1 quick skill check.'
     });
   }
 
@@ -1122,7 +1180,7 @@ export default function App() {
     const alreadyInTeam = teamPeople.some(p => normalizeBuilderId(p.id) === targetId);
     const personEntry = {
       id: targetId,
-      timezone: found.timezone || 'UTC-6 · Hot Springs / Central',
+      timezone: found.timezone || 'UTC-6 · Hot Springs',
       startMin: found.startMin ?? 0,
       endMin: found.endMin ?? Math.max(60, Math.round(Number(horizonHours || 4) * 60)),
       skills: { ...(found.skills || {}) }
@@ -1131,6 +1189,7 @@ export default function App() {
     const nextCands = candidates.filter(c => normalizeBuilderId(c.id) !== targetId);
     setTeamPeople(nextTeam);
     setCandidates(nextCands);
+    triggerHorizonPulse();
     const preview = computeLocalSolve({
       goalDescription,
       horizonHours,
@@ -1138,13 +1197,12 @@ export default function App() {
       teamPeople: nextTeam,
       candidates: nextCands
     });
+    const prevMap = computePartialTaskPreview(tasks, nextTeam, preview.horizonMin, preview.planRes);
+    const plain = describePlainPlanVerdict(preview.planRes, tasks, prevMap);
     runSolveAndRecommend({
       teamPeople: nextTeam,
       candidates: nextCands,
-      toastMessage:
-        preview.planRes.status === 'FEASIBLE_WITNESS'
-          ? `✓ Added ${found.displayName || targetId} to crew -> Critical-path schedule FEASIBLE!`
-          : `Added ${found.displayName || targetId} to crew -> ${preview.planRes.status}`
+      toastMessage: `Tried ${found.displayName || targetId} in plan (preview) -> ${plain.headline}`
     });
   }
 
@@ -1164,7 +1222,7 @@ export default function App() {
         ...teamPeople,
         {
           id: targetId,
-          timezone: base?.timezone || 'UTC-6 · Hot Springs / Central',
+          timezone: base?.timezone || 'UTC-6 · Hot Springs',
           startMin: base?.startMin ?? 0,
           endMin: base?.endMin ?? Math.max(60, Math.round(Number(horizonHours || 4) * 60)),
           skills: { ...(base?.skills || {}), [skillId]: 'supported' }
@@ -1172,6 +1230,7 @@ export default function App() {
       ];
     }
     setTeamPeople(nextTeam);
+    triggerHorizonPulse();
     const preview = computeLocalSolve({
       goalDescription,
       horizonHours,
@@ -1179,9 +1238,11 @@ export default function App() {
       teamPeople: nextTeam,
       candidates
     });
+    const prevMap = computePartialTaskPreview(tasks, nextTeam, preview.horizonMin, preview.planRes);
+    const plain = describePlainPlanVerdict(preview.planRes, tasks, prevMap);
     runSolveAndRecommend({
       teamPeople: nextTeam,
-      toastMessage: `✓ Verified ${targetId}'s ${skillId} capability -> ${preview.planRes.status}`
+      toastMessage: `Confirmed ${targetId}'s ${skillId} skill -> ${plain.headline}`
     });
   }
 
@@ -1195,30 +1256,30 @@ export default function App() {
       );
       setSelectedTeam(detail);
       setTeamId(tid);
-      setStatusMessage(`ROSTER | Loaded ${detail.members.length}/${detail.maxSize} members for '${tid}'.`);
+      setStatusMessage(`Confirmed by server: ${detail.members.length}/${detail.maxSize} spots filled on '${tid}'.`);
       if (!silent) {
         notifyToast(
-          `Loaded SQLite roster for '${tid}' (${detail.members.length}/${detail.maxSize} seats).`,
+          `Loaded '${tid}': ${detail.members.length}/${detail.maxSize} spots confirmed by server.`,
           'info'
         );
       }
     } catch (e) {
       setSelectedTeam(null);
-      setStatusMessage(`ROSTER | ${e.message}`);
+      setStatusMessage(`Team lookup: ${e.message}`);
       if (!silent) {
-        notifyToast(`Could not load roster for '${tid}': ${e.message}`, 'err');
+        notifyToast(`Could not load '${tid}': ${e.message}`, 'err');
       }
     }
   }
 
-  // View 2 -> View 3: Lock Feasible Plan, Create Crew & Mint Single-Use Invite
+  // Step 2 -> Step 3: Create Team & Single-Use Invite on Server
   async function handleLockPlanAndMintInvite() {
-    await runProtectedAction('Lock Feasible Plan & Mint Invite', async freshTok => {
+    await runProtectedAction('Create Team & Single-Use Invite', async freshTok => {
       setLockingPlan(true);
       try {
         await sendPost('/api/events', { eventId, maxSize: 5 }, freshTok);
         const tag = String(Date.now()).slice(-4);
-        let targetTid = `00-feasible-${tag}`;
+        const targetTid = `00-feasible-${tag}`;
         let activeTok = freshTok;
         let activeLead = actorRef.current || 'leader-aurora';
 
@@ -1226,7 +1287,6 @@ export default function App() {
           await sendPost('/api/teams', { eventId, teamId: targetTid }, activeTok);
         } catch (teamErr) {
           if (teamErr.code === 'ONE_TEAM_PER_EVENT' || String(teamErr.message).includes('ONE_TEAM_PER_EVENT')) {
-            // Mint a fresh demo leader persona so repeated locks always create a clean crew
             const freshPersona = await readApiJson(
               await fetch('/api/auth/demo', {
                 method: 'POST',
@@ -1250,7 +1310,7 @@ export default function App() {
         const nextCustom = saveCustomCrewOverlayEntry(eventId, targetTid, {
           mission: goalDescription,
           skills: planSkills,
-          utcLabel: activeScenarioKey === 'baton' ? 'UTC-6 <-> UTC+5:30 Baton' : 'Verified Critical-Path Schedule',
+          utcLabel: activeScenarioKey === 'baton' ? 'UTC-6 <-> UTC+5:30 Baton' : 'Verified Schedule',
           utcBucket: activeScenarioKey === 'baton' ? 'baton' : 'americas',
           scenarioKey: activeScenarioKey
         });
@@ -1276,13 +1336,13 @@ export default function App() {
         setAuditRows(aud.audit || []);
         setActiveView('authority');
         setStatusMessage(
-          `PLAN LOCKED -> VIEW 3 | Created crew '${targetTid}' (${activeLead}) and minted single-use SHA-256 invite token.`
+          `Confirmed by server: created team '${targetTid}' and generated a single-use invite in Step 3.`
         );
-        notifyToast(`✓ Committed crew '${targetTid}' & minted single-use invite in View 3!`, 'ok');
+        notifyToast(`Created team '${targetTid}' & single-use invite on server!`, 'ok');
       } catch (e) {
         if (e?.status === 401 || e?.message === 'UNAUTHORIZED') throw e;
-        setStatusMessage(`LOCK PLAN | ${e.message}`);
-        notifyToast(`Commit crew failed: ${e.message}`, 'err');
+        setStatusMessage(`Create team failed: ${e.message}`);
+        notifyToast(`Could not create team: ${e.message}`, 'err');
       } finally {
         setLockingPlan(false);
       }
@@ -1301,6 +1361,7 @@ export default function App() {
     setCandidates(sc.candidates);
     setBeforeSnapshot(null);
     setActiveView('architect');
+    triggerHorizonPulse();
     runSolveAndRecommend({
       goalDescription: customGoal,
       horizonHours: sc.horizonHours,
@@ -1309,7 +1370,7 @@ export default function App() {
       candidates: sc.candidates,
       crewId: crewProfile.teamId,
       resetComparison: true,
-      toastMessage: `Evaluating '${crewProfile.teamId}' in Mission Planner (View 2)`
+      toastMessage: `Previewing '${crewProfile.teamId}' in Step 2 (preview only - not joined yet)`
     });
   }
 
@@ -1317,7 +1378,7 @@ export default function App() {
     setTeamId(tid);
     inspectTeam(tid, true);
     setActiveView('authority');
-    notifyToast(`Selected '${tid}' in Seat & Mesh Relay (View 3).`, 'info');
+    notifyToast(`Opened '${tid}' in Step 3: Manage your team.`, 'info');
   }
 
   function handleSendBuilderToArchitect(builder) {
@@ -1343,11 +1404,10 @@ export default function App() {
     setActiveView('architect');
     runSolveAndRecommend({
       candidates: nextCands,
-      toastMessage: `Opened ${resolved.displayName || targetId} in Mission Planner (View 2).`
+      toastMessage: `Viewing ${resolved.displayName || targetId} in Step 2: Plan the work.`
     });
   }
 
-  // Real-time in-place Builder toggle on View 1 Live Split Studio
   function handleToggleBuilderInCrew(builderOrId) {
     const resolved = findBuilderById(builderOrId, [teamPeople, candidates]);
     if (!resolved) return;
@@ -1385,6 +1445,7 @@ export default function App() {
 
     setTeamPeople(nextTeam);
     setCandidates(nextCands);
+    triggerHorizonPulse();
     const preview = computeLocalSolve({
       goalDescription,
       horizonHours,
@@ -1392,11 +1453,11 @@ export default function App() {
       teamPeople: nextTeam,
       candidates: nextCands
     });
+    const prevMap = computePartialTaskPreview(tasks, nextTeam, preview.horizonMin, preview.planRes);
+    const plain = describePlainPlanVerdict(preview.planRes, tasks, prevMap);
     const toastMsg = existsInTeam
-      ? `Removed ${label} (${targetId}) from active crew -> ${preview.planRes.status}`
-      : preview.planRes.status === 'FEASIBLE_WITNESS'
-        ? `✓ Added ${label} (${targetId}) -> Critical-path schedule is now FEASIBLE!`
-        : `Simulated ${label} (${targetId}) in crew -> ${preview.planRes.status}`;
+      ? `Removed ${label} from plan preview -> ${plain.headline}`
+      : `Tried ${label} in plan (preview only) -> ${plain.headline}`;
 
     runSolveAndRecommend({
       teamPeople: nextTeam,
@@ -1405,25 +1466,25 @@ export default function App() {
     });
   }
 
-  // View 3: Seat Authority & Peer Mesh Handlers
+  // Step 3: Server Membership & Offline Forwarding Handlers
   const loadAudit = useCallback(
     async (overrideTok, manual = false) => {
       try {
-        await runProtectedAction('Load Attributable Audit Log', async freshTok => {
+        await runProtectedAction('Load Server History', async freshTok => {
           const aud = await sendGetAuth(
             `/api/events/${encodeURIComponent(eventId)}/audit`,
             typeof overrideTok === 'string' ? overrideTok : freshTok
           );
           setAuditRows(aud.audit || []);
-          setStatusMessage(`AUDIT | Loaded ${aud.audit?.length || 0} attributable SQLite audit entries.`);
+          setStatusMessage(`Loaded ${aud.audit?.length || 0} confirmed server records.`);
           if (manual === true) {
-            notifyToast(`Loaded ${aud.audit?.length || 0} attributable SQLite audit entries.`, 'ok');
+            notifyToast(`Loaded ${aud.audit?.length || 0} server records.`, 'ok');
           }
         });
       } catch (e) {
-        setStatusMessage(`AUDIT | ${e.message}`);
+        setStatusMessage(`History error: ${e.message}`);
         if (manual === true) {
-          notifyToast(`Audit sync failed: ${e.message}`, 'err');
+          notifyToast(`Could not load history: ${e.message}`, 'err');
         }
       }
     },
@@ -1442,34 +1503,34 @@ export default function App() {
           setCustomCrewMap(nextCustom);
         }
         setStatusMessage(
-          `AUTHORITY | Created team '${res.teamId}' with leader '${freshActor || actorRef.current}' and saved custom mission to Discover overlay.`
+          `Confirmed by server: created team '${res.teamId}' led by '${freshActor || actorRef.current}'.`
         );
-        notifyToast(`✓ Created SQLite crew '${res.teamId}' (Leader: ${freshActor || actorRef.current})`, 'ok');
+        notifyToast(`Confirmed by server: created team '${res.teamId}'`, 'ok');
         await refreshBoard();
         await inspectTeam(teamId, true);
         await loadAudit(freshTok);
       });
     } catch (e) {
-      setStatusMessage(`CREATE TEAM | ${e.message}`);
-      notifyToast(`Create team failed: ${e.message}`, 'err');
+      setStatusMessage(`Create team: ${e.message}`);
+      notifyToast(`Could not create team: ${e.message}`, 'err');
     }
   }
 
   async function handleCreateInvite() {
     try {
-      await runProtectedAction(`Issue Single-Use Invite (${teamId})`, async (freshTok, freshActor) => {
+      await runProtectedAction(`Create Invite (${teamId})`, async (freshTok, freshActor) => {
         const expiresAt = Date.now() + 600000;
         const res = await sendPost('/api/invitations', { eventId, teamId, expiresAt }, freshTok);
         const activeLead = freshActor || actorRef.current || actorId || 'leader';
         setIssuedInvite({ ...res, teamId, eventId, issuedBy: activeLead });
         setInviteCode(res.code);
-        setStatusMessage(`INVITE | Minted single-use SHA-256 hashed invitation for '${teamId}' (10m TTL).`);
-        notifyToast(`✓ Minted single-use SHA-256 invite for '${teamId}' (10m TTL).`, 'ok');
+        setStatusMessage(`Confirmed by server: created single-use invite for '${teamId}' (expires in 10m).`);
+        notifyToast(`Created single-use invite for '${teamId}'.`, 'ok');
         await loadAudit(freshTok);
       });
     } catch (e) {
-      setStatusMessage(`INVITE | ${e.message}`);
-      notifyToast(`Issue invite failed: ${e.message}`, 'err');
+      setStatusMessage(`Invite: ${e.message}`);
+      notifyToast(`Could not create invite: ${e.message}`, 'err');
     }
   }
 
@@ -1499,8 +1560,7 @@ export default function App() {
         setToken(claimantTok);
         setActorId(claimantActor);
       } catch {
-        // When PS1_DEMO_AUTH=0, prompt judge to sign in / register as invited candidate and replay claim
-        await runProtectedAction(`Claim Seat on ${teamId} as Invited Candidate`, async (replayedTok, replayedActor) => {
+        await runProtectedAction(`Join ${teamId} as Invited Teammate`, async (replayedTok, replayedActor) => {
           const op = await getOrCreateClaimOperation({
             eventId,
             teamId,
@@ -1513,8 +1573,8 @@ export default function App() {
             replayedTok
           );
           if (res.status === 'COMMITTED') finishClaimOperation(sessionStorage, op.key);
-          setStatusMessage(`AUTHORITY | ${res.status} for '${replayedActor || res.actorId}' on '${res.teamId}'.`);
-          notifyToast(`✓ Seat committed for '${replayedActor || res.actorId}' on '${res.teamId}'!`, 'ok');
+          setStatusMessage(`Confirmed by server: '${replayedActor || res.actorId}' joined '${res.teamId}'.`);
+          notifyToast(`Confirmed by server: joined '${res.teamId}'!`, 'ok');
           await refreshBoard();
           await inspectTeam(teamId, true);
           await loadAudit(replayedTok);
@@ -1541,10 +1601,8 @@ export default function App() {
         });
         setRelayedReceipt(null);
         setReplayReceipt(null);
-        setStatusMessage(
-          `LOCAL OUTBOX | Switched to '${claimantActor}' while WAN is offline. Queued opId '${operation.opId}' for peer relay!`
-        );
-        notifyToast(`WAN Offline: Queued '${claimantActor}' claim (${operation.opId}) in Local Outbox!`, 'warn');
+        setStatusMessage(`Saved on this device. Waiting to send (${claimantActor} -> ${teamId}).`);
+        notifyToast('Saved on this device. Waiting to send.', 'warn');
         return;
       }
 
@@ -1557,16 +1615,14 @@ export default function App() {
         finishClaimOperation(sessionStorage, operation.key);
       }
       setQueuedClaim(null);
-      setStatusMessage(
-        `AUTHORITY | Switched to invited candidate '${claimantActor}' and committed seat on '${result.teamId}' in 1 click!`
-      );
-      notifyToast(`✓ Switched to '${claimantActor}' & committed seat on '${result.teamId}'!`, 'ok');
+      setStatusMessage(`Confirmed by server: '${claimantActor}' joined '${result.teamId}'.`);
+      notifyToast(`Confirmed by server: '${claimantActor}' joined '${result.teamId}'!`, 'ok');
       await refreshBoard();
       await inspectTeam(teamId, true);
       await loadAudit(claimantTok);
     } catch (e) {
-      setStatusMessage(`CANDIDATE CLAIM | ${e.message}`);
-      notifyToast(`Seat claim failed: ${e.message}`, 'err');
+      setStatusMessage(`Join request: ${e.message}`);
+      notifyToast(`Join request turned away: ${e.message}`, 'err');
     } finally {
       joiningLock.current = false;
       setJoining(false);
@@ -1578,7 +1634,7 @@ export default function App() {
     joiningLock.current = true;
     setJoining(true);
     try {
-      await runProtectedAction(`Claim Seat on ${teamId}`, async (freshTok, freshActor) => {
+      await runProtectedAction(`Join ${teamId}`, async (freshTok, freshActor) => {
         const useTok = await ensureToken(freshTok);
         const operation = await getOrCreateClaimOperation({
           eventId,
@@ -1604,10 +1660,8 @@ export default function App() {
           });
           setRelayedReceipt(null);
           setReplayReceipt(null);
-          setStatusMessage(
-            `LOCAL OUTBOX | Direct WAN is offline. Retained SHA-256 opId '${operation.opId}' in Pending Relay Outbox (seat NOT yet confirmed).`
-          );
-          notifyToast(`Step 1 Complete: Queued SHA-256 opId '${operation.opId}' to Pending Relay Outbox!`, 'warn');
+          setStatusMessage('Saved on this device. Waiting to send (not joined on server yet).');
+          notifyToast('Saved on this device. Waiting to send.', 'warn');
           return;
         }
 
@@ -1629,12 +1683,14 @@ export default function App() {
         }
         setQueuedClaim(null);
         setStatusMessage(
-          `AUTHORITY | ${result.status} for '${result.actorId}' on '${result.teamId}'${
-            result.replayed ? ' (replayed: true - idempotent recovery, 0 duplicate rows!)' : ' (fresh seat committed)'
-          }.`
+          result.replayed
+            ? `The server returned the original result for '${result.actorId}' on '${result.teamId}' (0 duplicates).`
+            : `Confirmed by server: '${result.actorId}' joined '${result.teamId}'.`
         );
         notifyToast(
-          `✓ ${result.status} for '${result.actorId}' on '${result.teamId}'${result.replayed ? ' (replayed: true)' : ''}!`,
+          result.replayed
+            ? 'The server returned the original result for this request.'
+            : `Confirmed by server: '${result.actorId}' joined '${result.teamId}'!`,
           'ok'
         );
         await refreshBoard();
@@ -1642,8 +1698,8 @@ export default function App() {
         await loadAudit(useTok);
       });
     } catch (e) {
-      setStatusMessage(`CLAIM | ${e.message} (opId preserved in sessionStorage for safe retry).`);
-      notifyToast(`Claim rejected (${e.message}) - opId retained safely.`, 'err');
+      setStatusMessage(`Request result: ${e.message} (request ID kept safely on device).`);
+      notifyToast(`Request not accepted (${e.message}).`, 'err');
     } finally {
       joiningLock.current = false;
       setJoining(false);
@@ -1653,7 +1709,7 @@ export default function App() {
   async function handleForwardViaPeer() {
     if (!queuedClaim) return;
     try {
-      await runProtectedAction('Forward Signed Claim via Peer Relay', async freshTok => {
+      await runProtectedAction('Send Request Through Mateo', async freshTok => {
         const claimantTok = queuedClaim.claimantToken || (await ensureToken(freshTok));
         let useRelayTok = relayToken;
         if (!useRelayTok) {
@@ -1685,13 +1741,13 @@ export default function App() {
         );
         setRelayedReceipt(res);
         setStatusMessage(
-          `PEER RELAY -> LAYER A | ${res.status} for '${res.actorId}' forwarded via '${res.relayedBy}' (opId '${res.opId}'). Now click Step 3 to restore WAN & verify replayed: true!`
+          `Sent through Mateo. Confirmed by server for '${res.actorId}' on '${res.teamId}'. Now run Step 3 to reconnect.`
         );
-        notifyToast(`✓ Step 2 Complete: Peer '${res.relayedBy}' committed '${res.actorId}'! Now click Step 3.`, 'ok');
+        notifyToast('Sent through Mateo. Confirmed by server!', 'ok');
       });
     } catch (e) {
-      setStatusMessage(`PEER RELAY | ${e.message}`);
-      notifyToast(`Peer relay failed: ${e.message}`, 'err');
+      setStatusMessage(`Forwarding failed: ${e.message}`);
+      notifyToast(`Forwarding failed: ${e.message}`, 'err');
     }
   }
 
@@ -1700,13 +1756,13 @@ export default function App() {
     setWanOffline(false);
     setAuthorityHealth('online');
     if (!targetClaim) {
-      notifyToast('Direct WAN restored.', 'ok');
+      notifyToast('Reconnected to server.', 'ok');
       refreshBoard();
       return;
     }
 
     try {
-      await runProtectedAction('Idempotent Reconnect Claim Replay', async freshTok => {
+      await runProtectedAction('Reconnect & Check Original Request', async freshTok => {
         const result = await sendPost(
           '/api/invitations/claim',
           {
@@ -1722,23 +1778,21 @@ export default function App() {
         }
         setReplayReceipt(result);
         setQueuedClaim(null);
-        setStatusMessage(
-          `IDEMPOTENT RECOVERY | Direct WAN restored -> Layer A returned ${result.status} (replayed: ${result.replayed}) with zero duplicate seat rows!`
-        );
-        notifyToast(`✓ Step 3 Complete: WAN restored -> replayed: ${String(result.replayed)} (0 duplicate rows)!`, 'ok');
+        setStatusMessage('The server returned the original result for this request (0 duplicate spots).');
+        notifyToast('The server returned the original result for this request!', 'ok');
         await refreshBoard();
         await inspectTeam(targetClaim.teamId, true);
         await loadAudit(targetClaim.claimantToken || freshTok);
       });
     } catch (e) {
-      setStatusMessage(`RETRY | ${e.message}`);
-      notifyToast(`Reconnect replay failed: ${e.message}`, 'err');
+      setStatusMessage(`Reconnect check: ${e.message}`);
+      notifyToast(`Reconnect check failed: ${e.message}`, 'err');
     }
   }
 
   async function handleAutoSetupRelayDemo() {
     try {
-      await runProtectedAction('Auto-Prep WAN-Drop Relay Theater', async freshTok => {
+      await runProtectedAction('Prepare Example Team', async freshTok => {
         const suffix = String(Date.now()).slice(-4);
         const demoTeam = `00-relay-crew-${suffix}`;
         const leadSession = await readApiJson(
@@ -1786,30 +1840,30 @@ export default function App() {
         setWanOffline(true);
         setAuthorityHealth('wan-dropped');
         setStatusMessage(
-          `THEATER ARMED | Created '${demoTeam}', issued single-use invite, switched to '${priyaSession.actorId}', and simulated WAN drop. Click Step 1B -> Step 2 -> Step 3!`
+          `Prepared example team '${demoTeam}' with connection dropped. Click Step 1B -> Step 2 -> Step 3.`
         );
-        notifyToast(`✓ WAN-Drop Theater armed on '${demoTeam}'! Click Step 1B -> Step 2 -> Step 3.`, 'ok');
+        notifyToast(`Example team '${demoTeam}' ready! Click Step 1B -> Step 2 -> Step 3.`, 'ok');
         return freshTok;
       });
     } catch (e) {
-      setStatusMessage(`THEATER PREP | ${e.message}`);
-      notifyToast(`Theater prep failed: ${e.message}`, 'err');
+      setStatusMessage(`Prepare team failed: ${e.message}`);
+      notifyToast(`Prepare team failed: ${e.message}`, 'err');
     }
   }
 
   async function handleTransferLeader(newLeaderId) {
     try {
-      await runProtectedAction(`Transfer Leadership to ${newLeaderId}`, async freshTok => {
+      await runProtectedAction(`Transfer Team Lead to ${newLeaderId}`, async freshTok => {
         const res = await sendPost('/api/teams/transfer', { eventId, teamId, newLeaderId }, freshTok);
-        setStatusMessage(`LEADER TRANSFER | ${res.status}: '${res.leader}' now leads '${teamId}'.`);
-        notifyToast(`✓ Transferred leadership of '${teamId}' to '${res.leader}'.`, 'ok');
+        setStatusMessage(`Confirmed by server: '${res.leader}' is now team lead for '${teamId}'.`);
+        notifyToast(`'${res.leader}' is now team lead for '${teamId}'.`, 'ok');
         await refreshBoard();
         await inspectTeam(teamId, true);
         await loadAudit(freshTok);
       });
     } catch (e) {
-      setStatusMessage(`TRANSFER | ${e.message}`);
-      notifyToast(`Leader transfer failed: ${e.message}`, 'err');
+      setStatusMessage(`Transfer lead: ${e.message}`);
+      notifyToast(`Could not transfer lead: ${e.message}`, 'err');
     }
   }
 
@@ -1818,14 +1872,14 @@ export default function App() {
       await runProtectedAction(`Leave Team (${teamId})`, async freshTok => {
         const res = await sendPost('/api/teams/leave', { eventId, teamId }, freshTok);
         setStatusMessage(
-          `DEPARTURE | ${res.status}${
-            res.leader ? ` (deterministic succession -> '${res.leader}')` : ' (final member left -> team auto-deleted)'
-          }.`
+          res.leader
+            ? `Confirmed by server: left '${teamId}'; '${res.leader}' is now team lead.`
+            : `Confirmed by server: last member left '${teamId}'; empty team removed.`
         );
         notifyToast(
           res.leader
-            ? `Left '${teamId}' -> deterministic leader succession to '${res.leader}'.`
-            : `Left '${teamId}' -> final member departed, crew auto-deleted.`,
+            ? `Left '${teamId}'; '${res.leader}' is now team lead.`
+            : `Left '${teamId}'; empty team removed.`,
           'info'
         );
         if (res.status === 'TEAM_DELETED') setSelectedTeam(null);
@@ -1834,45 +1888,43 @@ export default function App() {
         await loadAudit(freshTok);
       });
     } catch (e) {
-      setStatusMessage(`LEAVE | ${e.message}`);
-      notifyToast(`Leave team failed: ${e.message}`, 'err');
+      setStatusMessage(`Leave team: ${e.message}`);
+      notifyToast(`Could not leave team: ${e.message}`, 'err');
     }
   }
 
   async function handleLoadPeerNotes(overrideTok, manual = false) {
     try {
-      await runProtectedAction('Sync Encrypted Layer-B Notes', async freshTok => {
+      await runProtectedAction('Refresh Encrypted Notes', async freshTok => {
         const list = await sendGetAuth(
           `/api/peer/notes?eventId=${encodeURIComponent(eventId)}`,
           typeof overrideTok === 'string' ? overrideTok : freshTok
         );
         setPeerNotes(list.notes || []);
         if (manual === true) {
-          notifyToast(`Synced ${list.notes?.length || 0} encrypted Layer-B peer notes.`, 'ok');
+          notifyToast(`Refreshed ${list.notes?.length || 0} shared notes.`, 'ok');
         }
       });
     } catch (e) {
-      setStatusMessage(`LAYER B | ${e.message}`);
+      setStatusMessage(`Shared notes: ${e.message}`);
       if (manual === true) {
-        notifyToast(`Sync notes failed: ${e.message}`, 'err');
+        notifyToast(`Could not refresh notes: ${e.message}`, 'err');
       }
     }
   }
 
   async function handleSendPeerNote() {
     try {
-      await runProtectedAction('Seal & Broadcast Encrypted Peer Note', async freshTok => {
+      await runProtectedAction('Send Encrypted Note', async freshTok => {
         const opId = 'note-' + crypto.randomUUID().slice(0, 12);
         const res = await sendPost('/api/peer/notes', { eventId, opId, text: peerNoteText, epoch: 1 }, freshTok);
         await handleLoadPeerNotes(freshTok, false);
-        setStatusMessage(
-          `LAYER B | Sealed AES-256-GCM + P-256 note (${res.transportStatus}) SHA-256=${res.digest.slice(0, 16)}...`
-        );
-        notifyToast(`✓ Sealed AES-256-GCM + P-256 note (${res.digest.slice(0, 10)}...)!`, 'ok');
+        setStatusMessage(`Sent encrypted handoff note (${res.digest.slice(0, 12)}...).`);
+        notifyToast('Sent encrypted handoff note.', 'ok');
       });
     } catch (e) {
-      setStatusMessage(`LAYER B | ${e.message}`);
-      notifyToast(`Broadcast note failed: ${e.message}`, 'err');
+      setStatusMessage(`Send note: ${e.message}`);
+      notifyToast(`Could not send note: ${e.message}`, 'err');
     }
   }
 
@@ -1890,13 +1942,17 @@ export default function App() {
       peerRecords = [{ id: 'note-spec', epoch: 1, digest: 'sha256-divergent', actorId: 'kai' }];
     }
 
-    // Instant <1ms client-side sheaf glue check + non-blocking server verification
     const instantGlue = contextGlueOrExplain(localRecords, peerRecords);
     setGlueResult(instantGlue);
-    setStatusMessage(`SHEAF GLUE | ${instantGlue.status} (${instantGlue.obstructions?.length || 0} obstructions).`);
+    const clean = instantGlue.status === 'GLUED_CONSISTENT';
+    setStatusMessage(
+      clean
+        ? 'Shared plans fit cleanly without conflicts.'
+        : `Conflict found between shared edits (${instantGlue.obstructions?.length || 1} conflict).`
+    );
     notifyToast(
-      `Sheaf Glue (${preset}): ${instantGlue.status} (${instantGlue.obstructions?.length || 0} obstructions)`,
-      instantGlue.status === 'GLUED_CONSISTENT' ? 'ok' : 'warn'
+      clean ? 'Shared plans fit cleanly - no conflicts.' : 'Conflict detected between shared edits.',
+      clean ? 'ok' : 'warn'
     );
 
     if (wanOffline) return;
@@ -1907,28 +1963,130 @@ export default function App() {
         setGlueResult(res);
       }
     } catch {
-      // Keep instant local glue result if server unreachable
+      // Keep local instant result
     }
   }
 
-  // View 4: 50-Way Race & Latency Probe
+  // Step 4: 50-Person Last-Spot Test & Board Speed Check
+  async function runLiveHttpRace50() {
+    const tag = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const raceEv = `race-${tag}`;
+    const raceTeam = `final-seat-${tag}`;
+
+    const leaderAuth = await readApiJson(
+      await fetch('/api/auth/demo', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ actorId: 'race-leader', eventId: raceEv, maxSize: 2 })
+      })
+    );
+    await sendPost('/api/events', { eventId: raceEv, maxSize: 2 }, leaderAuth.token);
+    await sendPost('/api/teams', { eventId: raceEv, teamId: raceTeam }, leaderAuth.token);
+
+    const expiresAt = Date.now() + 60000;
+    const [invites, claimantSessions] = await Promise.all([
+      Promise.all(
+        Array.from({ length: 50 }, () =>
+          sendPost('/api/invitations', { eventId: raceEv, teamId: raceTeam, expiresAt }, leaderAuth.token)
+        )
+      ),
+      Promise.all(
+        Array.from({ length: 50 }, async (_, i) =>
+          readApiJson(await awaitFetchDemoSession(`claimant-${i}`, raceEv))
+        )
+      )
+    ]);
+
+    const t0 = performance.now();
+    let committed = 0;
+    let rejected = 0;
+    let winner = null;
+
+    await Promise.all(
+      invites.map(async (inv, i) => {
+        try {
+          const r = await sendPost(
+            '/api/invitations/claim',
+            {
+              eventId: raceEv,
+              teamId: raceTeam,
+              code: inv.code,
+              opId: `race50-${i}`
+            },
+            claimantSessions[i].token
+          );
+          if (r.status === 'COMMITTED') {
+            committed += 1;
+            winner = r.actorId;
+          } else {
+            rejected += 1;
+          }
+        } catch {
+          rejected += 1;
+        }
+      })
+    );
+    const elapsedMs = Number((performance.now() - t0).toFixed(2));
+
+    const detail = await readApiJson(
+      await fetch(`/api/events/${encodeURIComponent(raceEv)}/teams/${encodeURIComponent(raceTeam)}`, {
+        cache: 'no-store'
+      })
+    );
+    const finalMemberCount = Array.isArray(detail.members) ? detail.members.length : 0;
+    const hasLeaderMember = Array.isArray(detail.members) && detail.members.some(m => m.user_id === detail.leader);
+
+    return {
+      eventId: raceEv,
+      teamId: raceTeam,
+      contenders: 50,
+      committed,
+      rejected,
+      winner,
+      finalMemberCount,
+      invariants: {
+        oversize: finalMemberCount > Number(detail.maxSize || 2) ? 1 : 0,
+        orphanLeader: hasLeaderMember ? 0 : 1,
+        eventMismatch: detail.eventId === raceEv ? 0 : 1
+      },
+      elapsedMs
+    };
+  }
+
+  function awaitFetchDemoSession(personaId, targetEventId) {
+    return fetch('/api/auth/demo', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ actorId: personaId, eventId: targetEventId, maxSize: 2 })
+    });
+  }
+
   async function handleRun50WayRace() {
-    await runProtectedAction('Fire 50 Simultaneous Final-Seat Claimants', async freshTok => {
+    await runProtectedAction('Run 50-Person Last-Spot Test', async freshTok => {
       setRunningRace(true);
       try {
-        const res = await sendPost('/api/demo/race-50', {}, freshTok);
+        let res;
+        try {
+          res = await sendPost('/api/demo/race-50', {}, freshTok);
+        } catch (primaryErr) {
+          if (primaryErr?.status === 401 || primaryErr?.message === 'UNAUTHORIZED') {
+            throw primaryErr;
+          }
+          // Persistent SQLite DB already has global teams.id='final-seat-crew'; run live 50-claimant HTTP race
+          res = await runLiveHttpRace50();
+        }
         setRaceReceipt(res);
         setStatusMessage(
-          `RACE ORACLE | 50 simultaneous claimants -> ${res.committed} winner (${res.winner}), ${res.rejected} HTTP 409 TEAM_FULL in ${res.elapsedMs}ms (oversize=${res.invariants.oversize}).`
+          `50 requested · ${res.committed} joined (${res.winner}) · ${res.rejected} turned away - team full at ${res.finalMemberCount}/2 (${res.elapsedMs} ms).`
         );
         notifyToast(
-          `★ 50x Race Complete in ${res.elapsedMs}ms: 1 winner (${res.winner}), ${res.rejected} x 409 TEAM_FULL (oversize=0)!`,
+          `50 requested: 1 joined (${res.winner}), ${res.rejected} turned away at 2/2 (${res.elapsedMs} ms)!`,
           'ok'
         );
       } catch (e) {
         if (e?.status === 401 || e?.message === 'UNAUTHORIZED') throw e;
-        setStatusMessage(`RACE ORACLE | ${e.message}`);
-        notifyToast(`50x Race failed: ${e.message}`, 'err');
+        setStatusMessage(`Last-spot test: ${e.message}`);
+        notifyToast(`Last-spot test failed: ${e.message}`, 'err');
       } finally {
         setRunningRace(false);
       }
@@ -1952,11 +2110,11 @@ export default function App() {
         medianMs: sorted[Math.floor(sorted.length / 2)],
         maxMs: sorted[sorted.length - 1]
       });
-      setStatusMessage(`LATENCY PROBE | 5x /board?limit=100 median=${sorted[2]}ms (min=${sorted[0]}ms, max=${sorted[4]}ms).`);
-      notifyToast(`✓ 5x Live Board Probe: median ${sorted[2]} ms (min ${sorted[0]} ms, max ${sorted[4]} ms)`, 'ok');
+      setStatusMessage(`Live board speed: median ${sorted[2]} ms (fastest ${sorted[0]} ms, slowest ${sorted[4]} ms).`);
+      notifyToast(`Live board speed: median ${sorted[2]} ms`, 'ok');
     } catch (e) {
-      setStatusMessage(`LATENCY PROBE | ${e.message}`);
-      notifyToast(`Latency probe failed: ${e.message}`, 'err');
+      setStatusMessage(`Speed check: ${e.message}`);
+      notifyToast(`Speed check failed: ${e.message}`, 'err');
     } finally {
       setProbingLatency(false);
     }
@@ -1966,39 +2124,35 @@ export default function App() {
     if (step.scenarioKey) {
       selectScenario(step.scenarioKey);
     } else {
-      notifyToast(`Walkthrough ${step.time}: ${step.title}`, 'info');
+      notifyToast(`${step.time}: ${step.title}`, 'info');
     }
     setActiveView(step.targetView);
   }
 
-  // Compact 1-click theme cycle pill
-  const currentThemeSpec = useMemo(
-    () => THEME_OPTIONS.find(t => t.id === ergonomics.theme) || THEME_OPTIONS[0],
-    [ergonomics.theme]
-  );
-
-  function cycleThemePreset() {
-    const idx = THEME_OPTIONS.findIndex(t => t.id === ergonomics.theme);
-    const next = THEME_OPTIONS[(idx + 1) % THEME_OPTIONS.length];
-    setErgonomics(s => ({ ...s, theme: next.id }));
-    setStatusMessage(`THEME | Switched visual surface to '${next.label}'.`);
-    notifyToast(`Theme switched to ${next.label}`, 'info');
+  // Immediate 1-click white-paper HTML download
+  function handleDirectPlanDownload() {
+    const res = triggerTeamPlanDownload({
+      eventId,
+      teamId,
+      actorId,
+      selectedTeam,
+      goalDescription,
+      horizonHours,
+      tasks,
+      teamPeople,
+      plan,
+      issuedInvite
+    });
+    if (res) {
+      setStatusMessage(`Downloaded ${res.filename} (#FFFFFF white-paper HTML summary).`);
+      notifyToast(`Downloaded ${res.filename}`, 'ok');
+    }
   }
 
-  function togglePanoramicWorkbench() {
-    const nextDensity = ergonomics.density === 'panoramic-3' ? 'calm-focus' : 'panoramic-3';
-    setErgonomics(s => ({ ...s, density: nextDensity }));
-    notifyToast(
-      nextDensity === 'panoramic-3'
-        ? '3-Panel Panoramic Workbench active (41% / 29% / 29%).'
-        : 'Returned to Calm-Focus single-view layout.',
-      'info'
-    );
-  }
-
-  // Global Keyboard Shortcuts (Guarded against inputs, isContentEditable & open [role="dialog"])
+  // Global Keyboard Shortcuts (Guarded against inputs, IME composition, contentEditable & open dialogs/popovers)
   useEffect(() => {
     function onKeyDown(e) {
+      if (e.isComposing || e.keyCode === 229) return;
       const target = e.target;
       const tag = (target?.tagName || '').toUpperCase();
       const inEditable =
@@ -2013,6 +2167,8 @@ export default function App() {
         studioOpen ||
         paletteOpen ||
         charterOpen ||
+        actingMenuOpen ||
+        displayPopoverOpen ||
         Boolean(target?.closest?.('[role="dialog"]')) ||
         (typeof document !== 'undefined' && Boolean(document.querySelector('[role="dialog"]')));
 
@@ -2026,8 +2182,12 @@ export default function App() {
         setPaletteOpen(v => !v);
         return;
       }
+      if (e.key === 'F1') {
+        e.preventDefault();
+        setWhyOpen(v => !v);
+        return;
+      }
 
-      // Guard single-key and view-switch shortcuts when inside editable elements or open dialogs
       if (inEditable || inOpenDialog) return;
 
       if (e.altKey && !e.ctrlKey && !e.metaKey) {
@@ -2037,16 +2197,29 @@ export default function App() {
         if (e.key === '4') { e.preventDefault(); setActiveView('arena'); return; }
       }
 
-      if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key === '/') {
-        e.preventDefault();
-        setPaletteOpen(true);
+      if (ergonomics.singleKeyShortcuts && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (e.key === '/') {
+          e.preventDefault();
+          setPaletteOpen(true);
+        } else if (e.key === '?') {
+          e.preventDefault();
+          setWhyOpen(true);
+        }
       }
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [whyOpen, authModalOpen, studioOpen, paletteOpen, charterOpen]);
+  }, [
+    whyOpen,
+    authModalOpen,
+    studioOpen,
+    paletteOpen,
+    charterOpen,
+    actingMenuOpen,
+    displayPopoverOpen,
+    ergonomics.singleKeyShortcuts
+  ]);
 
-  // ARIA Tablist Left/Right Arrow Key Support
   function handleTabListKeyDown(e, idx) {
     let nextIdx = null;
     if (e.key === 'ArrowRight') nextIdx = (idx + 1) % PRIMARY_TABS.length;
@@ -2061,61 +2234,76 @@ export default function App() {
     }
   }
 
-  // Command Palette Registry
   const commands = useMemo(
     () => [
-      { id: 'v1', group: 'Navigation', label: '1. Teammates & Crews (Live Split Studio)', shortcut: 'Alt+1', keywords: 'directory board search filter teammates', run: () => setActiveView('discover') },
-      { id: 'v2', group: 'Navigation', label: '2. Mission Planner & DAG Wipe', shortcut: 'Alt+2', keywords: 'dag planner critical path wipe', run: () => setActiveView('architect') },
-      { id: 'v3', group: 'Navigation', label: '3. Seat & Mesh Relay Workbench', shortcut: 'Alt+3', keywords: 'invite claim wan drop relay', run: () => setActiveView('authority') },
-      { id: 'v4', group: 'Navigation', label: '4. 50x Race Proof & Scale Arena', shortcut: 'Alt+4', keywords: 'race 50 benchmark p95', run: () => setActiveView('arena') },
-      { id: 'sc-a', group: 'Scenarios', label: 'Load Scenario A: Async UTC Baton-Pass (Hot Springs <-> Bengaluru)', keywords: 'baton timezone india arkansas', run: () => { setActiveView('architect'); selectScenario('baton'); } },
-      { id: 'sc-b', group: 'Scenarios', label: 'Load Scenario B: Hall Capacity Contention Counterexample', keywords: 'hall overload mateo simultaneous', run: () => { setActiveView('architect'); selectScenario('hall'); } },
-      { id: 'sc-c', group: 'Scenarios', label: 'Load Scenario C: Wildcard Omega & P9R Zero-Question Gate', keywords: 'omega voi shannon unknown skill', run: () => { setActiveView('architect'); selectScenario('omega'); } },
-      { id: 'sc-d', group: 'Scenarios', label: 'Load Scenario D: Preventive Prerequisite Support', keywords: 'devops cloud sandbox prerequisite', run: () => { setActiveView('architect'); selectScenario('prereq'); } },
-      { id: 'act-charter', group: 'Export & Proofs', label: 'Export Crew Feasibility Charter & #FFFFFF Seat Receipt', keywords: 'pdf print html white paper charter', run: () => setCharterOpen(true) },
-      { id: 'act-race', group: 'Export & Proofs', label: 'Fire 50 Simultaneous Final-Seat Claimants (/api/demo/race-50)', keywords: 'contention burst sqlite winner', run: () => { setActiveView('arena'); handleRun50WayRace(); } },
-      { id: 'act-relay', group: 'Export & Proofs', label: 'Auto-Prep WAN-Drop -> Peer Relay -> Reconnect Theater', keywords: 'offline outbox relay-mateo idempotent', run: () => { setActiveView('authority'); handleAutoSetupRelayDemo(); } },
-      { id: 'ly-pano', group: 'Workbench Layout', label: 'Toggle 3-Panel Panoramic Workbench (41% / 29% / 29%)', keywords: 'panorama 3 panel split inspector', run: () => togglePanoramicWorkbench() },
-      { id: 'p-aurora', group: 'Judge Personas', label: 'Switch Persona: leader-aurora', keywords: 'auth demo leader', run: () => switchPersona('leader-aurora') },
-      { id: 'p-kai', group: 'Judge Personas', label: 'Switch Persona: builder-kai', keywords: 'auth demo frontend', run: () => switchPersona('builder-kai') },
-      { id: 'p-priya', group: 'Judge Personas', label: 'Switch Persona: builder-priya', keywords: 'auth demo relay', run: () => switchPersona('builder-priya') },
-      { id: 'th-h4h-glass', group: 'Accessibility & Themes', label: 'Theme: H4H Spatial Glass (#090D11 / #8CE65A)', keywords: 'h4h spatial glass jade obsidian default', run: () => setErgonomics(s => ({ ...s, theme: 'h4h-glass' })) },
-      { id: 'th-petrol', group: 'Accessibility & Themes', label: 'Theme: Petrol Deep Glass (#06151C / #64DFDF)', keywords: 'petrol deep glass cyan oceanic', run: () => setErgonomics(s => ({ ...s, theme: 'petrol-glass' })) },
-      { id: 'th-prism', group: 'Accessibility & Themes', label: 'Theme: Obsidian Prism (#090D18 / #5EEAD4 + #A78BFA)', keywords: 'obsidian prism indigo teal violet', run: () => setErgonomics(s => ({ ...s, theme: 'obsidian-prism' })) },
-      { id: 'th-slate', group: 'Accessibility & Themes', label: 'Theme: Calm Matte Dark (Zero Blur)', keywords: 'opaque matte dark slate', run: () => setErgonomics(s => ({ ...s, theme: 'matte-slate' })) },
-      { id: 'th-paper', group: 'Accessibility & Themes', label: 'Theme: Frosted Daylight (Light)', keywords: 'light frosted paper daylight', run: () => setErgonomics(s => ({ ...s, theme: 'warm-paper' })) },
-      { id: 'th-aaa', group: 'Accessibility & Themes', label: 'Theme: WCAG AAA Contrast (7:1+)', keywords: 'contrast yellow black accessible', run: () => setErgonomics(s => ({ ...s, theme: 'aaa-contrast' })) },
-      { id: 'open-studio', group: 'Accessibility & Themes', label: 'Open Accessibility & FOV Studio Drawer', shortcut: 'Ctrl+Shift+A', keywords: 'scale font motion split', run: () => setStudioOpen(true) },
-      { id: 'open-why', group: 'Thesis', label: 'Open "Why Purpose First?" Thesis Brief', keywords: 'inversion architecture', run: () => setWhyOpen(true) }
+      { id: 'v1', group: 'Steps', label: '1. Find teammates', shortcut: 'Alt+1', keywords: 'directory board search filter people', run: () => setActiveView('discover') },
+      { id: 'v2', group: 'Steps', label: '2. Plan the work', shortcut: 'Alt+2', keywords: 'schedule timeline tasks timezones', run: () => setActiveView('architect') },
+      { id: 'v3', group: 'Steps', label: '3. Manage your team', shortcut: 'Alt+3', keywords: 'invite join offline relay mateo', run: () => setActiveView('authority') },
+      { id: 'v4', group: 'Steps', label: '4. Test the last spot', shortcut: 'Alt+4', keywords: 'race 50 benchmark speed', run: () => setActiveView('arena') },
+      { id: 'sc-1', group: 'Example Plans', label: '1. Different time zones, clean handoff', keywords: 'baton timezone india arkansas priya', run: () => { setActiveView('architect'); selectScenario('baton'); } },
+      { id: 'sc-2', group: 'Example Plans', label: '2. One person double-booked on two tasks', keywords: 'hall overload mateo simultaneous', run: () => { setActiveView('architect'); selectScenario('hall'); } },
+      { id: 'sc-3', group: 'Example Plans', label: '3. Unverified skill: when backup covers it vs. quick check', keywords: 'omega voi unverified skill', run: () => { setActiveView('architect'); selectScenario('omega'); } },
+      { id: 'sc-4', group: 'Example Plans', label: '4. Unblock early setup without replacing teammates', keywords: 'devops cloud setup prerequisite', run: () => { setActiveView('architect'); selectScenario('prereq'); } },
+      { id: 'act-dl', group: 'Download & Print', label: 'Download Team Plan HTML (#FFFFFF white-paper file)', keywords: 'download html export file', run: () => handleDirectPlanDownload() },
+      { id: 'act-charter', group: 'Download & Print', label: 'Preview / Print Team Plan PDF', keywords: 'pdf print preview charter', run: () => setCharterOpen(true) },
+      { id: 'act-race', group: 'Live Tests', label: 'Run 50-person last-spot test', keywords: 'race 50 winner full', run: () => { setActiveView('arena'); handleRun50WayRace(); } },
+      { id: 'act-relay', group: 'Live Tests', label: 'Prepare example team for offline request forwarding', keywords: 'offline outbox mateo reconnect', run: () => { setActiveView('authority'); handleAutoSetupRelayDemo(); } },
+      { id: 'p-aurora', group: 'Switch Profile', label: 'Acting as: Aurora (Team lead)', keywords: 'aurora demo', run: () => switchPersona('leader-aurora') },
+      { id: 'p-kai', group: 'Switch Profile', label: 'Acting as: Kai (Frontend)', keywords: 'kai demo', run: () => switchPersona('builder-kai') },
+      { id: 'p-priya', group: 'Switch Profile', label: 'Acting as: Priya (Integration)', keywords: 'priya demo', run: () => switchPersona('builder-priya') },
+      { id: 'sc-auto', group: 'Display & Scale', label: 'Scale: Auto (60% Desktop / 100% Mobile)', keywords: 'auto scale 60 100', run: () => setErgonomics(s => ({ ...s, scaleLocked: false, scale: '60' })) },
+      { id: 'sc-60', group: 'Display & Scale', label: 'Scale: 60% Panorama', keywords: '60 panorama compact', run: () => setErgonomics(s => ({ ...s, scaleLocked: true, scale: '60' })) },
+      { id: 'sc-100', group: 'Display & Scale', label: 'Scale: 100% Standard', keywords: '100 standard large', run: () => setErgonomics(s => ({ ...s, scaleLocked: true, scale: '100' })) },
+      { id: 'th-moon', group: 'Display & Scale', label: 'Contrast: Moonlight Dark', keywords: 'dark moonlight default', run: () => setErgonomics(s => ({ ...s, theme: 'h4h-glass' })) },
+      { id: 'th-hc', group: 'Display & Scale', label: 'Contrast: High Contrast', keywords: 'high contrast yellow white', run: () => setErgonomics(s => ({ ...s, theme: 'aaa-contrast' })) },
+      { id: 'th-light', group: 'Display & Scale', label: 'Contrast: Moonlit Pearl (Light)', keywords: 'light pearl white', run: () => setErgonomics(s => ({ ...s, theme: 'warm-paper' })) },
+      { id: 'open-studio', group: 'Display & Scale', label: 'Open Extended Display & Shortcut Studio', shortcut: 'Ctrl+Shift+A', keywords: 'accessibility studio', run: () => setStudioOpen(true) },
+      { id: 'open-why', group: 'Help', label: 'Purpose-First Guide & Keyboard Shortcuts', shortcut: '?', keywords: 'help guide shortcuts', run: () => setWhyOpen(true) }
     ],
-    [selectScenario, switchPersona]
+    [selectScenario, switchPersona, eventId, teamId, actorId, selectedTeam, goalDescription, horizonHours, tasks, teamPeople, plan, issuedInvite]
   );
 
+  const horizonMin = Math.max(60, Math.round(Number(horizonHours || 4) * 60));
   const panoramaPartialPreview = useMemo(
-    () =>
-      computePartialTaskPreview(
-        tasks,
-        teamPeople,
-        Math.max(60, Math.round(Number(horizonHours || 4) * 60)),
-        plan
-      ),
-    [tasks, teamPeople, horizonHours, plan]
+    () => computePartialTaskPreview(tasks, teamPeople, horizonMin, plan),
+    [tasks, teamPeople, horizonMin, plan]
+  );
+  const plainVerdict = useMemo(
+    () => describePlainPlanVerdict(plan, tasks, panoramaPartialPreview),
+    [plan, tasks, panoramaPartialPreview]
   );
 
-  const layoutClass =
-    ergonomics.density === 'panoramic-3'
-      ? 'is-panoramic-3'
-      : ergonomics.density === 'split-studio'
-        ? 'is-split-studio'
-        : '';
+  const priyaBuilder = useMemo(() => findBuilderById('priya'), []);
+  const priyaInCrew = useMemo(
+    () => teamPeople.some(p => normalizeBuilderId(p.id) === 'priya'),
+    [teamPeople]
+  );
+
+  const isPanoramaActive = ergonomics.density === 'panoramic-3';
+  const isMobileViewport = resolvedScale.tier === 'mobile';
+  const isPanoramaColumnsVisible = isPanoramaActive && !isMobileViewport;
+
+  const layoutClass = isPanoramaActive
+    ? 'is-panoramic-3'
+    : ergonomics.density === 'split-studio'
+      ? 'is-split-studio'
+      : 'is-calm-focus';
+
+  const spotsUsed = selectedTeam ? selectedTeam.members.length : board[0]?.members ?? 1;
+  const spotsMax = selectedTeam ? selectedTeam.maxSize : board[0]?.max_size ?? eventMaxSize ?? 5;
+  const humanActorName = formatHumanActorName(actorId, Boolean(token));
+
+  // CRR-07: Peripheral unresolved contour driven strictly by actual application state
+  const col2HasUnresolved = plainVerdict.tone !== 'ok';
+  const col3HasUnresolved = Boolean(wanOffline || queuedClaim);
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" onPointerMove={handleShellPointerMove}>
       <a href="#main-workspace" className="skip-link no-print">
         Skip to main content
       </a>
 
-      {/* High-Visibility Center-Top Toast Pill for Low-Vision Ergonomics */}
+      {/* High-Visibility Center-Top Toast Pill (Theme-Aware --bg-toast-solid) */}
       {toast && (
         <div
           key={toast.key}
@@ -2125,9 +2313,9 @@ export default function App() {
         >
           <span className="center-toast-icon" aria-hidden="true">
             {toast.tone === 'ok' ? (
-              <CheckCircleIcon size={18} />
+              <CheckCircleIcon size={17} />
             ) : toast.tone === 'warn' || toast.tone === 'err' ? (
-              <AlertTriangleIcon size={18} />
+              <AlertTriangleIcon size={17} />
             ) : (
               '●'
             )}
@@ -2144,37 +2332,40 @@ export default function App() {
         </div>
       )}
 
-      {/* Single-Row Spatial Optical Glass Top Header */}
+      {/* IDE-Style Top Header: Brand + Plain Subtitle, 4 Plain Tabs, and ONLY 3 Right-Side Controls */}
       <header className="top-command-header top-header no-print" role="banner">
-        {/* 1. Brand & Origin Pill */}
+        {/* 1. Brand & Compact Plain-Language Subtitle */}
         <div className="brand-cluster">
           <div className="brand-pill">
             <span className="brand-icon-wrap">
-              <BrandMark size={20} />
+              <BrandMark size={19} />
             </span>
             <div className="brand-titles">
-              <h1 className="brand-h1" title="Post Sheet | Ability & Purpose Crew Network">
-                <span>Post Sheet</span>
-                <span className="brand-h1-sub"> · Crew Network</span>
-                <span className="sr-only"> | Ability &amp; Purpose Crew Network</span>
-              </h1>
-              <span className="brand-meta">Hack4Hack PS1 · Synchronicity R5</span>
+              <div className="pill-row brand-title-line">
+                <h1 className="brand-h1" title="Post Sheet | Ability & Purpose Crew Network">
+                  <span>Post Sheet</span>
+                  <span className="brand-h1-sub"> · Crew Network</span>
+                  <span className="sr-only"> | Ability &amp; Purpose Crew Network</span>
+                </h1>
+                <button
+                  type="button"
+                  className="why-inline-link"
+                  onClick={() => setWhyOpen(true)}
+                  title="Open Purpose-First guide & keyboard shortcuts (?)"
+                >
+                  <HelpIcon size={13} /> Guide
+                </button>
+              </div>
+              <p className="brand-meta">
+                Find people whose skills fit the work. Plan a team, manage membership, and test how the system handles a race for the last spot.
+              </p>
             </div>
           </div>
-          <button
-            type="button"
-            className="btn btn-ghost btn-compact why-pill"
-            onClick={() => setWhyOpen(true)}
-            title="Why Purpose First? Read core thesis"
-          >
-            <HelpIcon size={14} />
-            <span className="why-label">Thesis</span>
-          </button>
         </div>
 
-        {/* 2. Primary View Switcher (ARIA Tablist + Alt+1..4) */}
-        <nav aria-label="Primary platform views" className="primary-nav">
-          <div role="tablist" aria-label="Workspace Views" className="primary-tablist">
+        {/* 2. 4 Plain-Language Step Tabs (Alt+1..4) */}
+        <nav aria-label="Primary workflow steps" className="primary-nav">
+          <div role="tablist" aria-label="Workflow Steps" className="primary-tablist">
             {PRIMARY_TABS.map((tab, idx) => {
               const selected = activeView === tab.id;
               const Icon = tab.Icon;
@@ -2189,14 +2380,11 @@ export default function App() {
                   aria-controls={`panel-${tab.id}`}
                   tabIndex={selected ? 0 : -1}
                   className={`nav-tab ${selected ? 'active' : ''}`}
-                  onClick={() => {
-                    setActiveView(tab.id);
-                    notifyToast(`View ${tab.num}: ${tab.label}`, 'info');
-                  }}
+                  onClick={() => setActiveView(tab.id)}
                   onKeyDown={e => handleTabListKeyDown(e, idx)}
-                  title={`${tab.label} (${tab.hotkey})`}
+                  title={`${tab.num}. ${tab.label} (${tab.hotkey})`}
                 >
-                  <Icon size={15} />
+                  <Icon size={14} />
                   <span className="tab-num">{tab.num}.</span>
                   <span className="tab-text">{tab.short}</span>
                 </button>
@@ -2205,138 +2393,149 @@ export default function App() {
           </div>
         </nav>
 
-        {/* 3. Judge Quick Personas, 3-Coordinate Network Pill, Theme & Studio Triggers */}
-        <div className="header-right-cluster">
-          <div className="persona-switcher" role="group" aria-label="Judge quick personas and account sign-in">
-            {['leader-aurora', 'builder-kai', 'builder-priya'].map(p => {
-              const shortName = p.split('-')[1];
-              const isCurrent = actorId === p && Boolean(token);
-              return (
-                <button
-                  key={p}
-                  type="button"
-                  aria-pressed={isCurrent}
-                  className={`persona-chip ${isCurrent ? 'active' : ''}`}
-                  onClick={() => switchPersona(p)}
-                  title={`1-click switch to ${p}`}
-                >
-                  {isCurrent ? '● ' : ''}{shortName}
-                </button>
-              );
-            })}
+        {/* 3. ONLY 3 Coding-App-Standard Controls on the Right */}
+        <div className="header-right-cluster ide-three-controls">
+          {/* Control 1: Acting as: <Name> ▾ */}
+          <div className="ide-popover-anchor">
             <button
               type="button"
-              className={`persona-chip account-trigger ${!token ? 'warn-unauth' : ''}`}
+              data-acting-trigger="true"
+              aria-haspopup="dialog"
+              aria-expanded={actingMenuOpen}
+              className={`btn btn-secondary ide-header-btn ${!token ? 'warn-unauth' : ''}`}
               onClick={() => {
+                setDisplayPopoverOpen(false);
+                setActingMenuOpen(v => !v);
+              }}
+            >
+              <UserIcon size={14} />
+              <span>Acting as: <strong>{humanActorName}</strong></span>
+              <ChevronDownIcon size={13} />
+            </button>
+
+            <ActingAsMenuPopover
+              open={actingMenuOpen}
+              onClose={() => setActingMenuOpen(false)}
+              actorId={actorId}
+              token={token}
+              onSwitchPersona={switchPersona}
+              onOpenAuthModal={() => {
                 setAuthPromptMessage('');
                 setAuthModalOpen(true);
               }}
-              aria-label={`Account session (${actorId || 'Sign in'})`}
-              title="scrypt Account Register / Sign-In / Logout"
-            >
-              <UserIcon size={13} />
-              <span>
-                {actorId && !['leader-aurora', 'builder-kai', 'builder-priya'].includes(actorId)
-                  ? actorId.slice(0, 12)
-                  : token
-                    ? 'Account'
-                    : 'Sign In'}
-              </span>
-            </button>
+              onLogout={handleLogout}
+            />
           </div>
 
+          {/* Control 2: Display & A11y: <Active Scale> ▾ */}
+          <div className="ide-popover-anchor">
+            <button
+              type="button"
+              data-display-trigger="true"
+              aria-haspopup="dialog"
+              aria-expanded={displayPopoverOpen}
+              className="btn btn-secondary ide-header-btn"
+              onClick={() => {
+                setActingMenuOpen(false);
+                setDisplayPopoverOpen(v => !v);
+              }}
+            >
+              <EyeIcon size={14} />
+              <span>Display &amp; A11y: <strong>{resolvedScale.badgeLabel}</strong></span>
+              <ChevronDownIcon size={13} />
+            </button>
+
+            <DisplayComfortPopover
+              open={displayPopoverOpen}
+              onClose={() => setDisplayPopoverOpen(false)}
+              settings={ergonomics}
+              onChange={setErgonomics}
+              onOpenFullStudio={() => setStudioOpen(true)}
+            />
+          </div>
+
+          {/* Control 3: Download Plan (Immediate 1-click #FFFFFF white-paper HTML download) */}
           <button
             type="button"
-            className="network-coords-pill"
-            onClick={() => {
-              setActiveView('authority');
-              notifyToast('Opened View 3: Live Seat Authority & Peer Mesh.', 'info');
-            }}
-            aria-label={`Three-coordinate network status. Authority Path: ${
-              wanOffline ? 'WAN Dropped' : authorityHealth === 'online' ? 'Direct SQLite Online' : 'Checking'
-            }. Encrypted Peer Mesh: Ready via relay-mateo. Local Durable Outbox: ${
-              queuedClaim ? '1 Pending Relay' : '0 Queued'
-            }. Activate to open Seat Authority and Peer Mesh.`}
-            title="3-Coordinate Continuity: Authority SQLite | AES+P256 Mesh | Durable Outbox"
+            className="btn btn-primary ide-header-btn"
+            onClick={handleDirectPlanDownload}
+            title="Download #FFFFFF white-paper Team Plan HTML file immediately"
           >
-            <span className={`coord-item ${wanOffline ? 'coord-warn' : authorityHealth === 'online' ? 'coord-ok' : ''}`}>
-              <DatabaseIcon size={12} />
-              <span>{wanOffline ? 'WAN Drop' : authorityHealth === 'online' ? 'Direct' : 'Sync'}</span>
-            </span>
-            <span className="coord-sep" aria-hidden="true">|</span>
-            <span className="coord-item coord-ok">
-              <MeshIcon size={12} />
-              <span>Mesh</span>
-            </span>
-            <span className="coord-sep" aria-hidden="true">|</span>
-            <span className={`coord-item ${queuedClaim ? 'coord-warn' : ''}`}>
-              <OutboxIcon size={12} />
-              <span>{queuedClaim ? '1' : '0'}</span>
-            </span>
+            <DownloadIcon size={14} />
+            <span>Download Plan</span>
           </button>
-
-          <div className="studio-triggers">
-            <button
-              type="button"
-              className="btn btn-ghost icon-text-btn theme-quick-pill"
-              onClick={cycleThemePreset}
-              aria-label={`Current theme ${currentThemeSpec.label}. Click to cycle theme preset.`}
-              title={`Theme: ${currentThemeSpec.label} (Click to cycle H4H Spatial Glass / Petrol / Prism / Matte / Daylight / AAA)`}
-            >
-              <PaletteIcon size={14} />
-              <span
-                className="swatch-dot"
-                style={{ background: currentThemeSpec.swatch[2] }}
-                aria-hidden="true"
-              />
-              <span className="hide-narrow">{currentThemeSpec.shortLabel}</span>
-            </button>
-
-            <button
-              type="button"
-              aria-pressed={ergonomics.density === 'panoramic-3'}
-              className={`btn icon-text-btn hide-mid-header ${
-                ergonomics.density === 'panoramic-3' ? 'btn-primary' : 'btn-ghost'
-              }`}
-              onClick={togglePanoramicWorkbench}
-              aria-label="Toggle 3-Panel Panoramic Workbench (41 / 29 / 29)"
-              title="Toggle 3-Panel Panorama (Active View + Live DAG/VOI + Live Seat/SSE)"
-            >
-              <ColumnsIcon size={14} />
-            </button>
-
-            <button
-              type="button"
-              className="btn btn-ghost icon-text-btn"
-              onClick={() => setPaletteOpen(true)}
-              aria-label="Open command palette (Ctrl+K or slash)"
-              title="Command Palette (Ctrl+K or /)"
-            >
-              <CommandIcon size={14} />
-              <kbd className="hide-narrow">Ctrl+K</kbd>
-            </button>
-
-            <button
-              type="button"
-              className="btn btn-secondary icon-text-btn"
-              onClick={() => setStudioOpen(true)}
-              aria-label="Open Accessibility and FOV Studio (Ctrl+Shift+A)"
-              title="Accessibility & FOV Studio (Ctrl+Shift+A)"
-            >
-              <SlidersIcon size={14} />
-              <span className="hide-narrow">A11y</span>
-            </button>
-          </div>
         </div>
       </header>
 
-      {/* Prominent Warning Banner if Local Authority Server (:8788) is Unreachable */}
+      {/* Mobile (<768px) Pinned Mini-Panorama Summary Strip */}
+      {isMobileViewport && (
+        <div className="mobile-mini-panorama-strip no-print" role="region" aria-label="Plan and team summary">
+          <div className="mobile-strip-row">
+            <span className="mobile-strip-metrics">
+              Plan: <strong>{plainVerdict.coveredCount}/{plainVerdict.totalCount} tasks</strong>
+              {' · '}
+              Team: <strong>{spotsUsed}/{spotsMax} spots</strong>
+            </span>
+            <button
+              type="button"
+              aria-expanded={mobileInspectOpen}
+              className="btn btn-secondary btn-compact mobile-inspect-btn"
+              onClick={() => setMobileInspectOpen(v => !v)}
+            >
+              {mobileInspectOpen ? 'Hide' : 'Inspect'}
+            </button>
+          </div>
+
+          {mobileInspectOpen && (
+            <div className="mobile-inspect-drawer">
+              <div className="small-copy">
+                <strong>{plainVerdict.headline}</strong>
+                <div className="muted-copy">{plainVerdict.detail}</div>
+              </div>
+              <div className="pill-row top-gap-xs">
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-compact"
+                  onClick={() => {
+                    setMobileInspectOpen(false);
+                    setActiveView('architect');
+                  }}
+                >
+                  2. Plan the work
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-compact"
+                  onClick={() => {
+                    setMobileInspectOpen(false);
+                    setActiveView('authority');
+                  }}
+                >
+                  3. Manage your team
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-compact"
+                  onClick={() => {
+                    setMobileInspectOpen(false);
+                    setCharterOpen(true);
+                  }}
+                >
+                  Preview / Print PDF
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Offline Server Banner */}
       {authorityHealth === 'unreachable' && !wanOffline && (
         <div role="alert" className="offline-server-banner no-print">
           <div className="offline-server-copy">
             <AlertTriangleIcon size={18} />
             <div>
-              <strong>Local SQLite Authority Server (:8788) Unreachable:</strong> Client-side critical-path DAG &amp; complementary builder simulation continue to work in <code>&lt;2ms</code>, while live SQLite seat mutations await server connection.
+              <strong>Local Server (:8788) Offline:</strong> Plan schedule checks and teammate previews continue to run locally in <code>&lt;2ms</code>, while server team spots wait for connection.
             </div>
           </div>
           <button
@@ -2350,7 +2549,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Main Workspace (Supports Calm-Focus, 2-Panel Split Studio, OR 3-Panel Panorama 41/29/29) */}
+      {/* Main Full-Bleed Workspace (44fr / 28fr / 28fr on >=1100px Desktop Panorama) */}
       <div className={`workspace-layout no-print ${layoutClass}`}>
         <main
           id="main-workspace"
@@ -2363,6 +2562,11 @@ export default function App() {
             <DiscoverView
               theme={ergonomics.theme}
               motion={ergonomics.motion}
+              isPanoramic3={isPanoramaColumnsVisible}
+              activeLinkId={activeLinkId}
+              onLinkHover={setActiveLinkId}
+              pulseTrigger={horizonPulse}
+              onTriggerPulse={triggerHorizonPulse}
               eventId={eventId}
               onChangeEventId={handleChangeEventScope}
               onEnsureEvent={handleEnsureEvent}
@@ -2380,10 +2584,7 @@ export default function App() {
               onRefreshBoard={() => refreshBoard(true)}
               selectedTeam={selectedTeam}
               onInspectTeam={inspectTeam}
-              onCloseInspect={() => {
-                setSelectedTeam(null);
-                notifyToast('Closed live roster inspector.', 'info');
-              }}
+              onCloseInspect={() => setSelectedTeam(null)}
               onCheckFitCrew={handleCheckFitCrew}
               onRequestSeatForTeam={handleRequestSeatForTeam}
               onSendBuilderToArchitect={handleSendBuilderToArchitect}
@@ -2400,15 +2601,11 @@ export default function App() {
               candidates={candidates}
               plan={plan}
               recs={recs}
-              solving={solving}
               lockingPlan={lockingPlan}
               onToggleBuilderInCrew={handleToggleBuilderInCrew}
               onVerifyPersonSkill={handleVerifyPersonSkill}
               onLockPlanAndMintInvite={handleLockPlanAndMintInvite}
-              onInspectDagWipe={() => {
-                setActiveView('architect');
-                notifyToast('Opened Mission Planner & Before/After DAG Wipe (View 2).', 'info');
-              }}
+              onInspectDagWipe={() => setActiveView('architect')}
               onNotify={notifyToast}
             />
           )}
@@ -2417,6 +2614,10 @@ export default function App() {
             <MissionArchitectView
               theme={ergonomics.theme}
               motion={ergonomics.motion}
+              activeLinkId={activeLinkId}
+              onLinkHover={setActiveLinkId}
+              pulseTrigger={horizonPulse}
+              onTriggerPulse={triggerHorizonPulse}
               activeScenarioKey={activeScenarioKey}
               omegaMode={omegaMode}
               onSelectScenario={selectScenario}
@@ -2440,16 +2641,15 @@ export default function App() {
               onAddCandidateToTeam={handleAddCandidateToTeam}
               onVerifyPersonSkill={handleVerifyPersonSkill}
               onLockPlanAndMintInvite={handleLockPlanAndMintInvite}
-              onOpenCharterExport={() => {
-                setCharterOpen(true);
-                notifyToast('Opened #FFFFFF Crew Feasibility Charter & Seat Receipt.', 'info');
-              }}
+              onOpenCharterExport={() => setCharterOpen(true)}
               onNotify={notifyToast}
             />
           )}
 
           {activeView === 'authority' && (
             <SeatAuthorityView
+              activeLinkId={activeLinkId}
+              onLinkHover={setActiveLinkId}
               eventId={eventId}
               actorId={actorId}
               teamId={teamId}
@@ -2473,8 +2673,8 @@ export default function App() {
                 setAuthorityHealth(nextOff ? 'wan-dropped' : 'online');
                 notifyToast(
                   nextOff
-                    ? 'Direct WAN simulated offline -> claims will queue to Local Outbox.'
-                    : 'Direct WAN restored -> connected to Layer-A SQLite.',
+                    ? 'Connection simulated offline -> join requests save on this device.'
+                    : 'Reconnected to server.',
                   nextOff ? 'warn' : 'ok'
                 );
                 if (!nextOff) refreshBoard();
@@ -2494,10 +2694,7 @@ export default function App() {
               onRunGluePreset={handleRunGluePreset}
               auditRows={auditRows}
               onLoadAudit={() => loadAudit(undefined, true)}
-              onOpenCharterExport={() => {
-                setCharterOpen(true);
-                notifyToast('Opened #FFFFFF Crew Feasibility Charter & Seat Receipt.', 'info');
-              }}
+              onOpenCharterExport={() => setCharterOpen(true)}
               onClaimAsFreshCandidate={handleClaimAsFreshCandidate}
               onNotify={notifyToast}
             />
@@ -2513,150 +2710,425 @@ export default function App() {
               probingLatency={probingLatency}
               onRunLatencyProbe={handleRunLatencyProbe}
               onExecuteWalkthroughStep={handleExecuteWalkthroughStep}
-              onNotify={notifyToast}
             />
           )}
         </main>
 
-        {/* 3-PANEL PANORAMA REGION 2: Live DAG / VOI Mini-Inspector */}
-        {ergonomics.density === 'panoramic-3' && (
-          <aside className="panorama-pane" aria-label="Live DAG and VOI Mini-Inspector">
-            <div className="surface-card sticky-dock">
+        {/* COLUMN 2 (PANORAMA): Team Plan & Schedule */}
+        {isPanoramaActive && !isMobileViewport && (
+          <aside className="panorama-pane" aria-label="Team Plan and Schedule">
+            <div
+              className={`surface-card sticky-dock ${col2HasUnresolved ? 'has-unresolved-contour' : ''}`}
+            >
               <div className="row-between wrap-gap">
-                <span className="eyebrow-tag">PANORAMA II · DAG &amp; VOI INSPECTOR</span>
-                <EpistemicStencil
-                  kind={plan?.status === 'CONDITIONAL_WITNESS' ? 'VOI_PROVISIONAL' : 'SQLITE_AUTHORITY'}
-                  compact
-                />
+                <span className="eyebrow-tag">
+                  {col2HasUnresolved ? 'NEEDS ATTENTION · PREVIEW ONLY' : 'READY · ALL TASKS COVERED'}
+                </span>
+                <span className="mono-pill">
+                  {plainVerdict.coveredCount}/{plainVerdict.totalCount} tasks
+                </span>
               </div>
-              <h3 className="card-subtitle">Live Critical-Path &amp; Omega State</h3>
+
+              <div className="row-between wrap-gap top-gap-xs">
+                <h2 className="card-subtitle">Team Plan &amp; Schedule</h2>
+                <div className="pill-row scenario-mini-pills" role="group" aria-label="Switch example plan">
+                  {Object.values(MISSION_SCENARIOS).map(sc => (
+                    <button
+                      key={sc.id}
+                      type="button"
+                      aria-pressed={activeScenarioKey === sc.id}
+                      className={`mini-preset-chip ${activeScenarioKey === sc.id ? 'active' : ''}`}
+                      onClick={() => selectScenario(sc.id)}
+                      title={sc.title}
+                    >
+                      {sc.code}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <p className="muted-copy small-copy top-gap-xs">{goalDescription}</p>
 
-              <div className={`subcard top-gap-xs ${plan?.status === 'FEASIBLE_WITNESS' ? 'tone-ok' : 'tone-warn'}`}>
-                <div className="row-between">
-                  <strong>{plan?.status || 'NOT_EVALUATED'}</strong>
-                  <span className="badge-pill">{plan?.classification || 'PREVIEW'}</span>
+              {/* Honest Plain-Language Plan Banner (Never green at 2/3!) */}
+              <div
+                className={`subcard top-gap-xs ${plainVerdict.tone === 'ok' ? 'tone-ok' : 'tone-warn'}`}
+                role="status"
+              >
+                <div className="pill-row">
+                  {plainVerdict.tone === 'ok' ? (
+                    <CheckCircleIcon size={15} />
+                  ) : (
+                    <AlertTriangleIcon size={15} />
+                  )}
+                  <strong>{plainVerdict.headline}</strong>
                 </div>
-                <div className="small-copy top-gap-xs">
-                  Wildcard |Omega|:{' '}
-                  <code>
-                    {plan?.frontier ? `${plan.frontier.worldsCovered}/${plan.frontier.omegaSize}` : '1/1'}
-                  </code>{' '}
-                  · P9R: <code>{plan?.frontier?.minimumSufficientStop || 'BOUNDED'}</code>
-                </div>
+                <div className="small-copy muted-copy top-gap-xs">{plainVerdict.detail}</div>
               </div>
 
+              {/* People in Plan Preview (with Cross-Panel Tether) */}
+              <div className="dock-roster-row top-gap-xs" aria-label="People in plan preview">
+                {teamPeople.map(p => {
+                  const isLinked =
+                    activeLinkId && normalizeBuilderId(activeLinkId) === normalizeBuilderId(p.id);
+                  const dirMatch = findBuilderById(p, [candidates, teamPeople]);
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      data-link-id={p.id}
+                      onMouseEnter={() => setActiveLinkId(p.id)}
+                      onMouseLeave={() => setActiveLinkId(null)}
+                      onFocus={() => setActiveLinkId(p.id)}
+                      className={`dock-member-pill ${isLinked ? 'is-linked-ridge' : ''}`}
+                      onClick={() =>
+                        handleToggleBuilderInCrew(
+                          dirMatch || {
+                            id: p.id,
+                            plannerId: p.id,
+                            timezone: p.timezone,
+                            startMin: p.startMin,
+                            endMin: p.endMin,
+                            skills: p.skills || {}
+                          }
+                        )
+                      }
+                      title={`Preview only - click to remove ${p.id} from plan`}
+                    >
+                      <span className="member-dot" aria-hidden="true" />
+                      <strong>{p.id}</strong>
+                      <span className="muted-copy">{(p.timezone || '').split('·')[0].trim()}</span>
+                      <span aria-hidden="true" className="remove-x">×</span>
+                    </button>
+                  );
+                })}
+                {!priyaInCrew && priyaBuilder && activeScenarioKey === 'baton' && (
+                  <button
+                    type="button"
+                    data-link-id="priya"
+                    onMouseEnter={() => setActiveLinkId('priya')}
+                    onMouseLeave={() => setActiveLinkId(null)}
+                    className="dock-member-pill pill-suggest"
+                    onClick={() => handleToggleBuilderInCrew(priyaBuilder)}
+                  >
+                    + Try Priya (UTC+5:30)
+                  </button>
+                )}
+              </div>
+
+              <div className="top-gap-xs">
+                <SolarBatonHorizon
+                  mode="architect"
+                  theme={ergonomics.theme}
+                  motion={ergonomics.motion}
+                  compact
+                  horizonMin={horizonMin}
+                  teamPeople={teamPeople}
+                  candidates={candidates}
+                  recommendations={recs?.recommendations || []}
+                  pulseTrigger={horizonPulse}
+                  activeLinkId={activeLinkId}
+                />
+              </div>
+
+              {/* Task Rows with Same-ID Cross-Panel Tether */}
               <div className="mini-dag-stack top-gap-xs">
                 {tasks.map(t => {
                   const cp = (plan?.criticalPath || []).find(m => m.taskId === t.id);
                   const asg = (plan?.witness?.assignments || []).find(a => a.taskId === t.id);
                   const prevAsg = asg || panoramaPartialPreview.get(t.id) || null;
+                  const assigneeId = prevAsg?.personId || null;
+                  const isLinked =
+                    Boolean(activeLinkId) &&
+                    (activeLinkId === t.id ||
+                      (assigneeId && normalizeBuilderId(activeLinkId) === normalizeBuilderId(assigneeId)) ||
+                      (!prevAsg && activeLinkId === 'priya' && t.skill === 'integrate'));
+
                   return (
-                    <div key={t.id} className="mini-dag-row">
+                    <div
+                      key={t.id}
+                      data-link-id={t.id}
+                      onMouseEnter={() => setActiveLinkId(assigneeId || t.id)}
+                      onMouseLeave={() => setActiveLinkId(null)}
+                      className={`mini-dag-row ${isLinked ? 'is-linked-ridge' : ''} ${
+                        !prevAsg ? 'mini-dag-uncovered' : ''
+                      }`}
+                    >
                       <div className="row-between small-copy">
-                        <strong><code>{t.id}</code> ({t.skill})</strong>
+                        <strong>
+                          <code>{t.id}</code> <span className="muted-copy">({t.skill})</span>
+                        </strong>
                         <span className={cp && cp.slackMin <= 0 ? 'final-seat-text' : 'muted-copy'}>
-                          {cp ? (cp.slackMin <= 0 ? '0m CRIT' : `+${cp.slackMin}m`) : `${t.durationMin}m`}
+                          {cp ? (cp.slackMin <= 0 ? '0m buffer' : `+${cp.slackMin}m`) : `${t.durationMin}m`}
                         </span>
                       </div>
                       <div className="small-copy muted-copy">
                         {asg
-                          ? `${asg.evidence === 'unknown' ? '? ' : '✓ '}${asg.personId} [${asg.startMin}..${asg.endMin}m]`
+                          ? `${asg.evidence === 'unknown' ? 'Unverified: ' : '✓ '}${asg.personId} (${asg.startMin}..${asg.endMin}m)`
                           : prevAsg
-                            ? `${prevAsg.evidence === 'unknown' ? '? ' : '✓ '}${prevAsg.personId} (Ready ${prevAsg.startMin}..${prevAsg.endMin}m)`
-                            : `Blocked · Needs ${t.skill}`}
+                            ? `${prevAsg.evidence === 'unknown' ? 'Unverified: ' : '✓ '}${prevAsg.personId} (Preview ${prevAsg.startMin}..${prevAsg.endMin}m)`
+                            : `Uncovered - needs ${t.skill}`}
                       </div>
                     </div>
                   );
                 })}
               </div>
 
+              {/* Column 2 Quick Actions */}
               <div className="pill-row top-gap-sm">
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-compact"
-                  onClick={() => {
-                    setActiveView('architect');
-                    notifyToast('Opened Mission Planner (View 2).', 'info');
-                  }}
-                >
-                  Open Architect
-                </button>
+                {plan?.status === 'FEASIBLE_WITNESS' ? (
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-compact"
+                    disabled={lockingPlan}
+                    onClick={handleLockPlanAndMintInvite}
+                  >
+                    <ShieldCheckIcon size={14} />{' '}
+                    {lockingPlan ? 'Creating...' : 'Create team & invite'}
+                  </button>
+                ) : !priyaInCrew && priyaBuilder && activeScenarioKey === 'baton' ? (
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-compact"
+                    onClick={() => handleToggleBuilderInCrew(priyaBuilder)}
+                  >
+                    <PlusIcon size={14} /> Try Priya in plan
+                  </button>
+                ) : plan?.frontier?.voiQuestion ? (
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-compact"
+                    onClick={() =>
+                      handleVerifyPersonSkill(
+                        plan.frontier.voiQuestion.personId,
+                        plan.frontier.voiQuestion.skill
+                      )
+                    }
+                  >
+                    <CheckCircleIcon size={14} /> Confirm {plan.frontier.voiQuestion.skill}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-compact"
+                    onClick={() => setActiveView('architect')}
+                  >
+                    Edit in Step 2
+                  </button>
+                )}
+
                 <button
                   type="button"
                   className="btn btn-ghost btn-compact"
-                  onClick={() => {
-                    setCharterOpen(true);
-                    notifyToast('Opened Crew Charter Preview.', 'info');
-                  }}
+                  onClick={() => setCharterOpen(true)}
+                  title="Open dark-comfort preview and print/PDF options"
                 >
-                  <FileTextIcon size={14} /> Charter
+                  <FileTextIcon size={14} /> Preview / Print PDF
                 </button>
               </div>
             </div>
           </aside>
         )}
 
-        {/* 3-PANEL PANORAMA REGION 3: Live Seat / SSE Audit Feed */}
-        {ergonomics.density === 'panoramic-3' && (
-          <aside className="panorama-pane" aria-label="Live Seat Authority and SSE Audit Feed">
-            <div className="surface-card sticky-dock">
+        {/* COLUMN 3 (PANORAMA): Team Spots & Server Result (with Activity Summary | Engineering Proof) */}
+        {isPanoramaActive && !isMobileViewport && (
+          <aside className="panorama-pane" aria-label="Team Spots and Server Result">
+            <div
+              className={`surface-card sticky-dock ${col3HasUnresolved ? 'has-unresolved-contour' : ''}`}
+            >
+              {/* 3-Coordinate Network Continuity Header */}
               <div className="row-between wrap-gap">
-                <span className="eyebrow-tag">PANORAMA III · SEAT &amp; SSE FEED</span>
-                <EpistemicStencil kind="SQLITE_AUTHORITY" compact />
-              </div>
-              <div className="row-between top-gap-xs">
-                <h3 className="card-subtitle">Live Board &amp; Ledger</h3>
+                <div className="col3-network-strip small-copy">
+                  <span className={`coord-item ${wanOffline ? 'coord-warn' : authorityHealth === 'online' ? 'coord-ok' : ''}`}>
+                    <DatabaseIcon size={12} />
+                    <span>{wanOffline ? 'Disconnected' : authorityHealth === 'online' ? 'Server online' : 'Checking'}</span>
+                  </span>
+                  <span className="coord-sep" aria-hidden="true">·</span>
+                  <span className="coord-item coord-ok">
+                    <MeshIcon size={12} />
+                    <span>Mateo ready</span>
+                  </span>
+                  <span className="coord-sep" aria-hidden="true">·</span>
+                  <span className={`coord-item ${queuedClaim ? 'coord-warn' : ''}`}>
+                    <OutboxIcon size={12} />
+                    <span>{queuedClaim ? '1 saved' : '0 saved'}</span>
+                  </span>
+                </div>
+
                 <button
                   type="button"
                   className="btn btn-ghost btn-compact"
                   onClick={() => loadAudit(undefined, true)}
+                  title="Refresh server activity"
                 >
-                  <RefreshIcon size={14} /> Sync
+                  <RefreshIcon size={13} /> Sync
                 </button>
               </div>
 
-              <div className="subcard top-gap-xs">
-                <div className="small-copy">
-                  SSE Push: <strong>{sseConnected ? 'LIVE' : 'STANDBY'}</strong> · Read:{' '}
-                  <strong>{boardLatencyMs !== null ? `${boardLatencyMs.toFixed(1)}ms` : '--'}</strong>
-                </div>
-                <div className="small-copy top-gap-xs">
-                  Outbox:{' '}
-                  <code>{queuedClaim ? `PENDING (${queuedClaim.opId.slice(0, 14)}...)` : '0 QUEUED'}</code>
-                </div>
+              <h2 className="card-subtitle top-gap-xs">Team Spots &amp; Server Result</h2>
+
+              {/* Static Peripheral Memory Anchor (CRR-10) */}
+              <div className="memory-anchor-bar tiny-copy muted-copy top-gap-xs">
+                Active team: <code>{selectedTeam?.teamId || teamId}</code> · Acting as: <strong>{humanActorName}</strong>
               </div>
 
+              {/* Confirmed Server Teams Quick List */}
               <div className="mini-board-list top-gap-xs">
-                {board.slice(0, 4).map(t => (
-                  <button
-                    key={t.team_id}
-                    type="button"
-                    className="mini-board-row"
-                    onClick={() => handleRequestSeatForTeam(t.team_id)}
-                  >
-                    <span>{t.team_id}</span>
-                    <code>{t.members}/{t.max_size} seats</code>
-                  </button>
-                ))}
+                {board.slice(0, 4).map(t => {
+                  const isLinked = activeLinkId === t.team_id;
+                  return (
+                    <button
+                      key={t.team_id}
+                      type="button"
+                      data-link-id={t.team_id}
+                      onMouseEnter={() => setActiveLinkId(t.team_id)}
+                      onMouseLeave={() => setActiveLinkId(null)}
+                      className={`mini-board-row ${isLinked ? 'is-linked-ridge' : ''}`}
+                      onClick={() => handleRequestSeatForTeam(t.team_id)}
+                    >
+                      <span>{t.team_id}</span>
+                      <code>{t.members}/{t.max_size} spots</code>
+                    </button>
+                  );
+                })}
               </div>
 
-              <div className="top-gap-sm">
-                <div className="row-between small-copy">
-                  <strong>Recent Attributable Audit</strong>
-                  <EpistemicStencil kind="PEER_CIPHERTEXT_ONLY" compact />
-                </div>
-                {auditRows.length === 0 ? (
-                  <p className="muted-copy small-copy top-gap-xs">
-                    Click "Sync" or mutate seats to stream attributable SQLite audit entries.
-                  </p>
-                ) : (
-                  <div className="audit-timeline top-gap-xs">
-                    {auditRows.slice(-4).reverse().map(row => (
-                      <div key={row.id} className="audit-entry small-copy">
-                        <strong>{row.action}</strong> · <code>{row.actor_id}</code> -&gt; <code>{row.team_id}</code>
+              {/* 2-Tab Toggle: Activity Summary | Engineering Proof */}
+              <div
+                className="tab-strip compact-tab-strip top-gap-sm"
+                role="tablist"
+                aria-label="Server activity or engineering proof"
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={col3Tab === 'summary'}
+                  className={`tab-pill ${col3Tab === 'summary' ? 'active' : ''}`}
+                  onClick={() => handleSwitchCol3Tab('summary')}
+                >
+                  Activity Summary
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={col3Tab === 'proof'}
+                  className={`tab-pill ${col3Tab === 'proof' ? 'active' : ''}`}
+                  onClick={() => handleSwitchCol3Tab('proof')}
+                >
+                  Engineering Proof
+                </button>
+              </div>
+
+              <div ref={col3ScrollRef} className="col3-inspector-scroll top-gap-xs">
+                {col3Tab === 'summary' ? (
+                  <div className="stack-column-tight">
+                    {/* Plain-Language Provenance States */}
+                    <div className="outcome-row">
+                      <span className="status-chip chip-warn">Preview only - not joined yet</span>
+                      <div className="tiny-copy muted-copy top-gap-xs">
+                        Plan preview: {teamPeople.map(p => p.id).join(', ') || 'none'} ({plainVerdict.coveredCount}/{plainVerdict.totalCount} tasks)
                       </div>
-                    ))}
+                    </div>
+
+                    {selectedTeam && (
+                      <div className="outcome-row">
+                        <span className="status-chip chip-ok">Confirmed by server</span>
+                        <div className="tiny-copy top-gap-xs">
+                          Team <code>{selectedTeam.teamId}</code>: {selectedTeam.members.length}/{selectedTeam.maxSize} spots ({selectedTeam.members.map(m => m.userId).join(', ')})
+                        </div>
+                      </div>
+                    )}
+
+                    {queuedClaim && (
+                      <div className="outcome-row">
+                        <span className="status-chip chip-warn">Saved on this device</span>
+                        <div className="tiny-copy top-gap-xs">
+                          Waiting to send join request for <code>{queuedClaim.actorId}</code> -&gt; <code>{queuedClaim.teamId}</code>.
+                        </div>
+                      </div>
+                    )}
+
+                    {relayedReceipt && (
+                      <div className="outcome-row">
+                        <span className="status-chip chip-ok">Sent through Mateo</span>
+                        <div className="tiny-copy top-gap-xs">
+                          Confirmed by server for <code>{relayedReceipt.actorId}</code> on <code>{relayedReceipt.teamId}</code>.
+                        </div>
+                      </div>
+                    )}
+
+                    {replayReceipt && (
+                      <div className="outcome-row">
+                        <span className="status-chip chip-ok">Original result returned</span>
+                        <div className="tiny-copy top-gap-xs">
+                          Reconnected safely with zero duplicate spots.
+                        </div>
+                      </div>
+                    )}
+
+                    {raceReceipt && (
+                      <div className="outcome-row">
+                        <span className="status-chip chip-ok">Last-spot test complete</span>
+                        <div className="tiny-copy top-gap-xs">
+                          50 requested · 1 joined (<code>{raceReceipt.winner}</code>) · {raceReceipt.rejected} turned away ({raceReceipt.elapsedMs} ms).
+                        </div>
+                      </div>
+                    )}
+
+                    {auditRows.length > 0 && (
+                      <div className="audit-timeline top-gap-xs">
+                        {auditRows.slice(-4).reverse().map(row => (
+                          <div key={row.id} className="audit-entry tiny-copy">
+                            <strong>
+                              {row.action.includes('RELAYED') ? 'Sent through Mateo' : 'Confirmed by server'}
+                            </strong>{' '}
+                            · <code>{row.actor_id}</code> -&gt; <code>{row.team_id}</code>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="stack-column-tight">
+                    <div className="pill-row">
+                      <EpistemicStencil kind="SQLITE_AUTHORITY" compact />
+                      <EpistemicStencil kind="PEER_CIPHERTEXT_ONLY" compact />
+                    </div>
+
+                    <div className="outcome-row mono-cell tiny-copy">
+                      <div><strong>SQLite WAL:</strong> BEGIN IMMEDIATE</div>
+                      <div><strong>SSE Stream:</strong> {sseConnected ? 'LIVE' : 'STANDBY'} · {boardLatencyMs !== null ? `${boardLatencyMs.toFixed(1)}ms` : '--'}</div>
+                      <div><strong>Total Teams:</strong> {totalTeams ?? board.length} ({totalMembers ?? '--'} members)</div>
+                    </div>
+
+                    <div className="outcome-row mono-cell tiny-copy">
+                      <div><strong>Solver:</strong> {plan?.status || 'NONE'} ({plan?.classification || '--'})</div>
+                      <div><strong>Quantifier:</strong> {plan?.frontier?.quantifierStatus || 'DETERMINISTIC'}</div>
+                      <div>
+                        <strong>Wildcard |Omega|:</strong>{' '}
+                        {plan?.frontier ? `${plan.frontier.worldsCovered}/${plan.frontier.omegaSize}` : '1/1'}
+                        {plan?.frontier?.voiQuestion ? ` · VOI=${plan.frontier.voiQuestion.informationGainBits}b` : ''}
+                      </div>
+                    </div>
+
+                    <div className="outcome-row mono-cell tiny-copy">
+                      <div><strong>Outbox opId:</strong> {queuedClaim ? queuedClaim.opId : '0 queued'}</div>
+                      <div><strong>Peer Notes:</strong> {peerNotes.length} AES-256-GCM + P-256</div>
+                      {raceReceipt && (
+                        <div>
+                          <strong>Race-50:</strong> oversize={raceReceipt.invariants?.oversize ?? 0} · {raceReceipt.elapsedMs}ms
+                        </div>
+                      )}
+                    </div>
+
+                    {auditRows.length > 0 && (
+                      <div className="audit-timeline top-gap-xs">
+                        {auditRows.slice(-4).reverse().map(row => (
+                          <div key={row.id} className="audit-entry mono-cell tiny-copy">
+                            #{row.id} {row.action} · {row.actor_id} · op={row.op_id?.slice(0, 14)}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -2664,78 +3136,42 @@ export default function App() {
           </aside>
         )}
 
-        {/* 2-Panel Split-Studio Side-by-Side Companion Telemetry Dock */}
-        {ergonomics.density === 'split-studio' && (
-          <aside className="split-companion-pane" aria-label="Split Studio Live Companion Telemetry">
+        {/* 2-Column Split Companion (When user explicitly picks 2-Column Split in Extended Studio) */}
+        {ergonomics.density === 'split-studio' && !isMobileViewport && (
+          <aside className="split-companion-pane" aria-label="Team Plan and Server Companion">
             <div className="surface-card sticky-dock">
-              <span className="eyebrow-tag">SPLIT STUDIO · SIDE-BY-SIDE TELEMETRY</span>
-              <h3 className="card-subtitle">Live Cross-Layer Monitor</h3>
+              <span className="eyebrow-tag">COMPANION SUMMARY</span>
+              <h3 className="card-subtitle">Plan &amp; Server Status</h3>
 
-              <div className="subcard top-gap-xs">
-                <strong>1. Network Coordinates</strong>
-                <ul className="clean-list small-copy">
-                  <li>Authority Path: <code>{wanOffline ? 'WAN_DROPPED' : authorityHealth.toUpperCase()}</code></li>
-                  <li>Encrypted Peer Mesh: <code>AES-256-GCM + P-256 (relay-mateo)</code></li>
-                  <li>Local Durable Outbox: <code>{queuedClaim ? `PENDING (${queuedClaim.opId})` : '0 QUEUED'}</code></li>
-                </ul>
+              <div className={`subcard top-gap-xs ${plainVerdict.tone === 'ok' ? 'tone-ok' : 'tone-warn'}`}>
+                <strong>{plainVerdict.headline}</strong>
+                <div className="small-copy muted-copy top-gap-xs">{plainVerdict.detail}</div>
               </div>
 
-              <div className="subcard top-gap-xs">
-                <strong>2. Active Mission Verdict</strong>
-                <div className="small-copy top-gap-xs">
-                  Status: <code>{plan?.status || 'NOT_RUN'}</code> ({plan?.classification || '--'})
-                </div>
-                <div className="small-copy">
-                  Quantifier: <code>{plan?.frontier?.quantifierStatus || '--'}</code>
-                </div>
-              </div>
-
-              <div className="subcard top-gap-xs">
-                <strong>3. Live Board Snapshot (<code>{eventId}</code>)</strong>
-                <div className="small-copy top-gap-xs">
-                  Total Crews: <strong>{totalTeams !== null ? totalTeams.toLocaleString() : board.length}</strong> · Last Read:{' '}
-                  <strong>{boardLatencyMs !== null ? `${boardLatencyMs.toFixed(1)}ms` : '--'}</strong>
-                </div>
-                <div className="mini-board-list top-gap-xs">
-                  {board.slice(0, 5).map(t => (
-                    <button
-                      key={t.team_id}
-                      type="button"
-                      className="mini-board-row"
-                      onClick={() => handleRequestSeatForTeam(t.team_id)}
-                    >
-                      <span>{t.team_id}</span>
-                      <code>{t.members}/{t.max_size}</code>
-                    </button>
-                  ))}
-                </div>
+              <div className="subcard top-gap-xs small-copy">
+                <div><strong>Server:</strong> {wanOffline ? 'Disconnected' : authorityHealth}</div>
+                <div><strong>Saved offline:</strong> {queuedClaim ? '1 waiting to send' : '0'}</div>
+                <div><strong>Teams in {eventId}:</strong> {totalTeams !== null ? totalTeams.toLocaleString() : board.length}</div>
               </div>
             </div>
           </aside>
         )}
       </div>
 
-      {/* Global Polite ARIA Live Status Bar & Semantic Footer */}
-      <footer className="platform-footer no-print" role="contentinfo">
-        <div
-          role="status"
-          aria-live="polite"
-          aria-atomic="true"
-          className="live-announcer-bar"
-        >
-          <span className="live-pulse-indicator" aria-hidden="true">●</span>
-          <span className="mono-status-text">{statusMessage}</span>
-        </div>
-
-        <div className="footer-meta-row">
-          <span>
-            <strong>Post Sheet x Synchronicity</strong> · Layer-A SQLite <code>BEGIN IMMEDIATE</code> Serialized Seat Authority + Layer-B <code>AES-256-GCM</code> / <code>P-256</code> Peer Continuity
-          </span>
-          <span className="hotkey-legend">
-            Hotkeys: <kbd>Alt+1..4</kbd> Views · <kbd>Ctrl+K</kbd> or <kbd>/</kbd> Palette · <kbd>Ctrl+Shift+A</kbd> FOV &amp; A11y Studio
-          </span>
-        </div>
-      </footer>
+      {/* Slim IDE Status & Contextual Keycap Ribbon */}
+      <KeyboardLightRibbon
+        statusMessage={statusMessage}
+        wanOffline={wanOffline}
+        authorityHealth={authorityHealth}
+        queuedClaim={queuedClaim}
+        singleKeyShortcuts={ergonomics.singleKeyShortcuts}
+        onToggleSingleKeyShortcuts={() =>
+          setErgonomics(s => ({ ...s, singleKeyShortcuts: !s.singleKeyShortcuts }))
+        }
+        onJumpToManageTeam={() => setActiveView('authority')}
+        onOpenPalette={() => setPaletteOpen(true)}
+        onOpenHelp={() => setWhyOpen(true)}
+      />
 
       {/* Accessible Modals & Drawers */}
       <WhyPurposeFirstModal

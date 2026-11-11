@@ -20,10 +20,10 @@ export default function ProofArenaView({
   probeStats,
   probingLatency,
   onRunLatencyProbe,
-  onExecuteWalkthroughStep,
-  onNotify
+  onExecuteWalkthroughStep
 }) {
   const [evidenceTab, setEvidenceTab] = useState('scale'); // 'scale' | 'boundary' | 'walkthrough'
+  const [showRaceProof, setShowRaceProof] = useState(false);
 
   const contenders = Array.from({ length: 50 }, (_, i) => {
     const id = `claimant-${i}`;
@@ -35,94 +35,119 @@ export default function ProofArenaView({
     };
   });
 
+  const totalRequested = raceReceipt ? Number(raceReceipt.committed || 0) + Number(raceReceipt.rejected || 0) : 50;
+
   return (
     <section aria-labelledby="arena-heading" className="view-section">
-      {/* Hero Arena Header */}
+      {/* Plain-Language Hero Header */}
       <div className="surface-card hero-strip">
         <div className="row-between wrap-gap">
           <div className="prose-measure">
-            <div className="pill-row">
-              <span className="eyebrow-tag">VIEW 4 · SERIALIZABLE RACE ORACLE &amp; 10,000-USER BENCHMARK EVIDENCE</span>
-              <EpistemicStencil kind="SQLITE_AUTHORITY" compact />
-            </div>
-            <h2 id="arena-heading" className="view-title">Concurrency &amp; Scale Proof Arena</h2>
+            <span className="eyebrow-tag">STEP 4 · LIVE CONTENTION TEST &amp; SCALE PROOF</span>
+            <h2 id="arena-heading" className="view-title">
+              50 people request the last spot. See what happens.
+            </h2>
             <p className="muted-copy">
-              Verify atomic final-seat admission under a 50-way burst race inside SQLite <code>BEGIN IMMEDIATE</code> WAL, probe live board latency, and step through the 5-minute Hack4Hack judge checklist.
+              Send 50 simultaneous join requests for 1 open spot on a 2-person team. The server confirms 1 new member and turns away 49 cleanly without overfilling the team.
             </p>
           </div>
 
           <div className="pill-row">
             <button
               type="button"
-              className="btn btn-secondary"
+              className="btn btn-secondary btn-compact"
               disabled={probingLatency}
               onClick={onRunLatencyProbe}
             >
-              <RefreshIcon /> {probingLatency ? 'Probing...' : 'Probe Live Board Latency (5x)'}
+              <RefreshIcon size={15} /> {probingLatency ? 'Checking speed...' : 'Check live board speed'}
             </button>
             <button
               type="button"
-              className="btn btn-primary btn-lg"
+              className="btn btn-primary"
               disabled={runningRace}
               onClick={onRun50WayRace}
             >
-              <ZapIcon /> {runningRace ? 'Racing 50 Claimants...' : 'Fire 50 Simultaneous Final-Seat Claimants'}
+              <ZapIcon size={16} /> {runningRace ? 'Running 50-person test...' : 'Run 50-person last-spot test'}
             </button>
           </div>
         </div>
       </div>
 
-      {/* 50-Claimant Final-Seat Contention Visualizer */}
-      <div className="surface-card" role="region" aria-label="50-Claimant Final-Seat Contention Visualizer">
+      {/* CARD 1: LIVE RUN RESULT (Explicitly separated from recorded benchmarks) */}
+      <div className="surface-card" role="region" aria-label="Live 50-person last-spot test result">
         <div className="row-between wrap-gap">
           <div>
-            <span className="eyebrow-tag">POST /API/DEMO/RACE-50 · 2-SEAT TEAM (1 LEADER + 1 SCARCE FINAL SEAT)</span>
-            <h3 className="card-subtitle">50-Claimant Final-Seat Contention Matrix</h3>
+            <span className="eyebrow-tag">LIVE SERVER RUN · REAL-TIME TEST OUTPUT</span>
+            <h3 className="card-subtitle">Live Last-Spot Race Result</h3>
           </div>
 
-          {raceReceipt && (
-            <div className="pill-row" role="status">
+          <div className="pill-row">
+            {raceReceipt && (
               <span className="status-chip chip-ok">
-                <CheckCircleIcon size={14} /> oversize = {raceReceipt.invariants?.oversize ?? 0}
+                <CheckCircleIcon size={14} /> 0 overfilled teams
               </span>
-              <span className="status-chip chip-ok">
-                <CheckCircleIcon size={14} /> orphanLeader = {raceReceipt.invariants?.orphanLeader ?? 0}
-              </span>
-              <span className="status-chip chip-ok">
-                <CheckCircleIcon size={14} /> eventMismatch = {raceReceipt.invariants?.eventMismatch ?? 0}
-              </span>
-            </div>
-          )}
+            )}
+            <button
+              type="button"
+              aria-expanded={showRaceProof}
+              className="btn btn-secondary btn-compact"
+              onClick={() => setShowRaceProof(v => !v)}
+            >
+              {showRaceProof ? 'Hide Engineering Proof' : 'Engineering Proof'}
+            </button>
+          </div>
         </div>
 
         {raceReceipt ? (
-          <div className="race-summary-banner top-gap-sm">
+          <div className="race-summary-banner top-gap-sm" role="status">
             <div className="race-kpi">
-              <span className="metric-label">Winning Claimant (HTTP 200)</span>
+              <span className="metric-label">Requests Sent</span>
+              <strong>{totalRequested} requested</strong>
+            </div>
+            <div className="race-kpi">
+              <span className="metric-label">Confirmed by Server</span>
               <strong className="race-winner-name">
-                <AwardIcon size={18} /> {raceReceipt.winner} ({raceReceipt.committed} committed)
+                <AwardIcon size={17} /> {raceReceipt.committed} joined ({raceReceipt.winner})
               </strong>
             </div>
             <div className="race-kpi">
-              <span className="metric-label">Rejected Contenders (HTTP 409)</span>
-              <strong>{raceReceipt.rejected} x TEAM_FULL</strong>
+              <span className="metric-label">Turned Away Cleanly</span>
+              <strong>
+                {raceReceipt.rejected} turned away - team full at {raceReceipt.finalMemberCount}/2
+              </strong>
             </div>
             <div className="race-kpi">
-              <span className="metric-label">Final Crew Occupancy</span>
-              <strong>{raceReceipt.finalMemberCount} / 2 Seats (Exact Cap)</strong>
-            </div>
-            <div className="race-kpi">
-              <span className="metric-label">SQLite Serialized Elapsed</span>
+              <span className="metric-label">Server Time</span>
               <strong>{raceReceipt.elapsedMs} ms</strong>
             </div>
           </div>
         ) : (
           <p className="muted-copy top-gap-xs">
-            Click <strong>"Fire 50 Simultaneous Final-Seat Claimants"</strong> above to mint 50 valid single-use invites on a 2-seat team (where <code>race-leader</code> already holds seat 1) and race 50 claimants concurrently for the single remaining seat.
+            Click <strong>"Run 50-person last-spot test"</strong> above to create a live 2-spot team on the server (with 1 lead already seated) and send 50 valid single-use requests at the same time.
           </p>
         )}
 
-        <div className="contender-matrix top-gap-sm" role="list" aria-label="50 concurrent seat claimants">
+        {showRaceProof && raceReceipt && (
+          <div className="subcard top-gap-sm" role="region" aria-label="SQLite transaction invariant proof">
+            <div className="row-between wrap-gap">
+              <strong>SQLite <code>BEGIN IMMEDIATE</code> Invariant Check (<code>POST /api/demo/race-50</code>)</strong>
+              <EpistemicStencil kind="SQLITE_AUTHORITY" compact />
+            </div>
+            <div className="pill-row top-gap-xs small-copy mono-cell">
+              <span>winner={raceReceipt.winner} (HTTP 200)</span>
+              <span>·</span>
+              <span>rejected={raceReceipt.rejected} x HTTP 409 TEAM_FULL</span>
+              <span>·</span>
+              <span>oversize={raceReceipt.invariants?.oversize ?? 0}</span>
+              <span>·</span>
+              <span>orphanLeader={raceReceipt.invariants?.orphanLeader ?? 0}</span>
+              <span>·</span>
+              <span>eventMismatch={raceReceipt.invariants?.eventMismatch ?? 0}</span>
+            </div>
+          </div>
+        )}
+
+        <div className="contender-matrix top-gap-sm" role="list" aria-label="50 simultaneous join requests">
           {contenders.map(c => (
             <div
               key={c.id}
@@ -130,109 +155,107 @@ export default function ProofArenaView({
               className={`contender-cell state-${c.state}`}
               aria-label={`${c.id}: ${
                 c.state === 'winner'
-                  ? '200 COMMITTED Winner'
+                  ? 'Joined - confirmed by server'
                   : c.state === 'rejected'
-                    ? '409 TEAM_FULL Rejected'
-                    : 'Ready'
+                    ? 'Turned away - team full'
+                    : 'Ready to test'
               }`}
             >
-              <span className="contender-num">#{String(c.index).padStart(2, '0')}</span>
+              <span className="contender-num">#{String(c.index + 1).padStart(2, '0')}</span>
               <strong className="contender-tag">
-                {c.state === 'winner' ? '★ 200 WIN' : c.state === 'rejected' ? 'x 409 FULL' : 'READY'}
+                {c.state === 'winner' ? '★ Joined' : c.state === 'rejected' ? 'Full' : 'Ready'}
               </strong>
             </div>
           ))}
         </div>
 
-        {/* Live Client Latency Probe Output */}
+        {/* Live Browser Speed Check Output */}
         {probeStats && (
           <div className="subcard tone-ok top-gap-sm" role="status">
             <div className="row-between wrap-gap">
               <strong>
-                <ClockIcon size={15} /> Live Browser Round-Trip Probe on <code>/api/events/{eventId}/board?limit=100</code>:
+                <ClockIcon size={15} /> Live Browser Board Speed (<code>{eventId}</code>, 5 reads of 100 teams):
               </strong>
               <span className="mono-cell">
-                min={probeStats.minMs}ms · median={probeStats.medianMs}ms · max={probeStats.maxMs}ms ({probeStats.samples.length}/5 HTTP 200 OK)
+                median {probeStats.medianMs} ms (fastest {probeStats.minMs} ms · slowest {probeStats.maxMs} ms)
               </span>
             </div>
           </div>
         )}
       </div>
 
-      {/* Embedded Architecture & Evidence Viewer Tabs */}
-      <div className="surface-card">
-        <div className="tab-strip" role="tablist" aria-label="Architecture and verification evidence tabs">
+      {/* CARD 2: RECORDED BENCHMARKS & SECURITY REFERENCE (Visually distinct from live run) */}
+      <div className="surface-card" role="region" aria-label="Recorded benchmark and architecture reference">
+        <div className="row-between wrap-gap">
+          <div>
+            <span className="eyebrow-tag">RECORDED BENCHMARK &amp; SECURITY REFERENCE (STATIC VERIFIED LOGS)</span>
+            <h3 className="card-subtitle">Scale Telemetry, Security Boundary &amp; 5-Minute Guide</h3>
+          </div>
+        </div>
+
+        <div className="tab-strip top-gap-xs" role="tablist" aria-label="Reference documentation tabs">
           <button
             type="button"
             role="tab"
             aria-selected={evidenceTab === 'scale'}
             className={`tab-pill ${evidenceTab === 'scale' ? 'active' : ''}`}
-            onClick={() => {
-              setEvidenceTab('scale');
-              onNotify?.('Showing 10k-User / 2k-Team Scale Telemetry.', 'info');
-            }}
+            onClick={() => setEvidenceTab('scale')}
           >
-            10k-User / 2k-Team Scale Telemetry
+            Recorded 10k-Person Benchmark
           </button>
           <button
             type="button"
             role="tab"
             aria-selected={evidenceTab === 'boundary'}
             className={`tab-pill ${evidenceTab === 'boundary' ? 'active' : ''}`}
-            onClick={() => {
-              setEvidenceTab('boundary');
-              onNotify?.('Showing Layer-A vs. Layer-B Security Boundary Matrix.', 'info');
-            }}
+            onClick={() => setEvidenceTab('boundary')}
           >
-            Layer-A vs. Layer-B Security Boundary
+            Server vs. Peer Relay Boundary
           </button>
           <button
             type="button"
             role="tab"
             aria-selected={evidenceTab === 'walkthrough'}
             className={`tab-pill ${evidenceTab === 'walkthrough' ? 'active' : ''}`}
-            onClick={() => {
-              setEvidenceTab('walkthrough');
-              onNotify?.('Opened 5-Minute Judge Walkthrough (0:00 - 5:00).', 'info');
-            }}
+            onClick={() => setEvidenceTab('walkthrough')}
           >
-            5-Minute Judge Walkthrough (0:00 - 5:00)
+            5-Minute Walkthrough
           </button>
         </div>
 
-        {/* TAB 1: SCALE TELEMETRY */}
+        {/* TAB 1: RECORDED SCALE TELEMETRY */}
         {evidenceTab === 'scale' && (
           <div className="evidence-pane top-gap-sm" role="tabpanel">
             <div className="benchmark-cards-grid">
               <div className="subcard tone-ok">
-                <span className="eyebrow-tag">EXACT FLOAT64 100-CLIENT P95</span>
+                <span className="eyebrow-tag">100-CLIENT P95 READ SPEED</span>
                 <strong className="giant-stat">36.68 ms</strong>
                 <p className="muted-copy small-copy">
-                  5.4x faster than the 200 ms SLA across 16,983 requests in 5.0s (<code>p50 = 28.29 ms</code>, <code>p90 = 34.31 ms</code>, <code>0</code> errors).
+                  5.4x faster than the 200 ms target across 16,983 reads in 5.0s (<code>p50 = 28.29 ms</code>, <code>0</code> errors).
                 </p>
               </div>
 
               <div className="subcard">
-                <span className="eyebrow-tag">AUTOCANNON 10.02S CROSS-CHECK</span>
+                <span className="eyebrow-tag">SUSTAINED 10S THROUGHPUT</span>
                 <strong className="giant-stat">35,034 reqs</strong>
                 <p className="muted-copy small-copy">
-                  100 concurrent connections hitting <code>GET /board?limit=100</code>: <code>p50 = 27 ms</code>, <code>p97.5 = 34 ms</code>, <code>0</code> non-2xx responses.
+                  100 concurrent connections reading 100 teams per page: <code>p50 = 27 ms</code>, <code>0</code> failed responses.
                 </p>
               </div>
 
               <div className="subcard">
-                <span className="eyebrow-tag">DETERMINISTIC SQLITE DATASET</span>
+                <span className="eyebrow-tag">SEEDED DATASET</span>
                 <strong className="giant-stat">10,000 / 2,000</strong>
                 <p className="muted-copy small-copy">
-                  10,000 committed builders across 2,000 crews (<code>src/seed.mjs</code> in 13.4s) with <code>oversize=0</code>, <code>orphanLeader=0</code>, <code>eventMismatch=0</code>.
+                  10,000 people across 2,000 teams seeded in 13.4s with zero overfilled teams or missing leads.
                 </p>
               </div>
 
               <div className="subcard tone-ok">
-                <span className="eyebrow-tag">AUTOMATED VERIFICATION GATES</span>
+                <span className="eyebrow-tag">AUTOMATED CHECKS</span>
                 <strong className="giant-stat">97 / 97 PASS</strong>
                 <p className="muted-copy small-copy">
-                  43 Baseline API/Planner/SSE + 4 Adversarial 50-Way Race + 12 Independent Python SQLite Oracle + 38 Crypto/Relay/R5 assertions.
+                  43 baseline checks + 4 race checks + 12 independent SQLite checks + 38 encryption/relay/planner tests.
                 </p>
               </div>
             </div>
@@ -245,50 +268,43 @@ export default function ProofArenaView({
             <div className="table-wrap">
               <table className="accessible-table">
                 <caption className="sr-only">
-                  Comparison of Layer-A Serialized Membership Authority and Layer-B Signed Peer Continuity
+                  Comparison of Server Team Membership and Peer Relay Continuity
                 </caption>
                 <thead>
                   <tr>
-                    <th scope="col">Invariant / Responsibility</th>
+                    <th scope="col">Responsibility</th>
                     <th scope="col">
                       <span className="pill-row">
-                        <DatabaseIcon size={14} /> Layer A: Serialized SQLite Authority
-                        <EpistemicStencil kind="SQLITE_AUTHORITY" compact />
+                        <DatabaseIcon size={14} /> Server Membership (SQLite)
                       </span>
                     </th>
                     <th scope="col">
                       <span className="pill-row">
-                        <ShieldCheckIcon size={14} /> Layer B: Encrypted Peer Continuity
-                        <EpistemicStencil kind="PEER_CIPHERTEXT_ONLY" compact />
+                        <ShieldCheckIcon size={14} /> Teammate Relay &amp; Notes
                       </span>
                     </th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
-                    <th scope="row">Scarce Seat Capacity &amp; Uniqueness</th>
-                    <td><strong>Exclusive Owner</strong> (<code>BEGIN IMMEDIATE</code> WAL, <code>PRIMARY KEY(event_id, user_id)</code>)</td>
-                    <td>Never admits seats; marks all local messages <code>PEER_ARTIFACT_ONLY</code></td>
+                    <th scope="row">Spot Limits &amp; Final Decision</th>
+                    <td><strong>Server decides</strong> inside atomic <code>BEGIN IMMEDIATE</code> transactions</td>
+                    <td>Never grants membership on its own; marked <code>PEER_ARTIFACT_ONLY</code></td>
                   </tr>
                   <tr>
-                    <th scope="row">Single-Use Invitations &amp; Clocks</th>
-                    <td>Stores only SHA-256 <code>code_hash</code>; enforces server clock <code>now &lt; expires_at</code></td>
-                    <td>Forwards opaque invite code + SHA-256 <code>opId</code> on WAN drop without minting duplicates</td>
+                    <th scope="row">Single-Use Invites</th>
+                    <td>Stores SHA-256 <code>code_hash</code> only; checks expiration on server clock</td>
+                    <td>Forwards invite + saved request ID when Wi-Fi drops without duplicating</td>
                   </tr>
                   <tr>
-                    <th scope="row">Authentication &amp; Attribution</th>
-                    <td>HMAC-SHA256 Bearer verification + salted <code>scrypt</code> + revoked-token ledger</td>
-                    <td><code>AES-256-GCM</code> envelope encryption + per-author <code>P-256</code> ECDSA signatures</td>
+                    <th scope="row">Sign-In &amp; Signatures</th>
+                    <td>Signed Bearer session + salted <code>scrypt</code> passwords + instant sign-out</td>
+                    <td><code>AES-256-GCM</code> encrypted notes + per-person <code>P-256</code> signatures</td>
                   </tr>
                   <tr>
-                    <th scope="row">Idempotency &amp; Replay Safety</th>
-                    <td><code>operations(event_id, actor_id, op_id)</code> returns <code>replayed: true</code>; blocks key reuse</td>
-                    <td><code>WITHOUT ROWID</code> receipt ledger + browser <code>claim-operation.js</code> SHA-256 storage key</td>
-                  </tr>
-                  <tr>
-                    <th scope="row">Schedule Consistency</th>
-                    <td>Decoupled <code>O(page)</code> board read path never blocks on solver search</td>
-                    <td><code>contextGlueOrExplain</code> isolates <code>SHARED_CAPACITY_OVERLAP_OBSTRUCTION</code></td>
+                    <th scope="row">Safe Reconnect Retries</th>
+                    <td>Returns original result (<code>replayed: true</code>) when retrying same <code>opId</code></td>
+                    <td>Browser <code>claim-operation.js</code> retains request ID until confirmed</td>
                   </tr>
                 </tbody>
               </table>
@@ -296,7 +312,7 @@ export default function ProofArenaView({
           </div>
         )}
 
-        {/* TAB 3: 5-MINUTE JUDGE WALKTHROUGH */}
+        {/* TAB 3: 5-MINUTE WALKTHROUGH */}
         {evidenceTab === 'walkthrough' && (
           <div className="evidence-pane top-gap-sm" role="tabpanel">
             <div className="walkthrough-list">

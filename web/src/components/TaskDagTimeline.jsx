@@ -312,7 +312,16 @@ function DagSvgDiagram({ rows, horizonMin, maxTime, planRan, markerId }) {
   );
 }
 
-export default function TaskDagTimeline({ tasks, teamPeople = [], horizonMin, plan, beforeSnapshot = null, onNotify }) {
+export default function TaskDagTimeline({
+  tasks,
+  teamPeople = [],
+  horizonMin,
+  plan,
+  beforeSnapshot = null,
+  activeLinkId = null,
+  onLinkHover,
+  onNotify
+}) {
   const [viewMode, setViewMode] = useState('dual'); // 'dual' | 'dag' | 'table'
   const [wipeActive, setWipeActive] = useState(false);
   const [wipePct, setWipePct] = useState(50);
@@ -375,12 +384,12 @@ export default function TaskDagTimeline({ tasks, teamPeople = [], horizonMin, pl
       <div className="row-between wrap-gap dag-toolbar">
         <div>
           <div className="pill-row">
-            <h3 className="card-subtitle">Spatial Task Dependency DAG &amp; Backward-Slack Critical Path</h3>
+            <h3 className="card-subtitle">Task Timeline &amp; Dependencies</h3>
             <EpistemicStencil kind="SQLITE_AUTHORITY" compact />
             {hasProvisional && <EpistemicStencil kind="VOI_PROVISIONAL" compact />}
           </div>
           <p className="muted-copy small-copy">
-            Solid bars show scheduled/earliest execution; dashed whiskers show backward-slack window (<code>ES..LF</code>); <code>0m slack</code> marks critical-path bottlenecks.
+            Solid bars show scheduled hours; dashed whiskers show available slack; <code>0m slack</code> marks bottleneck tasks.
           </p>
         </div>
 
@@ -522,21 +531,31 @@ export default function TaskDagTimeline({ tasks, teamPeople = [], horizonMin, pl
               </tr>
             </thead>
             <tbody>
-              {rows.map(r => (
-                <tr key={r.taskId}>
+              {rows.map(r => {
+                const isLinked =
+                  activeLinkId &&
+                  (activeLinkId === r.taskId || (r.assignment && activeLinkId === r.assignment.personId));
+                return (
+                <tr
+                  key={r.taskId}
+                  data-link-id={r.taskId}
+                  className={isLinked ? 'is-linked-ridge' : ''}
+                  onMouseEnter={() => onLinkHover?.(r.assignment?.personId || r.taskId)}
+                  onMouseLeave={() => onLinkHover?.(null)}
+                >
                   <th scope="row" className="mono-cell">{r.taskId}</th>
                   <td><span className="skill-badge">{r.skill}</span></td>
                   <td>{r.durationMin}m</td>
                   <td>
                     {r.after.length > 0
                       ? `${r.after.join(', ')}${r.lagMin > 0 ? ` (+${r.lagMin}m)` : ''}`
-                      : 'None (Root)'}
+                      : 'None (starts immediately)'}
                   </td>
                   <td className="mono-cell">{r.earliestStartMin}m .. {r.earliestFinishMin}m</td>
                   <td className="mono-cell">{r.latestStartMin}m .. {r.latestFinishMin}m</td>
                   <td>
                     <span className={`status-chip ${r.slackMin <= 0 ? 'chip-warn' : 'chip-ok'}`}>
-                      {r.slackMin <= 0 ? '0m Critical' : `+${r.slackMin}m`}
+                      {r.slackMin <= 0 ? '0m tightest' : `+${r.slackMin}m`}
                     </span>
                   </td>
                   <td>
@@ -552,13 +571,14 @@ export default function TaskDagTimeline({ tasks, teamPeople = [], horizonMin, pl
                         />
                       </div>
                     ) : plan ? (
-                      <span className="status-chip chip-err">Blocked · Needs {r.skill}</span>
+                      <span className="status-chip chip-err">Uncovered · Needs {r.skill}</span>
                     ) : (
-                      <span className="muted-copy">Pending solve</span>
+                      <span className="muted-copy">Preview</span>
                     )}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

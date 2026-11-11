@@ -1,85 +1,121 @@
-// PostSheet Workstation x Hack4Hack PS1 Spatial Ergonomics & FOV Calibration Engine
-const STORAGE_KEY = 'h4h-ps1:ergonomics:v3';
+// PostSheet Workstation x Hack4Hack PS1 Spatial Ergonomics, Viewport Calibration & CRR Engine
+export const STORAGE_KEY = 'h4h-ps1:ergonomics:v4';
 
 export const THEME_OPTIONS = [
   {
     id: 'h4h-glass',
-    shortLabel: 'H4H Glass',
-    label: 'H4H Spatial Glass',
-    subtitle: 'Carbon-obsidian #090D11, subsurface emerald/teal glow, smoked glass cards & #8CE65A jade-lime accent',
-    swatch: ['#090D11', '#10181D', '#8CE65A', '#D5E2DE']
+    shortLabel: 'Moonlight Dark',
+    label: 'Moonlight Dark',
+    subtitle: 'Steady #0B0F14 ground, 100% opaque #121820 matte reading cards & reactive lunar edge',
+    swatch: ['#0B0F14', '#121820', '#8CE65A', '#E4EEEB']
+  },
+  {
+    id: 'aaa-contrast',
+    shortLabel: 'High Contrast',
+    label: 'High Contrast',
+    subtitle: 'Pure #000000 ground, crisp #FFFFFF & #FFD60A outer cards/focus, calm #52525B inner dividers',
+    swatch: ['#000000', '#09090B', '#FFD60A', '#FFFFFF']
+  },
+  {
+    id: 'warm-paper',
+    shortLabel: 'Moonlit Pearl',
+    label: 'Moonlit Pearl (Light)',
+    subtitle: 'Clean #EEF2F6 daylight ground with crisp #FFFFFF matte cards and high-contrast #0F172A ink',
+    swatch: ['#EEF2F6', '#FFFFFF', '#0B4F6C', '#0F172A']
   },
   {
     id: 'petrol-glass',
-    shortLabel: 'Petrol Glass',
+    shortLabel: 'Petrol Deep',
     label: 'Petrol Deep Glass',
-    subtitle: 'Oceanic petrol #06151C canvas, smoked #0B222D glass, #64DFDF & #8FBEB4 specular rims',
-    swatch: ['#06151C', '#0B222D', '#64DFDF', '#D2E3EC']
+    subtitle: 'Oceanic petrol #06151C ground, opaque #0C1F29 reading cards & #64DFDF accents',
+    swatch: ['#06151C', '#0C1F29', '#64DFDF', '#D6E7F0']
   },
   {
     id: 'obsidian-prism',
     shortLabel: 'Obsidian Prism',
     label: 'Obsidian Prism',
-    subtitle: 'Twilight #090D18 canvas, smoked indigo-slate glass, #5EEAD4 & #A78BFA dual prism rim',
+    subtitle: 'Twilight #090D18 ground, opaque #12192A reading cards, #5EEAD4 & #A78BFA accents',
     swatch: ['#090D18', '#12192A', '#5EEAD4', '#A78BFA']
   },
   {
     id: 'matte-slate',
     shortLabel: 'Calm Matte',
     label: 'Calm Matte Dark',
-    subtitle: 'Zero-blur opaque #11171D / #182129 low-glare dark engineering surface',
-    swatch: ['#11171D', '#182129', '#5EEAD4', '#D5E2DE']
-  },
-  {
-    id: 'warm-paper',
-    shortLabel: 'Frosted Light',
-    label: 'Frosted Daylight',
-    subtitle: 'Clean light #EEF2F6 canvas with frosted white cards and crisp dark ink',
-    swatch: ['#EEF2F6', '#FFFFFF', '#0B4F6C', '#0F172A']
-  },
-  {
-    id: 'aaa-contrast',
-    shortLabel: 'WCAG AAA',
-    label: 'WCAG AAA Contrast',
-    subtitle: 'Pure #000000 / #FFFFFF / #FFD60A 7:1+ to 21:1 high-visibility mode',
-    swatch: ['#000000', '#0A0A0A', '#FFD60A', '#FFFFFF']
+    subtitle: 'Zero-blur #11171D / #182129 flat engineering surface',
+    swatch: ['#11171D', '#182129', '#38BDF8', '#DCE6EE']
   }
 ];
 
 export const SCALE_OPTIONS = [
-  { id: '85', label: '85% Panoramic', px: 13.6, desc: 'Wide multi-card telemetry overview' },
-  { id: '100', label: '100% Comfort Default', px: 16, desc: 'Balanced readability & comfortable FOV' },
-  { id: '115', label: '115% Relaxed', px: 18.4, desc: 'Lower eye strain for extended review' },
-  { id: '130', label: '130% Large Print', px: 20.8, desc: 'Maximum typographic clarity & hit targets' }
+  {
+    id: '60',
+    label: '60% Panorama',
+    shortLabel: '60% Panorama',
+    px: 11.75,
+    desc: 'Full 3-column command center (>=1100px desktop default)'
+  },
+  {
+    id: '80',
+    label: '80% Compact',
+    shortLabel: '80% Compact',
+    px: 13.4,
+    desc: 'Compact IDE density with larger labels'
+  },
+  {
+    id: '100',
+    label: '100% Standard',
+    shortLabel: '100% Standard',
+    px: 16,
+    desc: 'Standard 16px body scale (mobile default)'
+  },
+  {
+    id: '115',
+    label: '115% Large Text',
+    shortLabel: '115% Large',
+    px: 18.4,
+    desc: 'Expanded reading text & generous spacing'
+  }
 ];
 
 export const DENSITY_OPTIONS = [
   {
-    id: 'calm-focus',
-    label: 'Calm Focus (Default)',
-    desc: 'Single generous reading surface with progressive disclosure'
+    id: 'panoramic-3',
+    label: '3-Column Panorama',
+    desc: 'Full widescreen 44 / 28 / 28 overview: Active Step + Team Plan + Server Result'
   },
   {
-    id: 'panoramic-3',
-    label: '3-Panel Panorama (41/29/29)',
-    desc: 'Active View + Live DAG/VOI Mini-Inspector + Live Seat/SSE Audit Feed'
+    id: 'calm-focus',
+    label: 'Single Focus',
+    desc: 'Focused single-workspace view without side panorama columns'
   },
   {
     id: 'split-studio',
-    label: 'Split Studio (2-Panel)',
-    desc: 'Side-by-side live companion telemetry beside active workspace'
+    label: '2-Column Split (58 / 42)',
+    desc: 'Side-by-side workspace and live companion summary'
   },
   {
     id: 'compact',
     label: 'Compact Directory',
-    desc: 'Denser card spacing for scanning large hackathon rosters'
+    desc: 'Tighter spacing inside single-workspace view'
   }
 ];
 
 export const MOTION_OPTIONS = [
-  { id: 'spring', label: 'Spring & Firefly 60fps', desc: 'Gentle micro-transitions & live solar baton pulse' },
-  { id: 'reduced', label: 'Reduced', desc: 'Subtle opacity fades without spatial movement' },
-  { id: 'off', label: 'Zero Motion (Static)', desc: 'Immediate state changes & static horizon canvas' }
+  {
+    id: 'spring',
+    label: 'Reactive Light',
+    desc: 'Calm static rest; bounded 850ms handoff pulse & subtle proximity edge on interaction'
+  },
+  {
+    id: 'reduced',
+    label: 'Reduced',
+    desc: 'Instant layout transitions without arc travel'
+  },
+  {
+    id: 'off',
+    label: 'Static Off',
+    desc: '100% static surfaces & zero animation frames'
+  }
 ];
 
 export function isMotionFrozen(motionSetting) {
@@ -88,6 +124,41 @@ export function isMotionFrozen(motionSetting) {
     return true;
   }
   return false;
+}
+
+export function getViewportTier(width) {
+  const w = typeof width === 'number' && width > 0
+    ? width
+    : typeof window !== 'undefined' && window.innerWidth
+      ? window.innerWidth
+      : 1440;
+  if (w < 768) return 'mobile';
+  if (w < 1100) return 'tablet';
+  return 'desktop';
+}
+
+export function resolveEffectiveScale(settings, viewportWidth) {
+  const tier = getViewportTier(viewportWidth);
+  const manualSpec = SCALE_OPTIONS.find(s => s.id === settings?.scale) || SCALE_OPTIONS[0];
+
+  if (!settings?.scaleLocked) {
+    if (tier === 'mobile') {
+      return { tier, scaleAttr: '100', px: 16, badgeLabel: 'Auto (100%)' };
+    }
+    if (tier === 'tablet') {
+      return { tier, scaleAttr: '80', px: 14.5, badgeLabel: 'Auto (Tablet)' };
+    }
+    return { tier, scaleAttr: '60', px: 11.75, badgeLabel: 'Auto (60%)' };
+  }
+
+  // Manual scale selected: honor choice, clamping <768px phones to >=15px for legibility
+  const effectivePx = tier === 'mobile' ? Math.max(15, manualSpec.px) : manualSpec.px;
+  return {
+    tier,
+    scaleAttr: manualSpec.id,
+    px: effectivePx,
+    badgeLabel: manualSpec.shortLabel
+  };
 }
 
 export function detectOsDefaults() {
@@ -101,10 +172,13 @@ export function detectOsDefaults() {
 
   return {
     theme,
-    scale: '100',
-    density: 'calm-focus',
+    scale: '60',
+    scaleLocked: false,
+    density: 'panoramic-3',
     motion: prefersReducedMotion ? 'off' : 'spring',
-    readingLock: true
+    readingLock: true,
+    singleKeyShortcuts: true,
+    crrMode: 'crr'
   };
 }
 
@@ -119,9 +193,13 @@ export function loadErgonomics() {
     return {
       theme: THEME_OPTIONS.some(t => t.id === parsed.theme) ? parsed.theme : defaults.theme,
       scale: SCALE_OPTIONS.some(s => s.id === parsed.scale) ? parsed.scale : defaults.scale,
+      scaleLocked: typeof parsed.scaleLocked === 'boolean' ? parsed.scaleLocked : false,
       density: DENSITY_OPTIONS.some(d => d.id === parsed.density) ? parsed.density : defaults.density,
       motion: MOTION_OPTIONS.some(m => m.id === normalizedMotion) ? normalizedMotion : defaults.motion,
-      readingLock: typeof parsed.readingLock === 'boolean' ? parsed.readingLock : defaults.readingLock
+      readingLock: typeof parsed.readingLock === 'boolean' ? parsed.readingLock : defaults.readingLock,
+      singleKeyShortcuts:
+        typeof parsed.singleKeyShortcuts === 'boolean' ? parsed.singleKeyShortcuts : defaults.singleKeyShortcuts,
+      crrMode: parsed.crrMode === 'flat' ? 'flat' : 'crr'
     };
   } catch {
     return defaults;
@@ -137,17 +215,20 @@ export function saveErgonomics(settings) {
   }
 }
 
-export function applyErgonomicsToDocument(settings) {
+export function applyErgonomicsToDocument(settings, viewportWidth) {
   if (typeof document === 'undefined') return;
   const root = document.documentElement;
+  const resolved = resolveEffectiveScale(settings, viewportWidth);
+
   root.setAttribute('data-theme', settings.theme);
-  root.setAttribute('data-scale', settings.scale);
+  root.setAttribute('data-scale', resolved.scaleAttr);
+  root.setAttribute('data-viewport', resolved.tier);
+  root.setAttribute('data-scale-mode', settings.scaleLocked ? 'manual' : 'auto');
   root.setAttribute('data-density', settings.density);
   root.setAttribute('data-motion', settings.motion === 'zero' ? 'off' : settings.motion);
   root.setAttribute('data-reading-lock', settings.readingLock ? 'true' : 'false');
-
-  const scaleSpec = SCALE_OPTIONS.find(s => s.id === settings.scale) || SCALE_OPTIONS[1];
-  root.style.fontSize = `${scaleSpec.px}px`;
+  root.setAttribute('data-crr', settings.crrMode === 'flat' ? 'flat' : 'crr');
+  root.style.fontSize = `${resolved.px}px`;
 
   const isLight = settings.theme === 'warm-paper';
   root.style.colorScheme = isLight ? 'light' : 'dark';

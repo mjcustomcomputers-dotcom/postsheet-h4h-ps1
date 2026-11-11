@@ -22,38 +22,333 @@ import {
   AlertTriangleIcon
 } from '../icons.jsx';
 
+export function formatHumanActorName(actorId, hasToken = true) {
+  if (!actorId || !hasToken) return 'Guest';
+  const map = {
+    'leader-aurora': 'Aurora',
+    aurora: 'Aurora',
+    'builder-kai': 'Kai',
+    kai: 'Kai',
+    'builder-priya': 'Priya',
+    priya: 'Priya',
+    'relay-mateo': 'Mateo',
+    mateo: 'Mateo'
+  };
+  if (map[actorId]) return map[actorId];
+  const cleaned = String(actorId).replace(/^(leader|builder|relay)-/, '');
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1, 14);
+}
+
+export function ActingAsMenuPopover({
+  open,
+  onClose,
+  actorId,
+  token,
+  onSwitchPersona,
+  onOpenAuthModal,
+  onLogout
+}) {
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    if (!open || typeof document === 'undefined') return undefined;
+    const onKey = e => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    const onPointerDown = e => {
+      if (menuRef.current && !menuRef.current.contains(e.target) && !e.target.closest?.('[data-acting-trigger]')) {
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onPointerDown);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onPointerDown);
+    };
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  const profiles = [
+    { id: 'leader-aurora', name: 'Aurora', role: 'Team lead · Backend & API (UTC-6)' },
+    { id: 'builder-kai', name: 'Kai', role: 'Accessible UI · Frontend (UTC-6)' },
+    { id: 'builder-priya', name: 'Priya', role: 'E2E Integration · Handoff (UTC+5:30)' }
+  ];
+
+  return (
+    <div
+      ref={menuRef}
+      role="dialog"
+      aria-label="Switch demo profile or account session"
+      className="ide-popover acting-popover no-print"
+    >
+      <div className="ide-popover-section">
+        <div className="ide-popover-label">Switch demo profile</div>
+        <div className="ide-profile-list">
+          {profiles.map(p => {
+            const active = actorId === p.id && Boolean(token);
+            return (
+              <button
+                key={p.id}
+                type="button"
+                className={`ide-profile-item ${active ? 'active' : ''}`}
+                onClick={async () => {
+                  await onSwitchPersona(p.id);
+                  onClose();
+                }}
+              >
+                <div>
+                  <strong>{active ? '● ' : ''}{p.name}</strong>
+                  <span className="ide-profile-sub">{p.role}</span>
+                </div>
+                <code className="tiny-copy">{p.id}</code>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="ide-popover-footer">
+        <button
+          type="button"
+          className="btn btn-secondary btn-compact"
+          onClick={() => {
+            onClose();
+            onOpenAuthModal();
+          }}
+        >
+          <UserIcon size={13} /> {token ? 'Account & password sign-in...' : 'Sign in / Create account...'}
+        </button>
+        {token && (
+          <button
+            type="button"
+            className="btn btn-danger-outline btn-compact"
+            onClick={async () => {
+              await onLogout();
+              onClose();
+            }}
+          >
+            Sign out
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function DisplayComfortPopover({
+  open,
+  onClose,
+  settings,
+  onChange,
+  onOpenFullStudio
+}) {
+  const popRef = useRef(null);
+
+  useEffect(() => {
+    if (!open || typeof document === 'undefined') return undefined;
+    const onKey = e => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    const onPointerDown = e => {
+      if (popRef.current && !popRef.current.contains(e.target) && !e.target.closest?.('[data-display-trigger]')) {
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onPointerDown);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onPointerDown);
+    };
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  function patch(next) {
+    onChange({ ...settings, ...next });
+  }
+
+  const isAutoScale = !settings.scaleLocked;
+
+  return (
+    <div
+      ref={popRef}
+      role="dialog"
+      aria-label="Display and accessibility settings"
+      className="ide-popover display-popover no-print"
+    >
+      {/* Essential Control 1: Text & FOV Scale */}
+      <div className="ide-popover-section">
+        <div className="ide-popover-label">1. Text &amp; FOV Scale</div>
+        <div className="ide-seg-grid" role="group" aria-label="Text and field-of-view scale">
+          <button
+            type="button"
+            aria-pressed={isAutoScale}
+            className={`ide-seg-btn span-full ${isAutoScale ? 'active' : ''}`}
+            onClick={() => patch({ scaleLocked: false, scale: '60' })}
+          >
+            Auto (60% Desktop / 100% Mobile)
+          </button>
+          {[
+            { id: '60', label: '60% Panorama' },
+            { id: '80', label: '80% Compact' },
+            { id: '100', label: '100% Standard' },
+            { id: '115', label: '115% Large' }
+          ].map(opt => {
+            const active = settings.scaleLocked && settings.scale === opt.id;
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                aria-pressed={active}
+                className={`ide-seg-btn ${active ? 'active' : ''}`}
+                onClick={() => patch({ scaleLocked: true, scale: opt.id })}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Essential Control 2: Contrast & Surface */}
+      <div className="ide-popover-section">
+        <div className="ide-popover-label">2. Contrast &amp; Surface</div>
+        <div className="ide-seg-row" role="group" aria-label="Contrast and surface theme">
+          {[
+            { id: 'h4h-glass', label: 'Moonlight Dark' },
+            { id: 'aaa-contrast', label: 'High Contrast' },
+            { id: 'warm-paper', label: 'Moonlit Pearl (Light)' }
+          ].map(th => {
+            const active = settings.theme === th.id;
+            return (
+              <button
+                key={th.id}
+                type="button"
+                aria-pressed={active}
+                className={`ide-seg-btn ${active ? 'active' : ''}`}
+                onClick={() => patch({ theme: th.id })}
+              >
+                {th.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Essential Control 3: Layout & Motion */}
+      <div className="ide-popover-section">
+        <div className="ide-popover-label">3. Layout &amp; Motion</div>
+        <div className="ide-seg-grid" role="group" aria-label="Workspace layout and motion">
+          <button
+            type="button"
+            aria-pressed={settings.density === 'panoramic-3'}
+            className={`ide-seg-btn ${settings.density === 'panoramic-3' ? 'active' : ''}`}
+            onClick={() => patch({ density: 'panoramic-3' })}
+          >
+            3-Column Panorama
+          </button>
+          <button
+            type="button"
+            aria-pressed={settings.density !== 'panoramic-3'}
+            className={`ide-seg-btn ${settings.density !== 'panoramic-3' ? 'active' : ''}`}
+            onClick={() => patch({ density: 'calm-focus' })}
+          >
+            Single Focus
+          </button>
+          <button
+            type="button"
+            aria-pressed={settings.motion !== 'off'}
+            className={`ide-seg-btn ${settings.motion !== 'off' ? 'active' : ''}`}
+            onClick={() => patch({ motion: 'spring' })}
+          >
+            Reactive Light
+          </button>
+          <button
+            type="button"
+            aria-pressed={settings.motion === 'off'}
+            className={`ide-seg-btn ${settings.motion === 'off' ? 'active' : ''}`}
+            onClick={() => patch({ motion: 'off' })}
+          >
+            Static Off
+          </button>
+        </div>
+      </div>
+
+      <div className="ide-popover-footer">
+        <button
+          type="button"
+          className="btn btn-ghost btn-compact"
+          onClick={() => patch(detectOsDefaults())}
+        >
+          Reset defaults
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary btn-compact"
+          onClick={() => {
+            onClose();
+            onOpenFullStudio();
+          }}
+        >
+          More palettes &amp; shortcuts...
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function WhyPurposeFirstModal({ open, onClose, onJumpScenario, onNavigate }) {
   return (
     <ModalDialog
       open={open}
       onClose={onClose}
-      eyebrow="POST SHEET x SYNCHRONICITY · CORE THESIS"
-      title="Why Purpose First? Inverting Hackathon Team Formation"
+      eyebrow="POST SHEET · HOW THIS PLATFORM WORKS & SHORTCUT GUIDE"
+      title="Purpose-First Team Planning & Keyboard Guide"
     >
       <blockquote className="thesis-quote">
-        "Start from what you are building, prove critical-path ability and UTC handoffs, and commit scarce seats atomically."
+        "Start from the work to be done, check that everyone's skills and hours fit together, and let the server confirm every spot."
       </blockquote>
 
       <div className="comparison-grid">
         <div className="subcard tone-warn">
-          <h3>Conventional Profile-First Boards</h3>
+          <h3>Profile-Only Directories</h3>
           <ul className="clean-list">
-            <li>Filter people by static skill tags, cities, or prestige labels.</li>
-            <li>Stop checking readiness the moment seats hit <code>4 / 4</code> or <code>5 / 5</code>.</li>
-            <li>Fail silently when one versatile builder is double-booked across two simultaneous critical-path tasks (<strong>Hall Capacity Deficit</strong>).</li>
-            <li>Reject 11.5-hour timezone pairs even when asynchronous dependency handoffs align cleanly.</li>
-            <li>Overfill scarce final seats or lose pending joins during venue Wi-Fi / WAN drops.</li>
+            <li>List people by static skill tags or cities without checking whether hours line up.</li>
+            <li>Stop checking readiness once a team hits <code>4 / 4</code> or <code>5 / 5</code> spots.</li>
+            <li>Miss when one person is double-booked across two urgent tasks at the same time.</li>
+            <li>Filter out 11.5-hour time-zone pairs even when clean handoffs finish work earlier.</li>
+            <li>Lose join requests or overfill the last spot when Wi-Fi drops.</li>
           </ul>
         </div>
 
         <div className="subcard tone-ok">
-          <h3>Post Sheet Purpose-First Inversion</h3>
+          <h3>Post Sheet Purpose-First Workflow</h3>
           <ul className="clean-list">
-            <li><strong>Backward-Slack Critical-Path DAG:</strong> Schedules tightest Earliest-Due-Date (<code>ES..LF</code>) tasks first and proves directed UTC baton-passes.</li>
-            <li><strong>Wildcard Omega &amp; P9R Gate:</strong> Asks <strong>zero questions</strong> when an unconditional witness exists (<code>EXISTS_FORALL_ROBUST</code>), or emits the single highest-gain Shannon VOI check.</li>
-            <li><strong>Zero-Displacement Hall Repair:</strong> Adds complementary builders without evicting accepted teammates.</li>
-            <li><strong>Layer-A SQLite Serializability + Layer-B Peer Relay:</strong> Single-winner 50-way burst safety + signed offline claim forwarding.</li>
+            <li><strong>Schedule &amp; Handoff Check:</strong> Places tightest tasks first and verifies clean cross-timezone handoffs.</li>
+            <li><strong>Smart Skill Verification:</strong> Asks <strong>zero questions</strong> when a backup teammate already covers the work, or prompts one quick check when needed.</li>
+            <li><strong>Add Help Without Replacing People:</strong> Suggests who unblocks a bottleneck while keeping current teammates.</li>
+            <li><strong>Server-Confirmed Spots + Offline Forwarding:</strong> 50-person race safety + offline request forwarding through a connected teammate.</li>
           </ul>
+        </div>
+      </div>
+
+      <div className="subcard top-gap-sm">
+        <h3>Keyboard Shortcuts</h3>
+        <div className="pill-row top-gap-xs small-copy">
+          <span><kbd>Alt+1..4</kbd> Switch steps 1-4</span>
+          <span><kbd>Ctrl+K</kbd> or <kbd>/</kbd> Command search</span>
+          <span><kbd>?</kbd> Open this guide</span>
+          <span><kbd>Esc</kbd> Close menu or dialog</span>
+          <span><kbd>Ctrl+Shift+A</kbd> Full display studio</span>
         </div>
       </div>
 
@@ -66,7 +361,7 @@ export function WhyPurposeFirstModal({ open, onClose, onJumpScenario, onNavigate
             onJumpScenario('baton');
           }}
         >
-          <SparklesIcon /> Try Async UTC Baton-Pass
+          <SparklesIcon /> Try Cross-Timezone Handoff
         </button>
         <button
           type="button"
@@ -76,7 +371,7 @@ export function WhyPurposeFirstModal({ open, onClose, onJumpScenario, onNavigate
             onJumpScenario('hall');
           }}
         >
-          Try Hall Contention Repair
+          Try Double-Booked Task Fix
         </button>
         <button
           type="button"
@@ -86,7 +381,7 @@ export function WhyPurposeFirstModal({ open, onClose, onJumpScenario, onNavigate
             onNavigate('arena');
           }}
         >
-          <ZapIcon /> Run 50-Claimant Race Oracle
+          <ZapIcon /> Test 50 People for Last Spot
         </button>
       </div>
     </ModalDialog>
@@ -133,7 +428,7 @@ export function AuthAccountModal({
       return;
     }
     if (password.length < 8) {
-      setLocalError('Password must be at least 8 characters (scrypt KDF policy).');
+      setLocalError('Password must be at least 8 characters.');
       return;
     }
     setBusy(true);
@@ -161,10 +456,10 @@ export function AuthAccountModal({
       if (ok !== false) {
         onClose();
       } else {
-        setLocalError('Demo personas are disabled (PS1_DEMO_AUTH=0). Register or sign in with salted scrypt below.');
+        setLocalError('Demo profiles are disabled (PS1_DEMO_AUTH=0). Create or sign in with an account below.');
       }
     } catch (err) {
-      setLocalError(err.message || 'Demo persona switch failed. Register a salted scrypt account below.');
+      setLocalError(err.message || 'Demo switch failed. Create an account below.');
     } finally {
       setBusy(false);
     }
@@ -175,14 +470,14 @@ export function AuthAccountModal({
       open={open}
       onClose={onClose}
       initialFocusRef={userInputRef}
-      eyebrow="LAYER-A BEARER HMAC + SCRYPT KDF"
-      title="Judge Personas & Verified Account Session"
+      eyebrow="ACCOUNT & DEMO PROFILES"
+      title="Switch Profile or Sign In"
     >
       {authPromptMessage && (
         <div role="alert" className="inline-alert tone-warn">
           <div className="pill-row">
             <AlertTriangleIcon size={16} />
-            <strong>Queued Action Ready for Replay:</strong>
+            <strong>Action saved and ready to run after sign-in:</strong>
           </div>
           <p className="small-top">{authPromptMessage}</p>
         </div>
@@ -191,8 +486,10 @@ export function AuthAccountModal({
       <div className="subcard">
         <div className="row-between wrap-gap">
           <div>
-            <strong>Current Authenticated Subject:</strong>{' '}
-            <span className="mono-pill">{actorId || 'Unauthenticated'}</span>
+            <strong>Currently acting as:</strong>{' '}
+            <span className="mono-pill">
+              {token ? `${formatHumanActorName(actorId, true)} (${actorId})` : 'Signed out'}
+            </span>
           </div>
           {token && (
             <button
@@ -203,23 +500,23 @@ export function AuthAccountModal({
                 onClose();
               }}
             >
-              Sign Out &amp; Revoke Bearer Token
+              Sign out
             </button>
           )}
         </div>
         <p className="muted-copy small-top">
-          All Layer-A mutations bind identity strictly from the verified HMAC-SHA256 Bearer subject (client-supplied <code>actorId</code> fields are ignored). Logout hashes and revokes the token in SQLite <code>ps1_revoked_tokens</code>.
+          The server verifies your signed session token on every team change. Signing out revokes the token immediately.
         </p>
       </div>
 
       <div className="section-block">
-        <h3>1-Click Judge Quick Personas (<code>/api/auth/demo</code>)</h3>
-        <p className="muted-copy">Switch instantly while auto-arming <code>relay-mateo</code> for WAN-drop peer relay tests:</p>
+        <h3>Quick Demo Profiles</h3>
+        <p className="muted-copy">Switch profiles in 1 click to test planning, invites, and offline forwarding:</p>
         <div className="pill-row">
           {[
-            { id: 'leader-aurora', desc: 'Team Leader · Backend/DB (UTC-6)' },
-            { id: 'builder-kai', desc: 'Builder · Accessible UI (UTC-6)' },
-            { id: 'builder-priya', desc: 'Builder · Async Relay (UTC+5:30)' }
+            { id: 'leader-aurora', name: 'Aurora', desc: 'Team lead · Backend (UTC-6)' },
+            { id: 'builder-kai', name: 'Kai', desc: 'Frontend · Accessible UI (UTC-6)' },
+            { id: 'builder-priya', name: 'Priya', desc: 'Integration · Handoff (UTC+5:30)' }
           ].map(p => (
             <button
               key={p.id}
@@ -228,7 +525,7 @@ export function AuthAccountModal({
               className={`btn ${actorId === p.id && token ? 'btn-primary' : 'btn-secondary'}`}
               onClick={() => handleQuickPersona(p.id)}
             >
-              <UserIcon /> {p.id} <span className="btn-sub">{p.desc}</span>
+              <UserIcon /> {p.name} <span className="btn-sub">{p.desc}</span>
             </button>
           ))}
         </div>
@@ -246,7 +543,7 @@ export function AuthAccountModal({
               setLocalError('');
             }}
           >
-            Sign In (<code>/api/auth/login</code>)
+            Sign In
           </button>
           <button
             type="button"
@@ -258,25 +555,25 @@ export function AuthAccountModal({
               setLocalError('');
             }}
           >
-            Register Account (<code>/api/auth/register</code>)
+            Create Account
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="stack-form">
           <label className="field-label">
-            <span>Username (Actor ID)</span>
+            <span>Username</span>
             <input
               ref={userInputRef}
               type="text"
               value={username}
               onChange={e => setUsername(e.target.value)}
-              placeholder="e.g. judge-alex"
+              placeholder="e.g. alex-dev"
               autoComplete="username"
               required
             />
           </label>
           <label className="field-label">
-            <span>Password (minimum 8 characters · salted Node <code>scryptSync</code>)</span>
+            <span>Password (minimum 8 characters · salted <code>scrypt</code>)</span>
             <input
               type="password"
               value={password}
@@ -290,7 +587,7 @@ export function AuthAccountModal({
           {mode === 'register' && (
             <>
               <label className="field-label">
-                <span>Primary UTC Window</span>
+                <span>Primary Time Zone</span>
                 <select value={timezone} onChange={e => setTimezone(e.target.value)}>
                   {TIMEZONE_PRESETS.map(tz => (
                     <option key={tz.value} value={tz.value}>{tz.value}</option>
@@ -298,7 +595,7 @@ export function AuthAccountModal({
                 </select>
               </label>
               <fieldset className="field-fieldset">
-                <legend>Declared Skills</legend>
+                <legend>Skills</legend>
                 <div className="pill-row">
                   {SKILLS_CATALOG.map(sk => {
                     const active = selectedSkills.includes(sk.id);
@@ -331,8 +628,8 @@ export function AuthAccountModal({
               {busy
                 ? 'Verifying...'
                 : mode === 'register'
-                  ? 'Create Salted scrypt Account & Continue'
-                  : 'Sign In with scrypt & Continue'}
+                  ? 'Create Account & Continue'
+                  : 'Sign In & Continue'}
             </button>
           </div>
         </form>
@@ -351,15 +648,15 @@ export function AccessibilityStudioDrawer({ open, onClose, settings, onChange })
       open={open}
       onClose={onClose}
       variant="drawer"
-      eyebrow="POSTSHEET WORKSTATION · WCAG 2.2 AA / AAA STUDIO"
-      title="Accessibility & Calm-FOV Studio"
+      eyebrow="DISPLAY, CONTRAST & KEYBOARD STUDIO"
+      title="Extended Display & Comfort Options"
     >
       <p className="muted-copy">
-        Calibrate luminance, optical header rim vs. matte reading surfaces, field-of-view scale, panoramic workbench density, motion physics, and macular reading width. Persisted in <code>localStorage</code> and honoring OS media queries.
+        Adjust color palettes, text and field-of-view scale, multi-column layout, motion, perceptual relief, and single-key shortcuts. Saved automatically on this device.
       </p>
 
       <div className="section-block">
-        <h3>1. Visual Theme &amp; Contrast Surface</h3>
+        <h3>1. Surface &amp; Contrast Palette</h3>
         <div className="theme-grid" role="radiogroup" aria-label="Visual theme">
           {THEME_OPTIONS.map(t => {
             const active = settings.theme === t.id;
@@ -388,10 +685,20 @@ export function AccessibilityStudioDrawer({ open, onClose, settings, onChange })
       </div>
 
       <div className="section-block">
-        <h3>2. FOV &amp; Typographic Scale Calibration</h3>
+        <h3>2. Text &amp; FOV Scale</h3>
         <div className="option-pills-grid" role="radiogroup" aria-label="FOV and scale calibration">
+          <button
+            type="button"
+            role="radio"
+            aria-checked={!settings.scaleLocked}
+            className={`studio-option-card compact ${!settings.scaleLocked ? 'selected' : ''}`}
+            onClick={() => update({ scaleLocked: false, scale: '60' })}
+          >
+            <strong>Auto (60% Desktop / 100% Mobile)</strong>
+            <span className="muted-copy">Adapts automatically across desktop, tablet, and phone</span>
+          </button>
           {SCALE_OPTIONS.map(s => {
-            const active = settings.scale === s.id;
+            const active = settings.scaleLocked && settings.scale === s.id;
             return (
               <button
                 key={s.id}
@@ -399,7 +706,7 @@ export function AccessibilityStudioDrawer({ open, onClose, settings, onChange })
                 role="radio"
                 aria-checked={active}
                 className={`studio-option-card compact ${active ? 'selected' : ''}`}
-                onClick={() => update({ scale: s.id })}
+                onClick={() => update({ scaleLocked: true, scale: s.id })}
               >
                 <strong>{s.label}</strong>
                 <span className="muted-copy">{s.desc}</span>
@@ -410,7 +717,7 @@ export function AccessibilityStudioDrawer({ open, onClose, settings, onChange })
       </div>
 
       <div className="section-block">
-        <h3>3. Information Density &amp; Workbench Architecture</h3>
+        <h3>3. Workspace Layout</h3>
         <div className="option-pills-grid" role="radiogroup" aria-label="Information density and layout">
           {DENSITY_OPTIONS.map(d => {
             const active = settings.density === d.id;
@@ -432,7 +739,7 @@ export function AccessibilityStudioDrawer({ open, onClose, settings, onChange })
       </div>
 
       <div className="section-block">
-        <h3>4. Motion Safety</h3>
+        <h3>4. Motion &amp; Perceptual Relief</h3>
         <div className="option-pills-grid" role="radiogroup" aria-label="Motion safety">
           {MOTION_OPTIONS.map(m => {
             const active = settings.motion === m.id;
@@ -451,10 +758,32 @@ export function AccessibilityStudioDrawer({ open, onClose, settings, onChange })
             );
           })}
         </div>
+        <div className="option-pills-grid top-gap-xs">
+          <button
+            type="button"
+            aria-pressed={settings.crrMode !== 'flat'}
+            className={`studio-option-card compact ${settings.crrMode !== 'flat' ? 'selected' : ''}`}
+            onClick={() => update({ crrMode: settings.crrMode === 'flat' ? 'crr' : 'flat' })}
+          >
+            <strong>Cognitive Relief Rendering (CRR): {settings.crrMode === 'flat' ? 'Flat Baseline' : 'Active'}</strong>
+            <span className="muted-copy">
+              Operable contact shadows, subtle negative-space lift, and cross-panel relationship ridges
+            </span>
+          </button>
+          <button
+            type="button"
+            aria-pressed={settings.singleKeyShortcuts}
+            className={`studio-option-card compact ${settings.singleKeyShortcuts ? 'selected' : ''}`}
+            onClick={() => update({ singleKeyShortcuts: !settings.singleKeyShortcuts })}
+          >
+            <strong>Single-Key Shortcuts (/ and ?): {settings.singleKeyShortcuts ? 'On' : 'Off'}</strong>
+            <span className="muted-copy">WCAG 2.1.4 control; automatically paused inside text fields</span>
+          </button>
+        </div>
       </div>
 
       <div className="section-block">
-        <h3>5. Macular Reading Comfort</h3>
+        <h3>5. Reading Line Width</h3>
         <button
           type="button"
           aria-pressed={settings.readingLock}
@@ -462,11 +791,11 @@ export function AccessibilityStudioDrawer({ open, onClose, settings, onChange })
           onClick={() => update({ readingLock: !settings.readingLock })}
         >
           <div className="row-between">
-            <strong>68ch Optimal Macular Reading Width Lock</strong>
-            <span className="badge-pill">{settings.readingLock ? 'ACTIVE (68ch)' : 'UNLOCKED (Full)'}</span>
+            <strong>68-Character Comfortable Line Width</strong>
+            <span className="badge-pill">{settings.readingLock ? 'On (68ch)' : 'Full width'}</span>
           </div>
           <span className="muted-copy">
-            Constrains narrative explanations, diagnostics, and audit prose to 68 characters per line to eliminate horizontal saccade fatigue on wide monitors.
+            Keeps paragraphs and explanations comfortable to scan on wide monitors.
           </span>
         </button>
       </div>
@@ -477,7 +806,7 @@ export function AccessibilityStudioDrawer({ open, onClose, settings, onChange })
           className="btn btn-secondary"
           onClick={() => onChange(detectOsDefaults())}
         >
-          Reset to OS-Calibrated Defaults
+          Reset to Defaults
         </button>
         <button type="button" className="btn btn-primary" onClick={onClose}>
           <CheckCircleIcon /> Done
@@ -531,8 +860,8 @@ export function CommandPaletteModal({ open, onClose, commands }) {
       onClose={onClose}
       variant="palette"
       initialFocusRef={inputRef}
-      eyebrow="KEYBOARD COMMAND PALETTE (CTRL+K OR /)"
-      title="Jump to Any View, Scenario, Theme, Panorama, or Proof"
+      eyebrow="COMMAND SEARCH (CTRL+K OR /)"
+      title="Jump to Any Step, Scenario, Display Mode, or Download"
     >
       <div className="palette-search-wrap">
         <SearchIcon size={18} className="palette-search-icon" />
@@ -545,7 +874,7 @@ export function CommandPaletteModal({ open, onClose, commands }) {
             setActiveIndex(0);
           }}
           onKeyDown={handleKeyDown}
-          placeholder="Type a command: baton, hall, panorama, charter, race 50, spatial glass..."
+          placeholder="Search: find teammates, plan, download, high contrast, 50 people..."
           aria-label="Filter platform commands"
           className="palette-input"
         />
@@ -578,7 +907,7 @@ export function CommandPaletteModal({ open, onClose, commands }) {
           );
         })}
         {filtered.length === 0 && (
-          <p className="muted-copy empty-pad">No commands match "{query}". Try "Scenario", "Panorama", or "Theme".</p>
+          <p className="muted-copy empty-pad">No commands match "{query}". Try "plan", "download", or "contrast".</p>
         )}
       </div>
     </ModalDialog>

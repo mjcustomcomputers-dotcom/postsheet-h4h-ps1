@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import ModalDialog from './ModalDialog.jsx';
 import EpistemicStencil from './EpistemicStencil.jsx';
-import { CopyIcon, FileTextIcon, CheckCircleIcon } from '../icons.jsx';
+import { CopyIcon, FileTextIcon, CheckCircleIcon, DownloadIcon } from '../icons.jsx';
 
 const WHITE_PAPER_STYLES = `
   body {
@@ -89,6 +89,14 @@ const WHITE_PAPER_STYLES = `
   }
 `;
 
+function escapeHtml(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 function computeReceiptDigest(seedStr) {
   let h1 = 0x811c9dc5;
   let h2 = 0x01000193;
@@ -102,6 +110,179 @@ function computeReceiptDigest(seedStr) {
   const hex1 = (h1 >>> 0).toString(16).padStart(8, '0');
   const hex2 = (h2 >>> 0).toString(16).padStart(8, '0');
   return `ps1-rcpt-${hex1}${hex2}`;
+}
+
+export function derivePlanExportModel({
+  eventId = 'seed-event',
+  teamId = 'crew-alpha',
+  actorId = '',
+  selectedTeam = null,
+  goalDescription = '',
+  horizonHours = 8,
+  tasks = [],
+  teamPeople = [],
+  plan = null,
+  issuedInvite = null
+}) {
+  const horizonMin = Math.max(60, Math.round(Number(horizonHours || 4) * 60));
+  const metaMap = new Map((plan?.criticalPath || []).map(m => [m.taskId, m]));
+  const assignMap = new Map((plan?.witness?.assignments || []).map(a => [a.taskId, a]));
+
+  const scheduleRows = (tasks || []).map(t => {
+    const m = metaMap.get(t.id);
+    const a = assignMap.get(t.id);
+    return {
+      taskId: t.id,
+      skill: t.skill,
+      durationMin: t.durationMin,
+      deps: (t.after || []).length ? t.after.join(', ') : 'None (starts immediately)',
+      slackLabel: m ? (m.slackMin <= 0 ? '0m (critical)' : `+${m.slackMin}m`) : 'Pending',
+      assignee: a
+        ? `${a.evidence === 'unknown' ? 'Unverified: ' : 'Confirmed: '}${a.personId} (${a.startMin}..${a.endMin}m)`
+        : plan
+          ? 'Uncovered'
+          : 'Preview'
+    };
+  });
+
+  const rosterRows = selectedTeam?.members?.length
+    ? selectedTeam.members.map(m => ({
+        id: m.userId,
+        role: m.isLeader ? 'Team Leader (Server confirmed)' : 'Member (Server confirmed)',
+        source: 'SQLITE_AUTHORITY'
+      }))
+    : (teamPeople || []).map((p, idx) => ({
+        id: p.id,
+        role: idx === 0 ? `Plan Lead (${p.timezone}) - Preview only` : `Plan Member (${p.timezone}) - Preview only`,
+        source: Object.values(p.skills || {}).includes('unknown') ? 'VOI_PROVISIONAL' : 'SQLITE_AUTHORITY'
+      }));
+
+  const receiptCode = computeReceiptDigest(
+    JSON.stringify({
+      eventId,
+      teamId,
+      goalDescription,
+      status: plan?.status || 'DRAFT',
+      tasks: (tasks || []).map(t => t.id),
+      roster: rosterRows.map(r => r.id)
+    })
+  );
+
+  const plainVerdict =
+    plan?.status === 'FEASIBLE_WITNESS'
+      ? 'Plan works: all tasks and hours line up'
+      : plan?.status === 'CONDITIONAL_WITNESS'
+        ? 'Almost ready: confirm unverified skill'
+        : 'Plan incomplete: uncovered task or time conflict';
+
+  return {
+    horizonMin,
+    scheduleRows,
+    rosterRows,
+    receiptCode,
+    plainVerdict,
+    eventId,
+    teamId,
+    actorId,
+    goalDescription,
+    horizonHours,
+    plan,
+    selectedTeam,
+    teamPeople,
+    issuedInvite
+  };
+}
+
+export function buildTeamPlanWhitePaperHtml(input) {
+  const m = derivePlanExportModel(input);
+  const safeTeam = escapeHtml(m.teamId || 'team');
+  const rosterHtml = m.rosterRows
+    .map(
+      r =>
+        `<tr><td><code>${escapeHtml(r.id)}</code></td><td>${escapeHtml(r.role)}</td><td><span class="epistemic-stencil">${escapeHtml(r.source)}</span></td></tr>`
+    )
+    .join('');
+  const schedHtml = m.scheduleRows
+    .map(
+      s =>
+        `<tr><td><code>${escapeHtml(s.taskId)}</code></td><td>${escapeHtml(s.skill)}</td><td>${escapeHtml(s.durationMin)}m</td><td>${escapeHtml(s.deps)}</td><td>${escapeHtml(s.slackLabel)}</td><td>${escapeHtml(s.assignee)}</td></tr>`
+    )
+    .join('');
+
+  return [
+    '<!doctype html>',
+    '<html lang="en">',
+    '<head>',
+    '  <meta charset="UTF-8">',
+    `  <title>Team Plan & Seat Summary - ${safeTeam}</title>`,
+    `  <style>${WHITE_PAPER_STYLES}</style>`,
+    '</head>',
+    '<body>',
+    '  <article class="charter-sheet">',
+    '    <header class="charter-header">',
+    '      <div>',
+    '        <div class="charter-eyebrow">POST SHEET · TEAM PLAN &amp; SERVER MEMBERSHIP SUMMARY</div>',
+    `        <h1 class="charter-h1">Team ${safeTeam} · Plan &amp; Schedule</h1>`,
+    `        <div class="charter-meta">Receipt ID: ${escapeHtml(m.receiptCode)} · Event: ${escapeHtml(m.eventId)} · Horizon: ${escapeHtml(m.horizonHours)}h (${m.horizonMin}m)</div>`,
+    '      </div>',
+    '    </header>',
+    '    <section class="charter-section">',
+    '      <h3>1. Goal &amp; Plan Readiness</h3>',
+    `      <p>${escapeHtml(m.goalDescription)}</p>`,
+    '      <div class="charter-kv-grid" style="margin-top:10px">',
+    `        <div class="charter-kv"><span>Plan Summary</span><strong>${escapeHtml(m.plainVerdict)}</strong></div>`,
+    `        <div class="charter-kv"><span>Engineering Status</span><strong>${escapeHtml(m.plan?.status || 'PREVIEW')} (${escapeHtml(m.plan?.classification || 'UNSOLVED')})</strong></div>`,
+    `        <div class="charter-kv"><span>Team Spots</span><strong>${
+      m.selectedTeam
+        ? `${m.selectedTeam.members.length} / ${m.selectedTeam.maxSize} Confirmed by server`
+        : `${(m.teamPeople || []).length} in plan preview (not joined yet)`
+    }</strong></div>`,
+    '      </div>',
+    '    </section>',
+    '    <section class="charter-section">',
+    '      <h3>2. Team Members &amp; Status</h3>',
+    '      <table class="charter-table">',
+    '        <thead><tr><th>Person</th><th>Role / Time Zone</th><th>Source</th></tr></thead>',
+    `        <tbody>${rosterHtml}</tbody>`,
+    '      </table>',
+    '    </section>',
+    '    <section class="charter-section">',
+    '      <h3>3. Task Schedule &amp; Dependencies</h3>',
+    '      <table class="charter-table">',
+    '        <thead><tr><th>Task</th><th>Skill</th><th>Duration</th><th>Depends On</th><th>Slack</th><th>Assignment</th></tr></thead>',
+    `        <tbody>${schedHtml}</tbody>`,
+    '      </table>',
+    '    </section>',
+    m.issuedInvite?.code
+      ? `    <section class="charter-section"><h3>4. Active Invite Reference</h3><div class="charter-meta">Team: ${escapeHtml(m.issuedInvite.teamId || m.teamId)} · Single-use SHA-256 invite active (expires epoch ${escapeHtml(m.issuedInvite.expiresAt)})</div></section>`
+      : '',
+    '    <footer class="charter-footer">',
+    '      Server membership changes run inside atomic SQLite BEGIN IMMEDIATE transactions. Preview plans and peer-relayed messages never grant membership without server confirmation.',
+    '    </footer>',
+    '  </article>',
+    '</body>',
+    '</html>'
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+export function triggerTeamPlanDownload(input) {
+  if (typeof document === 'undefined') return null;
+  const safeId = String(input?.teamId || 'crew')
+    .replace(/[^A-Za-z0-9_.-]/g, '-')
+    .slice(0, 64) || 'crew';
+  const filename = `team-plan-${safeId}.html`;
+  const html = buildTeamPlanWhitePaperHtml(input);
+  const href = `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+  const a = document.createElement('a');
+  a.setAttribute('href', href);
+  a.setAttribute('download', filename);
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  return { filename, href, sizeBytes: html.length };
 }
 
 export default function CrewCharterExportModal({
@@ -122,86 +303,37 @@ export default function CrewCharterExportModal({
   const docRef = useRef(null);
   const [copyState, setCopyState] = useState('');
 
-  const horizonMin = Math.max(60, Math.round(Number(horizonHours || 4) * 60));
+  const exportInput = {
+    eventId,
+    teamId,
+    actorId,
+    selectedTeam,
+    goalDescription,
+    horizonHours,
+    tasks,
+    teamPeople,
+    plan,
+    issuedInvite
+  };
 
-  const scheduleRows = useMemo(() => {
-    const metaMap = new Map((plan?.criticalPath || []).map(m => [m.taskId, m]));
-    const assignMap = new Map((plan?.witness?.assignments || []).map(a => [a.taskId, a]));
-    return (tasks || []).map(t => {
-      const m = metaMap.get(t.id);
-      const a = assignMap.get(t.id);
-      return {
-        taskId: t.id,
-        skill: t.skill,
-        durationMin: t.durationMin,
-        deps: (t.after || []).length ? t.after.join(', ') : 'Root',
-        slackLabel: m ? (m.slackMin <= 0 ? '0m CRITICAL' : `+${m.slackMin}m`) : 'Pending',
-        assignee: a
-          ? `${a.evidence === 'unknown' ? '? ' : 'Verified: '}${a.personId} (${a.startMin}..${a.endMin}m)`
-          : plan
-            ? 'Unassigned'
-            : 'Model preview'
-      };
-    });
-  }, [tasks, plan]);
-
-  const rosterRows = useMemo(() => {
-    if (selectedTeam?.members?.length) {
-      return selectedTeam.members.map(m => ({
-        id: m.userId,
-        role: m.isLeader ? 'Team Leader' : 'Committed Member',
-        source: 'SQLITE_AUTHORITY'
-      }));
-    }
-    return (teamPeople || []).map((p, idx) => ({
-      id: p.id,
-      role: idx === 0 ? `Simulation Lead (${p.timezone})` : `Simulation Builder (${p.timezone})`,
-      source: Object.values(p.skills || {}).includes('unknown') ? 'VOI_PROVISIONAL' : 'SQLITE_AUTHORITY'
-    }));
-  }, [selectedTeam, teamPeople]);
-
-  const receiptCode = useMemo(() => {
-    const raw = JSON.stringify({
-      eventId,
-      teamId,
-      goalDescription,
-      status: plan?.status || 'DRAFT',
-      tasks: (tasks || []).map(t => t.id),
-      roster: rosterRows.map(r => r.id)
-    });
-    return computeReceiptDigest(raw);
-  }, [eventId, teamId, goalDescription, plan, tasks, rosterRows]);
-
-  function buildWhitePaperHtml() {
-    const inner = docRef.current ? docRef.current.outerHTML : '';
-    return [
-      '<!doctype html>',
-      '<html lang="en">',
-      '<head>',
-      '  <meta charset="UTF-8">',
-      `  <title>Crew Charter & Seat Receipt - ${teamId}</title>`,
-      `  <style>${WHITE_PAPER_STYLES}</style>`,
-      '</head>',
-      '<body>',
-      inner,
-      '</body>',
-      '</html>'
-    ].join('\n');
-  }
+  const model = useMemo(
+    () => derivePlanExportModel(exportInput),
+    [eventId, teamId, actorId, selectedTeam, goalDescription, horizonHours, tasks, teamPeople, plan, issuedInvite]
+  );
 
   function buildPlainTextReceipt() {
     const lines = [
-      `POST SHEET | CREW CHARTER & SEAT RECEIPT (${receiptCode})`,
-      `Event Scope: ${eventId} | Crew ID: ${teamId} | Prepared By: ${actorId || 'anonymous'}`,
-      `Mission Deliverable: ${goalDescription}`,
-      `Solver Verdict: ${plan?.status || 'NOT_EVALUATED'} (${plan?.classification || 'PREVIEW'})`,
-      `Quantifier / P9R Gate: ${plan?.frontier?.quantifierStatus || 'DETERMINISTIC'} / ${plan?.frontier?.minimumSufficientStop || 'BOUNDED'}`,
+      `POST SHEET | TEAM PLAN & SEAT SUMMARY (${model.receiptCode})`,
+      `Event: ${eventId} | Team: ${teamId} | Acting as: ${actorId || 'guest'}`,
+      `Goal: ${goalDescription}`,
+      `Summary: ${model.plainVerdict}`,
+      `Engineering Verdict: ${plan?.status || 'NOT_EVALUATED'} (${plan?.classification || 'PREVIEW'})`,
       '',
-      'ROSTER:',
-      ...rosterRows.map(r => `  - ${r.id}: ${r.role} [${r.source}]`),
+      'TEAM MEMBERS:',
+      ...model.rosterRows.map(r => `  - ${r.id}: ${r.role} [${r.source}]`),
       '',
-      `CRITICAL-PATH SCHEDULE (Horizon ${horizonMin}m):`,
-      ...scheduleRows.map(
+      `TASK SCHEDULE (${model.horizonMin}m horizon):`,
+      ...model.scheduleRows.map(
         s => `  - ${s.taskId} [${s.skill}, ${s.durationMin}m, deps: ${s.deps}] -> ${s.assignee} (${s.slackLabel})`
       )
     ];
@@ -229,22 +361,29 @@ export default function CrewCharterExportModal({
     }
   }
 
+  function handleDirectDownload() {
+    const res = triggerTeamPlanDownload(exportInput);
+    if (res) {
+      onNotify?.(`Downloaded ${res.filename} (#FFFFFF white-paper HTML)`, 'ok');
+    }
+  }
+
   async function handleCopyWhitePaperHtml() {
-    const ok = await copyWithFallback(buildWhitePaperHtml());
+    const ok = await copyWithFallback(buildTeamPlanWhitePaperHtml(exportInput));
     setCopyState(ok ? 'html' : 'err');
     setTimeout(() => setCopyState(''), 2200);
-    if (ok) onNotify?.('✓ Copied deterministic #FFFFFF White-Paper Charter HTML!', 'ok');
+    if (ok) onNotify?.('Copied #FFFFFF white-paper HTML to clipboard', 'ok');
   }
 
   async function handleCopyPlainText() {
     const ok = await copyWithFallback(buildPlainTextReceipt());
     setCopyState(ok ? 'text' : 'err');
     setTimeout(() => setCopyState(''), 2200);
-    if (ok) onNotify?.('✓ Copied plain-text Crew Charter & Seat Receipt!', 'ok');
+    if (ok) onNotify?.('Copied plain-text team plan summary', 'ok');
   }
 
   function handlePrintWhitePaper() {
-    onNotify?.('Opening browser Print / Save as #FFFFFF PDF dialog...', 'info');
+    onNotify?.('Opening browser Print / Save as PDF dialog...', 'info');
     if (typeof window !== 'undefined' && typeof window.print === 'function') {
       window.print();
     }
@@ -254,25 +393,28 @@ export default function CrewCharterExportModal({
     <ModalDialog
       open={open}
       onClose={onClose}
-      eyebrow="DARK-SCREEN COMFORT PREVIEW -> #FFFFFF WHITE-PAPER EXPORT"
-      title="Crew Feasibility Charter & Attributable Seat Receipt"
+      eyebrow="DARK-SCREEN COMFORT PREVIEW -> #FFFFFF WHITE-PAPER FILE"
+      title="Team Plan & Server Membership Summary"
     >
       <div className="row-between wrap-gap no-print">
         <p className="muted-copy small-copy prose-measure">
-          Rendered in calm low-glare dark mode on screen (<code>.document-preview</code> wrapper outside <code>docRef</code>), while exporting deterministic <code>#FFFFFF</code> white-paper HTML and print/PDF sheets.
+          Previewed in low-glare dark comfort on screen; downloads or prints cleanly on <code>#FFFFFF</code> white paper.
         </p>
 
         <div className="pill-row">
+          <button type="button" className="btn btn-primary btn-compact" onClick={handleDirectDownload}>
+            <DownloadIcon size={14} /> Download HTML
+          </button>
           <button type="button" className="btn btn-secondary btn-compact" onClick={handleCopyWhitePaperHtml}>
             <CopyIcon size={14} />
-            {copyState === 'html' ? 'Copied #FFFFFF HTML!' : 'Copy White-Paper HTML'}
+            {copyState === 'html' ? 'Copied HTML!' : 'Copy HTML'}
           </button>
           <button type="button" className="btn btn-secondary btn-compact" onClick={handleCopyPlainText}>
             <CopyIcon size={14} />
-            {copyState === 'text' ? 'Copied Text Receipt!' : 'Copy Text Summary'}
+            {copyState === 'text' ? 'Copied Text!' : 'Copy Text'}
           </button>
-          <button type="button" className="btn btn-primary btn-compact" onClick={handlePrintWhitePaper}>
-            <FileTextIcon size={14} /> Print / Save #FFFFFF PDF
+          <button type="button" className="btn btn-secondary btn-compact" onClick={handlePrintWhitePaper}>
+            <FileTextIcon size={14} /> Print / Save PDF
           </button>
         </div>
       </div>
@@ -282,10 +424,10 @@ export default function CrewCharterExportModal({
         <article ref={docRef} className="charter-sheet">
           <header className="charter-header">
             <div>
-              <div className="charter-eyebrow">POST SHEET x SYNCHRONICITY R5 · DETERMINISTIC CHARTER</div>
-              <h1 className="charter-h1">Crew {teamId} · Deliverable &amp; Seat Receipt</h1>
+              <div className="charter-eyebrow">POST SHEET · TEAM PLAN &amp; SERVER MEMBERSHIP SUMMARY</div>
+              <h1 className="charter-h1">Team {teamId} · Plan &amp; Schedule</h1>
               <div className="charter-meta">
-                Receipt ID: {receiptCode} · Event: {eventId} · Horizon: {horizonHours}h ({horizonMin}m)
+                Receipt ID: {model.receiptCode} · Event: {eventId} · Horizon: {horizonHours}h ({model.horizonMin}m)
               </div>
             </div>
             <div className="pill-row">
@@ -295,44 +437,42 @@ export default function CrewCharterExportModal({
           </header>
 
           <section className="charter-section">
-            <h3>1. Mission Deliverable &amp; Solver Verification</h3>
+            <h3>1. Goal &amp; Plan Readiness</h3>
             <p className="small-copy">{goalDescription}</p>
             <div className="charter-kv-grid top-gap-xs">
               <div className="charter-kv">
-                <span>Feasibility Verdict</span>
-                <strong>{plan?.status || 'MODEL_PREVIEW'} ({plan?.classification || 'UNSOLVED'})</strong>
+                <span>Plan Summary</span>
+                <strong>{model.plainVerdict}</strong>
               </div>
               <div className="charter-kv">
-                <span>Wildcard Omega &amp; P9R</span>
+                <span>Engineering Proof</span>
                 <strong>
-                  {plan?.frontier
-                    ? `${plan.frontier.quantifierStatus} (${plan.frontier.worldsCovered}/${plan.frontier.omegaSize})`
-                    : 'DETERMINISTIC (1/1)'}
+                  {plan?.status || 'MODEL_PREVIEW'} ({plan?.classification || 'UNSOLVED'})
                 </strong>
               </div>
               <div className="charter-kv">
-                <span>Seat Occupancy</span>
+                <span>Team Spots</span>
                 <strong>
                   {selectedTeam
-                    ? `${selectedTeam.members.length} / ${selectedTeam.maxSize} SQLite Committed`
-                    : `${teamPeople.length} Simulation Builders`}
+                    ? `${selectedTeam.members.length} / ${selectedTeam.maxSize} Confirmed by server`
+                    : `${teamPeople.length} in plan preview (not joined yet)`}
                 </strong>
               </div>
             </div>
           </section>
 
           <section className="charter-section">
-            <h3>2. Crew Seat Roster &amp; Provenance</h3>
+            <h3>2. Team Members &amp; Status</h3>
             <table className="charter-table">
               <thead>
                 <tr>
-                  <th scope="col">Builder ID</th>
-                  <th scope="col">Role / UTC Context</th>
-                  <th scope="col">Provenance Stencil</th>
+                  <th scope="col">Person</th>
+                  <th scope="col">Role / Time Zone</th>
+                  <th scope="col">Provenance</th>
                 </tr>
               </thead>
               <tbody>
-                {rosterRows.map(r => (
+                {model.rosterRows.map(r => (
                   <tr key={r.id}>
                     <td><code>{r.id}</code></td>
                     <td>{r.role}</td>
@@ -344,20 +484,20 @@ export default function CrewCharterExportModal({
           </section>
 
           <section className="charter-section">
-            <h3>3. Critical-Path Task Schedule &amp; Backward Slack</h3>
+            <h3>3. Task Schedule &amp; Dependencies</h3>
             <table className="charter-table">
               <thead>
                 <tr>
                   <th scope="col">Task</th>
                   <th scope="col">Skill</th>
                   <th scope="col">Duration</th>
-                  <th scope="col">Prerequisites</th>
+                  <th scope="col">Depends On</th>
                   <th scope="col">Slack</th>
-                  <th scope="col">Assigned Witness</th>
+                  <th scope="col">Assignment</th>
                 </tr>
               </thead>
               <tbody>
-                {scheduleRows.map(s => (
+                {model.scheduleRows.map(s => (
                   <tr key={s.taskId}>
                     <td><code>{s.taskId}</code></td>
                     <td>{s.skill}</td>
@@ -373,22 +513,22 @@ export default function CrewCharterExportModal({
 
           {issuedInvite?.code && (
             <section className="charter-section">
-              <h3>4. Active Single-Use Invitation Reference</h3>
+              <h3>4. Active Single-Use Invite Reference</h3>
               <div className="charter-meta">
-                Team: {issuedInvite.teamId || teamId} · SHA-256 Hashed Single-Use Invite Issued (Expires epoch {issuedInvite.expiresAt})
+                Team: {issuedInvite.teamId || teamId} · Single-use SHA-256 invite issued (Expires epoch {issuedInvite.expiresAt})
               </div>
             </section>
           )}
 
           <footer className="charter-footer">
-            Layer-A seats are committed exclusively via SQLite BEGIN IMMEDIATE serializable transactions. Layer-B collaboration envelopes remain PEER_CIPHERTEXT_ONLY and never forge membership authority.
+            Server membership changes run inside atomic SQLite BEGIN IMMEDIATE transactions. Preview plans and peer-relayed messages never grant membership without server confirmation.
           </footer>
         </article>
       </div>
 
       <div className="row-end no-print">
         <button type="button" className="btn btn-primary" onClick={onClose}>
-          <CheckCircleIcon size={16} /> Close Charter Preview
+          <CheckCircleIcon size={16} /> Close Preview
         </button>
       </div>
     </ModalDialog>

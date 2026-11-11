@@ -91,11 +91,12 @@ export function saveCustomCrewOverlayEntry(eventId, teamId, entry) {
 export const MISSION_SCENARIOS = {
   baton: {
     id: 'baton',
-    code: 'Scenario A',
-    title: 'Async UTC Baton-Pass',
-    subtitle: 'Hot Springs (UTC-6) + Bengaluru (UTC+5:30) · 0m overlap, ships early!',
+    code: '1',
+    title: '1. Different time zones, clean handoff',
+    shortPill: '1. Time zones',
+    subtitle: 'Hot Springs (UTC-6) + Bengaluru (UTC+5:30) · 0m overlap, finishes early',
     summary:
-      'Aurora and Kai work T+0..240m in Arkansas (UTC-6). Priya works T+240..480m in Bengaluru (UTC+5:30) with 0m simultaneous overlap, yet directed task dependencies align cleanly so adding Priya flips INFEASIBLE to FEASIBLE_WITNESS with +150m deadline slack.',
+      'Aurora and Kai work hours 0..4 in Arkansas (UTC-6). Priya works hours 4..8 in Bengaluru (UTC+5:30) with zero simultaneous overlap, yet task dependencies hand off cleanly so adding Priya finishes all 3 tasks with 2.5 hours to spare.',
     goalDescription: 'Ship race-safe API, accessible React UI, and E2E integration across Hot Springs (UTC-6) and Bengaluru (UTC+5:30)',
     horizonHours: 8,
     tasks: [
@@ -145,11 +146,12 @@ export const MISSION_SCENARIOS = {
   },
   hall: {
     id: 'hall',
-    code: 'Scenario B',
-    title: 'Hall Capacity Contention',
-    subtitle: 'Why naive skill-tag union fails on simultaneous deadlines (0-displacement repair)',
+    code: '2',
+    title: '2. One person double-booked on two tasks',
+    shortPill: '2. Double-booked',
+    subtitle: 'Both skills exist on paper, yet two simultaneous 2-hour tasks overload one person',
     summary:
-      'Roster {Aurora, Kai} looks 100% covered on a static badge checklist (backend, database, frontend). Yet api-cutover and schema-migration both require 120m inside a 120m window, overloading Aurora. Synchronicity isolates the 1-role Hall deficit and adds Mateo with 0 displaced members.',
+      'Aurora and Kai appear to cover every skill tag (backend, database, frontend). Yet api-cutover and schema-migration both need 2 hours inside a 2-hour window, double-booking Aurora. Adding Mateo covers database without replacing anyone.',
     goalDescription: 'Execute simultaneous zero-downtime API cutover and SQLite WAL schema migration within a 2-hour window',
     horizonHours: 2,
     tasks: [
@@ -191,11 +193,12 @@ export const MISSION_SCENARIOS = {
   },
   omega: {
     id: 'omega',
-    code: 'Scenario C',
-    title: 'Wildcard Omega & P9R Gate',
-    subtitle: 'Contrast Shannon VOI prompt (?skill) vs. EXISTS_FORALL_ROBUST zero-question stop',
+    code: '3',
+    title: '3. Unverified skill: when backup covers it vs. quick check',
+    shortPill: '3. Unverified skill',
+    subtitle: 'Asks zero questions when a backup covers the task, or prompts one quick check',
     summary:
-      'Toggle between Contingent Mode (Devon holds unverified ?frontend -> solver computes exact 1.0000-bit Shannon VOI micro-work-sample prompt) and Robust Mode (Kai provides verified frontend backup -> P9R emits ALREADY_SUFFICIENT_ZERO_QUESTIONS without interrogating Aurora!).',
+      'Compare two cases: when Devon has an unverified frontend skill, the planner suggests one quick 5-minute check. When Kai already covers frontend with verified work, the planner asks zero unnecessary questions.',
     goalDescription: 'Deliver authenticated API and accessible React interface with provisional secondary skill wildcards',
     horizonHours: 4,
     tasks: [
@@ -253,11 +256,12 @@ export const MISSION_SCENARIOS = {
   },
   prereq: {
     id: 'prereq',
-    code: 'Scenario D',
-    title: 'Preventive Prerequisite Support',
-    subtitle: 'Unlock a blocked 3-member crew by provisioning missing DevOps/A11y environment support',
+    code: '4',
+    title: '4. Unblock early setup without replacing teammates',
+    shortPill: '4. Early setup',
+    subtitle: 'Unlock a blocked 3-person team by adding early setup support',
     summary:
-      'Aurora, Kai, and Priya cover backend, frontend, and integration, while upstream cloud/accessibility runner provisioning (devops) is unverified, blocking the DAG. Granting preventive prerequisite support unlocks FEASIBLE_WITNESS with 0 accepted members replaced.',
+      'Aurora, Kai, and Priya cover backend, frontend, and integration, while early cloud/test-runner setup (devops) is unverified and blocks downstream tasks. Confirming setup support unblocks the whole team without replacing anyone.',
     goalDescription: 'Provision reproducible CI + accessibility test runner, build core platform, and pass full E2E verification',
     horizonHours: 6,
     tasks: [
@@ -847,6 +851,78 @@ export function computePartialTaskPreview(tasks = [], teamPeople = [], horizonMi
   }
 
   return map;
+}
+
+const FRIENDLY_SKILL_NOUNS = {
+  integrate: 'Integration',
+  backend: 'Backend API',
+  frontend: 'Frontend UI',
+  database: 'Database',
+  devops: 'Cloud Setup',
+  design: 'Design'
+};
+
+export function describePlainPlanVerdict(plan, tasks = [], partialPreview = new Map()) {
+  const total = tasks.length;
+  if (total === 0) {
+    return {
+      tone: 'warn',
+      coveredCount: 0,
+      totalCount: 0,
+      headline: 'Plan incomplete: 0 tasks defined',
+      detail: 'Add at least 1 task to check the team schedule.'
+    };
+  }
+
+  if (plan?.status === 'FEASIBLE_WITNESS') {
+    return {
+      tone: 'ok',
+      coveredCount: total,
+      totalCount: total,
+      headline: 'Plan works: all tasks and hours line up',
+      detail: `All ${total} of ${total} tasks are covered within the deadline.`
+    };
+  }
+
+  if (plan?.status === 'CONDITIONAL_WITNESS') {
+    const guards = plan?.witness?.guards || [];
+    const n = Math.max(1, guards.length);
+    const first = guards[0];
+    return {
+      tone: 'warn',
+      coveredCount: total,
+      totalCount: total,
+      headline: `Almost ready: confirm ${n} unverified ${n === 1 ? 'skill' : 'skills'}`,
+      detail: first
+        ? `Confirm ${first.personId}'s ${first.taskId} skill to lock the schedule.`
+        : 'Confirm unverified skills to finalize the schedule.'
+    };
+  }
+
+  const coveredIds = new Set([
+    ...(plan?.witness?.assignments || []).map(a => a.taskId),
+    ...(partialPreview instanceof Map ? [...partialPreview.keys()] : [])
+  ]);
+  const coveredCount = tasks.filter(t => coveredIds.has(t.id)).length;
+  const missingTasks = tasks.filter(t => !coveredIds.has(t.id));
+  const missingLabel =
+    missingTasks.length > 0
+      ? missingTasks
+          .slice(0, 2)
+          .map(t => FRIENDLY_SKILL_NOUNS[t.skill] || t.id)
+          .join(', ')
+      : 'schedule fit';
+
+  return {
+    tone: 'warn',
+    coveredCount,
+    totalCount: total,
+    headline: `Plan incomplete: ${coveredCount} of ${total} tasks covered (needs ${missingLabel})`,
+    detail:
+      missingTasks.length > 0
+        ? `Try a teammate who covers ${missingLabel} in the needed time window.`
+        : 'Adjust task hours or add a teammate to relieve the bottleneck.'
+  };
 }
 
 export function visualTasksToApi(tasks) {

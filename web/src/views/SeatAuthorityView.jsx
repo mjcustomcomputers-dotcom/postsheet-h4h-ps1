@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { claimKey } from '../claim-operation.js';
 import EpistemicStencil from '../components/EpistemicStencil.jsx';
-import { SKILLS_CATALOG } from '../presets-and-catalog.js';
+import { SKILLS_CATALOG, normalizeBuilderId } from '../presets-and-catalog.js';
+import { formatHumanActorName } from '../components/Overlays.jsx';
 import {
   ShieldCheckIcon,
   CopyIcon,
@@ -26,6 +27,8 @@ function formatCountdown(expiresAt, nowMs) {
 }
 
 export default function SeatAuthorityView({
+  activeLinkId = null,
+  onLinkHover,
   eventId,
   actorId,
   teamId,
@@ -66,9 +69,10 @@ export default function SeatAuthorityView({
   const [nowMs, setNowMs] = useState(Date.now());
   const [transferTarget, setTransferTarget] = useState('');
   const [copied, setCopied] = useState(false);
+  const [showTechProof, setShowTechProof] = useState(false);
   const [storagePreview, setStoragePreview] = useState({ key: null, savedOpId: null });
   const [customMissionDraft, setCustomMissionDraft] = useState(
-    'Ship race-safe civic coordination API with async UTC baton-pass UI'
+    'Ship race-safe civic coordination API with cross-timezone handoff UI'
   );
   const [customSkillsDraft, setCustomSkillsDraft] = useState(['backend', 'frontend', 'integrate']);
 
@@ -106,7 +110,7 @@ export default function SeatAuthorityView({
       await navigator.clipboard.writeText(issuedInvite.code);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-      onNotify?.('✓ Copied single-use invite token to clipboard!', 'ok');
+      onNotify?.('Copied single-use invite code to clipboard.', 'ok');
     } catch {
       try {
         const ta = document.createElement('textarea');
@@ -119,9 +123,9 @@ export default function SeatAuthorityView({
         document.body.removeChild(ta);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
-        onNotify?.('✓ Copied single-use invite token to clipboard!', 'ok');
+        onNotify?.('Copied single-use invite code to clipboard.', 'ok');
       } catch {
-        onNotify?.('Select the invite token input to copy manually.', 'warn');
+        onNotify?.('Select the invite code input to copy manually.', 'warn');
       }
     }
   }
@@ -130,13 +134,11 @@ export default function SeatAuthorityView({
     setCustomSkillsDraft(prev => {
       if (prev.includes(skId)) {
         if (prev.length <= 1) {
-          onNotify?.('At least one target skill must stay selected.', 'warn');
+          onNotify?.('Keep at least one needed skill selected.', 'warn');
           return prev;
         }
-        onNotify?.(`Removed '${skId}' from target crew skills.`, 'info');
         return prev.filter(s => s !== skId);
       }
-      onNotify?.(`Added '${skId}' to target crew skills.`, 'info');
       return [...prev, skId];
     });
   }
@@ -155,81 +157,95 @@ export default function SeatAuthorityView({
           issuedInvite.issuedBy === actorId))
   );
 
+  // CRR-08 Salience Transfer: amplify only the single current step; completed steps step back calmly
+  const activeStep = replayReceipt
+    ? 0
+    : relayedReceipt
+      ? 3
+      : queuedClaim
+        ? 2
+        : 1;
+
+  const humanActor = formatHumanActorName(actorId, Boolean(actorId));
+
   return (
     <section aria-labelledby="authority-heading" className="view-section">
-      {/* Hero Header */}
+      {/* Plain-Language Hero Header */}
       <div className="surface-card hero-strip">
         <div className="row-between wrap-gap">
           <div className="prose-measure">
-            <div className="pill-row">
-              <span className="eyebrow-tag">VIEW 3 · LAYER-A SQLITE SERIALIZABLE SEAT AUTHORITY + LAYER-B PEER CONTINUITY</span>
-              <EpistemicStencil kind="SQLITE_AUTHORITY" compact />
-              <EpistemicStencil kind="PEER_CIPHERTEXT_ONLY" compact />
-            </div>
-            <h2 id="authority-heading" className="view-title">Live Seat Authority &amp; WAN-Drop Peer Mesh</h2>
+            <span className="eyebrow-tag">STEP 3 · MANAGE YOUR TEAM, INVITES &amp; OFFLINE CONTINUITY</span>
+            <h2 id="authority-heading" className="view-title">
+              Keep a join request moving when your connection drops.
+            </h2>
             <p className="muted-copy">
-              Every seat admission, single-use SHA-256 invite, leader transfer, and departure executes inside an atomic SQLite <code>BEGIN IMMEDIATE</code> transaction, while encrypted notes and signed offline claims traverse the peer mesh without ever forging authority.
+              Save the request on your device. A connected teammate can forward it. The server decides whether you join.
             </p>
           </div>
 
           <div className="pill-row">
             <button
               type="button"
-              className="btn btn-secondary"
+              className="btn btn-secondary btn-compact"
               onClick={onOpenCharterExport}
             >
-              <FileTextIcon size={15} /> Export Crew Charter
+              <FileTextIcon size={15} /> Preview / Print Plan
             </button>
-            <div className="telemetry-cluster">
-              <div className="metric-pill">
-                <span className="metric-label">Active Actor</span>
-                <strong className="metric-value">{actorId || 'Sign in'}</strong>
-              </div>
-              <div className="metric-pill">
-                <span className="metric-label">Target Crew</span>
-                <strong className="metric-value">{teamId}</strong>
-              </div>
-              <div className="metric-pill">
-                <span className="metric-label">Direct WAN</span>
-                <strong className="metric-value">{wanOffline ? 'Dropped' : 'Online'}</strong>
-              </div>
-            </div>
+            <button
+              type="button"
+              aria-expanded={showTechProof}
+              className="btn btn-secondary btn-compact"
+              onClick={() => setShowTechProof(v => !v)}
+            >
+              {showTechProof ? 'Hide Engineering Proof' : 'Engineering Proof'}
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Guided 3-Step WAN-Drop -> Peer Relay -> Reconnect Idempotency Theater */}
-      <div className="surface-card theater-card" role="region" aria-label="WAN-Drop Peer Relay and Idempotent Reconnect Theater">
+      {/* Guided 3-Step Salience-Transfer Path (CRR-08) */}
+      <div className="surface-card theater-card" role="region" aria-label="Offline request forwarding walkthrough">
         <div className="row-between wrap-gap">
           <div className="prose-measure">
-            <span className="eyebrow-tag">INTERACTIVE CONTINUITY THEATER · ZERO DUPLICATE ADMISSIONS</span>
+            <span className="eyebrow-tag">OFFLINE JOIN WALKTHROUGH · ZERO DUPLICATE SPOTS</span>
             <h3 className="card-subtitle">
-              3-Step WAN-Drop -&gt; Signed Peer Relay (<code>relay-mateo</code>) -&gt; Idempotent Reconnect Replay
+              Try saving a join request offline and sending it through a teammate
             </h3>
             <p className="muted-copy small-copy">
-              Prove how a builder who loses venue Wi-Fi queues a deterministic <code>opId</code> locally (explicitly <em>not</em> a confirmed seat), forwards the signed claim via an uplinked peer, and safely retries upon reconnecting with <code>replayed: true</code>.
+              Saving on your device never claims a spot by itself; only the server confirms membership, and reconnecting safely returns the original result.
             </p>
           </div>
 
           <button
             type="button"
-            className="btn btn-secondary"
+            className="btn btn-primary btn-compact"
             onClick={onAutoSetupRelayDemo}
           >
-            <SparklesIcon size={16} /> 1-Click Auto-Prep Fresh Crew &amp; Invite
+            <SparklesIcon size={15} /> Prepare example team
           </button>
         </div>
 
         <div className="theater-steps-grid top-gap-sm">
           {/* STEP 1 */}
-          <div className={`theater-step ${wanOffline || queuedClaim ? 'step-active' : ''}`}>
+          <div
+            data-reactive-surface="true"
+            className={`theater-step ${
+              activeStep === 1
+                ? 'step-current-relief'
+                : queuedClaim || relayedReceipt || replayReceipt
+                  ? 'step-completed-calm'
+                  : ''
+            }`}
+          >
             <div className="step-badge-row">
               <span className="step-num">Step 1</span>
-              <EpistemicStencil kind="PEER_CIPHERTEXT_ONLY" compact />
+              <span className="badge-pill">
+                {wanOffline ? 'Connection dropped' : 'Connected'}
+              </span>
             </div>
-            <h4>Drop Direct WAN &amp; Queue Claim</h4>
+            <h4>1. Save your request while disconnected</h4>
             <p className="muted-copy small-copy">
-              Toggle direct WAN offline on active builder <code>{actorId || 'builder-priya'}</code>, then submit seat request to retain a SHA-256 <code>opId</code>.
+              Turn off your direct connection and save your join request on this device.
             </p>
             <div className="stack-actions">
               <button
@@ -238,7 +254,7 @@ export default function SeatAuthorityView({
                 className={`btn btn-compact ${wanOffline ? 'btn-warn-solid' : 'btn-secondary'}`}
                 onClick={onToggleWanOffline}
               >
-                {wanOffline ? 'Direct WAN Dropped (Click to Restore)' : '1A. Simulate Direct WAN Drop'}
+                {wanOffline ? 'Disconnected (Click to reconnect)' : '1A. Simulate dropped connection'}
               </button>
               <button
                 type="button"
@@ -246,28 +262,47 @@ export default function SeatAuthorityView({
                 disabled={joining || !inviteCode}
                 onClick={onJoinSeat}
               >
-                <OutboxIcon /> 1B. Request Seat ({wanOffline ? 'Queues to Outbox' : 'Direct Claim'})
+                <OutboxIcon size={14} />{' '}
+                {wanOffline ? '1B. Save join request on device' : '1B. Join team directly'}
               </button>
             </div>
 
-            {queuedClaim && (
+            {queuedClaim && !relayedReceipt && (
               <div className="outbox-receipt" role="status">
-                <strong>PENDING_RELAY (Seat NOT Yet Confirmed!)</strong>
-                <div className="mono-cell small-copy">opId: {queuedClaim.opId}</div>
-                <div className="muted-copy small-copy">Claimant: {queuedClaim.actorId} -&gt; {queuedClaim.teamId}</div>
+                <strong>Saved on this device. Waiting to send.</strong>
+                <div className="small-copy muted-copy">
+                  Not joined on server yet ({queuedClaim.actorId} -&gt; {queuedClaim.teamId}).
+                </div>
+                {showTechProof && (
+                  <div className="mono-cell tiny-copy top-gap-xs">opId: {queuedClaim.opId}</div>
+                )}
+              </div>
+            )}
+            {(relayedReceipt || replayReceipt) && (
+              <div className="small-copy muted-copy top-gap-xs" role="status">
+                ✓ Request was saved locally before forwarding.
               </div>
             )}
           </div>
 
           {/* STEP 2 */}
-          <div className={`theater-step ${relayedReceipt ? 'step-done' : ''}`}>
+          <div
+            data-reactive-surface="true"
+            className={`theater-step ${
+              activeStep === 2
+                ? 'step-current-relief'
+                : relayedReceipt || replayReceipt
+                  ? 'step-completed-calm'
+                  : ''
+            }`}
+          >
             <div className="step-badge-row">
               <span className="step-num">Step 2</span>
-              <span className="badge-pill">POST /api/peer/relay-claim</span>
+              <span className="badge-pill">Teammate Mateo</span>
             </div>
-            <h4>Forward Signed Claim via Peer</h4>
+            <h4>2. Send through a connected teammate</h4>
             <p className="muted-copy small-copy">
-              Uplinked peer <code>relay-mateo</code> forwards claimant's bearer-signed request + exact <code>opId</code> to Layer A without minting a second operation.
+              Mateo has working internet and forwards your signed request without creating a duplicate.
             </p>
             <div className="stack-actions">
               <button
@@ -276,29 +311,43 @@ export default function SeatAuthorityView({
                 disabled={!queuedClaim}
                 onClick={onForwardViaPeer}
               >
-                <MeshIcon /> 2. Forward Claim via Peer (relay-mateo)
+                <MeshIcon size={14} /> Send through Mateo
               </button>
             </div>
 
             {relayedReceipt && (
               <div className="subcard tone-ok small-top" role="status">
-                <strong>✓ PEER_RELAYED_ADMISSION Committed!</strong>
-                <div className="mono-cell small-copy">
-                  actor={relayedReceipt.actorId} · via={relayedReceipt.relayedBy} · replayed={String(relayedReceipt.replayed)}
+                <strong>Sent through Mateo. Confirmed by server.</strong>
+                <div className="small-copy">
+                  Spot confirmed for <code>{relayedReceipt.actorId}</code> on <code>{relayedReceipt.teamId}</code>.
                 </div>
+                {showTechProof && (
+                  <div className="mono-cell tiny-copy top-gap-xs">
+                    via={relayedReceipt.relayedBy} · opId={relayedReceipt.opId} · replayed={String(relayedReceipt.replayed)}
+                  </div>
+                )}
               </div>
             )}
           </div>
 
           {/* STEP 3 */}
-          <div className={`theater-step ${replayReceipt ? 'step-done' : ''}`}>
+          <div
+            data-reactive-surface="true"
+            className={`theater-step ${
+              activeStep === 3
+                ? 'step-current-relief'
+                : replayReceipt
+                  ? 'step-completed-calm'
+                  : ''
+            }`}
+          >
             <div className="step-badge-row">
               <span className="step-num">Step 3</span>
-              <EpistemicStencil kind="SQLITE_AUTHORITY" compact />
+              <span className="badge-pill">Safe retry</span>
             </div>
-            <h4>Restore WAN &amp; Retry Same opId</h4>
+            <h4>3. Reconnect and check the original request</h4>
             <p className="muted-copy small-copy">
-              When direct WAN returns and the client retries <code>/api/invitations/claim</code> with the retained <code>opId</code>, Layer A returns the original commit with 0 duplicate rows.
+              When your connection comes back, checking the same request returns the original server result with zero duplicate spots.
             </p>
             <div className="stack-actions">
               <button
@@ -307,46 +356,48 @@ export default function SeatAuthorityView({
                 disabled={!queuedClaim && !relayedReceipt}
                 onClick={onReconnectAndRetryDirect}
               >
-                <CheckCircleIcon size={15} /> 3. Restore WAN &amp; Retry Direct Claim
+                <CheckCircleIcon size={15} /> Reconnect &amp; check request
               </button>
             </div>
 
             {replayReceipt && (
               <div className="subcard tone-ok small-top" role="status">
-                <strong>✓ {replayReceipt.status} (replayed: {String(replayReceipt.replayed)})</strong>
+                <strong>The server returned the original result for this request.</strong>
                 <div className="small-copy">
-                  Zero duplicate rows inserted; <code>sessionStorage</code> operation key cleanly retired.
+                  Zero duplicate spots added; saved local request cleaned up automatically.
                 </div>
+                {showTechProof && (
+                  <div className="mono-cell tiny-copy top-gap-xs">
+                    status={replayReceipt.status} · replayed={String(replayReceipt.replayed)}
+                  </div>
+                )}
               </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* Main Two-Column Workbench: Layer A Seat Lifecycle + Layer B Encrypted Notes / Glue */}
+      {/* Main Two-Column Workbench: Team Membership & Invites + Shared Team Notes & Conflict Check */}
       <div className="two-col-studio">
-        {/* LEFT: Layer-A Team Lifecycle Workbench */}
+        {/* LEFT: Server Team Membership, Invites & Leadership */}
         <div className="surface-card">
           <div className="row-between wrap-gap">
             <div>
-              <div className="pill-row">
-                <span className="eyebrow-tag">LAYER A · AUTHORITATIVE TEAM LIFECYCLE</span>
-                <EpistemicStencil kind="SQLITE_AUTHORITY" compact />
-              </div>
-              <h3 className="card-subtitle">Seats, Single-Use Invites &amp; Leadership</h3>
+              <span className="eyebrow-tag">SERVER TEAM MEMBERSHIP</span>
+              <h3 className="card-subtitle">Create a team, share an invite, or join a spot</h3>
             </div>
             <button
               type="button"
               className="btn btn-ghost btn-compact"
               onClick={() => onInspectTeam(teamId)}
             >
-              <RefreshIcon size={15} /> Inspect {teamId}
+              <RefreshIcon size={14} /> Refresh {teamId}
             </button>
           </div>
 
           <div className="stack-form top-gap-sm">
             <label className="field-label">
-              <span>Target Team ID (in <code>{eventId}</code>)</span>
+              <span>Team ID (in <code>{eventId}</code>)</span>
               <div className="inline-form">
                 <input
                   type="text"
@@ -356,7 +407,7 @@ export default function SeatAuthorityView({
                 />
                 {board.length > 0 && (
                   <select
-                    aria-label="Quick select existing team on current page"
+                    aria-label="Choose an existing team from the current page"
                     value=""
                     onChange={e => {
                       if (e.target.value) {
@@ -366,10 +417,10 @@ export default function SeatAuthorityView({
                     }}
                     className="compact-select"
                   >
-                    <option value="">Pick from board...</option>
+                    <option value="">Choose from board...</option>
                     {board.slice(0, 20).map(t => (
                       <option key={t.team_id} value={t.team_id}>
-                        {t.team_id} ({t.members}/{t.max_size})
+                        {t.team_id} ({t.members}/{t.max_size} spots)
                       </option>
                     ))}
                   </select>
@@ -377,21 +428,20 @@ export default function SeatAuthorityView({
               </div>
             </label>
 
-            {/* Custom Mission & Skills Overlay for New Crew Cards on View 1 */}
             <div className="subcard">
               <label className="field-label">
-                <span>Crew Deliverable Purpose (Displayed on View 1 Discover Card)</span>
+                <span>What is this team building? (Shown on Step 1 directory card)</span>
                 <input
                   type="text"
                   maxLength={180}
                   value={customMissionDraft}
                   onChange={e => setCustomMissionDraft(e.target.value)}
-                  placeholder="What is this crew building?"
+                  placeholder="Describe your team's project goal..."
                 />
               </label>
               <div className="top-gap-xs">
-                <span className="small-copy muted-copy">Target Critical-Path Skills:</span>
-                <div className="pill-row top-gap-xs" role="group" aria-label="Target crew skills">
+                <span className="small-copy muted-copy">Skills needed:</span>
+                <div className="pill-row top-gap-xs" role="group" aria-label="Skills needed for this team">
                   {SKILLS_CATALOG.map(sk => {
                     const active = customSkillsDraft.includes(sk.id);
                     return (
@@ -416,83 +466,83 @@ export default function SeatAuthorityView({
                 className="btn btn-primary btn-compact"
                 onClick={() => onCreateTeam({ mission: customMissionDraft, skills: customSkillsDraft })}
               >
-                Create Team (<code>/api/teams</code>)
+                Create team
               </button>
               <button type="button" className="btn btn-secondary btn-compact" onClick={onCreateInvite}>
-                Issue Single-Use Invite (<code>/api/invitations</code>)
+                Create single-use invite
               </button>
               <button type="button" className="btn btn-danger-outline btn-compact" onClick={onLeaveTeam}>
-                Leave Team (<code>/api/teams/leave</code>)
+                Leave team
               </button>
             </div>
 
-            {/* Issued Single-Use Invite Card with Countdown */}
+            {/* Single-Use Invite Card */}
             {issuedInvite?.code && (
-              <div className="invite-ticket" role="region" aria-label="Issued single-use invitation">
+              <div className="invite-ticket" role="region" aria-label="Active single-use invite">
                 <div className="row-between wrap-gap">
                   <strong>
-                    Protected Single-Use Invite Token
+                    Single-use invite code
                     {issuedInvite.teamId ? ` (${issuedInvite.teamId})` : ''}
                   </strong>
                   <span className={`status-chip ${expired ? 'chip-err' : 'chip-ok'}`}>
-                    <ClockIcon size={13} /> {expired ? 'EXPIRED (410)' : `Expires in ${countdown}`}
+                    <ClockIcon size={13} /> {expired ? 'Expired' : `Expires in ${countdown}`}
                   </span>
                 </div>
                 <div className="invite-code-row">
-                  <input type="text" readOnly value={issuedInvite.code} aria-label="Single-use invite token" className="mono-field" />
+                  <input type="text" readOnly value={issuedInvite.code} aria-label="Single-use invite code" className="mono-field" />
                   <button type="button" className="btn btn-secondary btn-compact" onClick={copyInvite}>
-                    <CopyIcon size={15} /> {copied ? 'Copied!' : 'Copy'}
+                    <CopyIcon size={14} /> {copied ? 'Copied!' : 'Copy'}
                   </button>
                 </div>
                 <p className="muted-copy small-copy">
-                  <LockIcon size={13} /> Issued by <code>{issuedInvite.issuedBy || actorId || 'leader'}</code> for <code>{issuedInvite.teamId || teamId}</code> · Persisted strictly as SHA-256 <code>code_hash</code>.
+                  <LockIcon size={13} /> Created by <code>{issuedInvite.issuedBy || actorId || 'lead'}</code> for <code>{issuedInvite.teamId || teamId}</code> · Works once, checked on server.
                 </p>
               </div>
             )}
 
-            {/* Claim Seat + SHA-256 opId Inspector */}
+            {/* Join with Invite Code */}
             <div className="claim-box">
               <label className="field-label">
-                <span>Claim Seat with Invite Code (Retry-Safe SHA-256 <code>opId</code>)</span>
+                <span>Join team with invite code</span>
                 <input
                   type="text"
                   value={inviteCode}
                   onChange={e => onChangeInviteCode(e.target.value.trim())}
-                  placeholder="Paste 43-char base64url single-use invite token..."
+                  placeholder="Paste single-use invite code..."
                   className="mono-field"
                 />
               </label>
 
               {inviteCode && actorAlreadyInTargetTeam && onClaimAsFreshCandidate && (
-                <div className="self-claim-guard subcard tone-ok top-gap-xs" role="region" aria-label="One-click candidate claim helper">
+                <div className="self-claim-guard subcard tone-ok top-gap-xs" role="region" aria-label="Switch to invited teammate helper">
                   <div className="small-copy">
-                    <strong>Active persona <code>{actorId}</code> already holds a seat on <code>{teamId}</code>.</strong>{' '}
-                    Because SQLite enforces <code>ONE_TEAM_PER_EVENT</code>, switch to an invited candidate in 1 click to claim this single-use invite cleanly:
+                    <strong>{humanActor} (<code>{actorId}</code>) is already on <code>{teamId}</code>.</strong>{' '}
+                    Each person can join one team per event. Switch to an invited teammate in one click to use this invite:
                   </div>
                   <div className="pill-row top-gap-xs">
                     <button
                       type="button"
-                      className="btn btn-primary btn-glow-cta"
+                      className="btn btn-primary"
                       disabled={joining}
                       onClick={onClaimAsFreshCandidate}
                     >
                       <SparklesIcon size={15} />{' '}
-                      {joining ? 'Switching & Claiming Seat...' : 'Switch to Invited Candidate & Claim Seat'}
+                      {joining ? 'Joining...' : 'Switch to invited teammate & join'}
                     </button>
                   </div>
                 </div>
               )}
 
-              {storagePreview.key && (
+              {showTechProof && storagePreview.key && (
                 <div className="opid-inspector">
                   <div className="small-copy">
-                    <strong><code>claim-operation.js</code> Fingerprint Key:</strong>
+                    <strong><code>claim-operation.js</code> Storage Key:</strong>
                     <div className="mono-cell break-all">{storagePreview.key}</div>
                   </div>
                   <div className="small-copy top-gap-xs">
                     <strong>Retained <code>sessionStorage</code> opId:</strong>{' '}
                     <span className="mono-pill">
-                      {storagePreview.savedOpId || 'Will mint deterministic join-UUID on click'}
+                      {storagePreview.savedOpId || 'Generated deterministically on submit'}
                     </span>
                   </div>
                 </div>
@@ -501,60 +551,70 @@ export default function SeatAuthorityView({
               <div className="pill-row top-gap-xs">
                 <button
                   type="button"
-                  className={inviteCode && actorAlreadyInTargetTeam ? 'btn btn-secondary' : 'btn btn-primary'}
+                  className={inviteCode && actorAlreadyInTargetTeam ? 'btn btn-secondary btn-compact' : 'btn btn-primary btn-compact'}
                   disabled={joining || !inviteCode}
                   onClick={onJoinSeat}
                 >
-                  <ShieldCheckIcon /> {joining ? 'Submitting Claim...' : `Claim as Current Actor (${actorId || 'Sign in'})`}
+                  <ShieldCheckIcon size={15} /> {joining ? 'Sending request...' : `Join as ${humanActor}`}
                 </button>
                 <button
                   type="button"
                   className="btn btn-secondary btn-compact"
                   onClick={onOpenCharterExport}
                 >
-                  <FileTextIcon size={14} /> Export Crew Receipt
+                  <FileTextIcon size={14} /> Preview / Print Summary
                 </button>
               </div>
             </div>
 
-            {/* Live Team Roster & Explicit Leader Transfer */}
+            {/* Confirmed Team Members & Leadership Transfer */}
             <div className="roster-box">
               <div className="row-between wrap-gap">
                 <h4>
-                  Authoritative Roster:{' '}
+                  Confirmed Team Members:{' '}
                   {selectedTeam ? (
                     <span>
-                      <code>{selectedTeam.teamId}</code> ({selectedTeam.members.length} / {selectedTeam.maxSize})
+                      <code>{selectedTeam.teamId}</code> ({selectedTeam.members.length} / {selectedTeam.maxSize} spots)
                     </span>
                   ) : (
-                    <span className="muted-copy">Click "Inspect {teamId}" to load members</span>
+                    <span className="muted-copy">Click "Refresh {teamId}" to view members</span>
                   )}
                 </h4>
-                <EpistemicStencil kind="SQLITE_AUTHORITY" compact />
+                <span className="status-chip chip-ok">Confirmed by server</span>
               </div>
 
               {selectedTeam && (
                 <div className="roster-list top-gap-xs">
-                  {selectedTeam.members.map(m => (
-                    <div key={m.userId} className="roster-row">
-                      <div className="pill-row">
-                        <UserIcon size={15} />
-                        <strong>{m.userId}</strong>
-                        <span className={`status-chip ${m.isLeader ? 'chip-ok' : 'chip-neutral'}`}>
-                          {m.isLeader ? '★ Team Leader' : 'Committed Member'}
-                        </span>
+                  {selectedTeam.members.map(m => {
+                    const isLinked =
+                      activeLinkId && normalizeBuilderId(activeLinkId) === normalizeBuilderId(m.userId);
+                    return (
+                      <div
+                        key={m.userId}
+                        data-link-id={m.userId}
+                        onMouseEnter={() => onLinkHover?.(m.userId)}
+                        onMouseLeave={() => onLinkHover?.(null)}
+                        className={`roster-row ${isLinked ? 'is-linked-ridge' : ''}`}
+                      >
+                        <div className="pill-row">
+                          <UserIcon size={15} />
+                          <strong>{m.userId}</strong>
+                          <span className={`status-chip ${m.isLeader ? 'chip-ok' : 'chip-neutral'}`}>
+                            {m.isLeader ? '★ Team Lead' : 'Confirmed Member'}
+                          </span>
+                        </div>
+                        {!m.isLeader && selectedTeam.leader === actorId && (
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-compact"
+                            onClick={() => onTransferLeader(m.userId)}
+                          >
+                            Make lead <ArrowRightIcon size={14} />
+                          </button>
+                        )}
                       </div>
-                      {!m.isLeader && selectedTeam.leader === actorId && (
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-compact"
-                          onClick={() => onTransferLeader(m.userId)}
-                        >
-                          Make Leader <ArrowRightIcon size={14} />
-                        </button>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
@@ -563,8 +623,8 @@ export default function SeatAuthorityView({
                   type="text"
                   value={transferTarget}
                   onChange={e => setTransferTarget(e.target.value)}
-                  placeholder="Transfer leadership to member userId..."
-                  aria-label="New leader user ID"
+                  placeholder="Make another member team lead (user ID)..."
+                  aria-label="New team lead user ID"
                 />
                 <button
                   type="button"
@@ -575,35 +635,32 @@ export default function SeatAuthorityView({
                     setTransferTarget('');
                   }}
                 >
-                  Transfer Leader
+                  Transfer lead
                 </button>
               </div>
             </div>
           </div>
         </div>
 
-        {/* RIGHT: Layer-B Encrypted Notes, Sheaf Context Glue & Attributable Audit */}
+        {/* RIGHT: Encrypted Team Notes, Conflict Check & Server History */}
         <div className="stack-column">
           <div className="surface-card">
             <div className="row-between wrap-gap">
               <div>
-                <div className="pill-row">
-                  <span className="eyebrow-tag">LAYER B · AES-256-GCM + P-256 ECDSA PEER ENVELOPES</span>
-                  <EpistemicStencil kind="PEER_CIPHERTEXT_ONLY" compact />
-                </div>
-                <h3 className="card-subtitle">Encrypted Collaboration Notes &amp; Sheaf Glue</h3>
+                <span className="eyebrow-tag">SHARED TEAM NOTES (ENCRYPTED)</span>
+                <h3 className="card-subtitle">Share handoff notes &amp; check schedules</h3>
               </div>
               <button type="button" className="btn btn-ghost btn-compact" onClick={onLoadPeerNotes}>
-                <RefreshIcon size={15} /> Sync Notes
+                <RefreshIcon size={14} /> Refresh notes
               </button>
             </div>
 
             <p className="muted-copy small-copy">
-              Every Layer-B collaboration artifact is encrypted with <code>AES-256-GCM</code>, signed with per-actor <code>P-256</code> keys, and tagged <code>PEER_ARTIFACT_ONLY</code>; it can never mutate Layer-A seats directly.
+              Shared notes are encrypted and signed per teammate; notes never change server team spots on their own.
             </p>
 
             <label className="field-label top-gap-xs">
-              <span>Collaboration Note Plaintext</span>
+              <span>Handoff note</span>
               <textarea
                 rows={2}
                 value={peerNoteText}
@@ -612,25 +669,24 @@ export default function SeatAuthorityView({
             </label>
             <div className="pill-row top-gap-xs">
               <button type="button" className="btn btn-primary btn-compact" onClick={onSendPeerNote}>
-                <LockIcon size={15} /> Seal &amp; Broadcast Encrypted Note
+                <LockIcon size={14} /> Send encrypted note
               </button>
             </div>
 
             {peerNotes.length > 0 && (
-              <div className="notes-feed top-gap-sm" aria-label="Verified Layer-B peer notes">
+              <div className="notes-feed top-gap-sm" aria-label="Shared encrypted team notes">
                 {peerNotes.slice(0, 5).map(n => (
                   <div key={n.receiptId} className="note-item">
                     <div className="row-between wrap-gap">
                       <strong>{n.actorId}</strong>
-                      <div className="pill-row">
-                        <span className="status-chip chip-neutral">{n.transportStatus}</span>
-                        <EpistemicStencil kind="PEER_CIPHERTEXT_ONLY" compact />
-                      </div>
+                      <span className="badge-pill">Signed note</span>
                     </div>
                     <p className="small-top">{n.note}</p>
-                    <div className="mono-cell muted-copy small-copy">
-                      SHA-256 digest: {n.digest?.slice(0, 24)}... · epoch {n.epoch}
-                    </div>
+                    {showTechProof && (
+                      <div className="mono-cell muted-copy tiny-copy top-gap-xs">
+                        AES-256-GCM + P-256 · SHA-256: {n.digest?.slice(0, 24)}... · epoch {n.epoch}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -638,9 +694,9 @@ export default function SeatAuthorityView({
 
             <hr className="section-divider" />
 
-            <h4 className="card-subtitle">Sheaf Context Glue-or-Explain (<code>/api/peer/glue</code>)</h4>
+            <h4 className="card-subtitle">Check shared plans for conflicts</h4>
             <p className="muted-copy small-copy">
-              Verify distributed schedule sections: non-overlapping intervals glue cleanly; conflicting simultaneous assignments emit an explicit obstruction witness.
+              Check whether two teammates' local schedule edits fit together cleanly or overlap on the same person's hours.
             </p>
             <div className="pill-row top-gap-xs">
               <button
@@ -648,21 +704,21 @@ export default function SeatAuthorityView({
                 className="btn btn-secondary btn-compact"
                 onClick={() => onRunGluePreset('clean')}
               >
-                Test Clean Non-Overlapping Merge
+                Test non-overlapping hours
               </button>
               <button
                 type="button"
                 className="btn btn-secondary btn-compact"
                 onClick={() => onRunGluePreset('overlap')}
               >
-                Test Capacity Overlap Obstruction
+                Test overlapping hours conflict
               </button>
               <button
                 type="button"
                 className="btn btn-secondary btn-compact"
                 onClick={() => onRunGluePreset('digest')}
               >
-                Test Epoch Digest Conflict
+                Test mismatched note version
               </button>
             </div>
 
@@ -672,23 +728,29 @@ export default function SeatAuthorityView({
                   glueResult.status === 'GLUED_CONSISTENT' ? 'tone-ok' : 'tone-warn'
                 }`}
                 role="region"
-                aria-label="Context glue result"
+                aria-label="Shared plan conflict check result"
               >
                 <div className="row-between">
-                  <strong>{glueResult.status}</strong>
-                  <span className="badge-pill">{glueResult.mergedRecords?.length || 0} merged records</span>
+                  <strong>
+                    {glueResult.status === 'GLUED_CONSISTENT'
+                      ? 'Shared plans fit cleanly - no conflicts'
+                      : 'Conflict found between shared edits'}
+                  </strong>
+                  <span className="badge-pill">{glueResult.mergedRecords?.length || 0} items checked</span>
                 </div>
                 {(glueResult.obstructions || []).length === 0 ? (
-                  <p className="small-top">
-                    ✓ Local and peer sections are mutually compatible across all contributor capacity intervals.
+                  <p className="small-top small-copy">
+                    ✓ Both teammates' schedules fit together without double-booking anyone.
                   </p>
                 ) : (
                   glueResult.obstructions.map((ob, idx) => (
-                    <div key={idx} className="small-top">
-                      <span className="status-chip chip-err">{ob.type}</span>{' '}
-                      <span>{ob.explanation}</span>
+                    <div key={idx} className="small-top small-copy">
+                      <strong>Conflict:</strong> <span>{ob.explanation}</span>
                       {ob.interval && (
-                        <span className="mono-cell"> (overlap: [{ob.interval[0]}m..{ob.interval[1]}m])</span>
+                        <span className="mono-cell"> ({ob.interval[0]}m..{ob.interval[1]}m)</span>
+                      )}
+                      {showTechProof && (
+                        <div className="mono-cell tiny-copy muted-copy">{ob.type}</div>
                       )}
                     </div>
                   ))
@@ -697,40 +759,54 @@ export default function SeatAuthorityView({
             )}
           </div>
 
-          {/* Attributable Layer-A Audit Trail */}
+          {/* Server Activity & Engineering Proof Ledger */}
           <div className="surface-card">
             <div className="row-between wrap-gap">
               <div>
-                <div className="pill-row">
-                  <span className="eyebrow-tag">ATTRIBUTABLE LAYER-A LEDGER</span>
-                  <EpistemicStencil kind="SQLITE_AUTHORITY" compact />
-                </div>
-                <h3 className="card-subtitle">Audit Timeline (<code>{eventId}</code>)</h3>
+                <span className="eyebrow-tag">SERVER ACTIVITY HISTORY</span>
+                <h3 className="card-subtitle">Confirmed changes in <code>{eventId}</code></h3>
               </div>
               <button type="button" className="btn btn-secondary btn-compact" onClick={onLoadAudit}>
-                <RefreshIcon size={15} /> Load Audit Log
+                <RefreshIcon size={14} /> Load history
               </button>
             </div>
 
             {auditRows.length === 0 ? (
-              <p className="muted-copy top-gap-xs">
-                Click "Load Audit Log" or execute any team mutation above to inspect attributable SQLite audit rows.
+              <p className="muted-copy top-gap-xs small-copy">
+                Click "Load history" or create/join a team above to view confirmed server records.
               </p>
             ) : (
-              <div className="audit-timeline top-gap-sm" role="log" aria-label="Attributable membership audit trail">
-                {auditRows.slice(-12).reverse().map(row => (
+              <div className="audit-timeline top-gap-sm" role="log" aria-label="Confirmed server membership history">
+                {auditRows.slice(-10).reverse().map(row => (
                   <div key={row.id} className="audit-entry">
                     <div className="row-between wrap-gap">
                       <span className={`status-chip ${row.action.includes('RELAYED') ? 'chip-warn' : 'chip-ok'}`}>
-                        {row.action}
+                        {row.action.includes('RELAYED') ? 'Sent through teammate · Confirmed' : 'Confirmed by server'}
                       </span>
-                      <span className="mono-cell muted-copy small-copy">#{row.id}</span>
+                      <span className="mono-cell muted-copy tiny-copy">#{row.id}</span>
                     </div>
                     <div className="small-copy top-gap-xs">
-                      actor: <code>{row.actor_id}</code> · team: <code>{row.team_id}</code> · op: <code>{row.op_id}</code>
+                      <code>{row.actor_id}</code> · team <code>{row.team_id}</code>
                     </div>
+                    {showTechProof && (
+                      <div className="mono-cell tiny-copy muted-copy top-gap-xs">
+                        action={row.action} · opId={row.op_id}
+                      </div>
+                    )}
                   </div>
                 ))}
+              </div>
+            )}
+
+            {showTechProof && (
+              <div className="subcard top-gap-sm">
+                <div className="pill-row">
+                  <EpistemicStencil kind="SQLITE_AUTHORITY" compact />
+                  <EpistemicStencil kind="PEER_CIPHERTEXT_ONLY" compact />
+                </div>
+                <p className="tiny-copy muted-copy top-gap-xs">
+                  SQLite <code>BEGIN IMMEDIATE</code> serializes seat writes; single-use invites persist as SHA-256 <code>code_hash</code>; peer envelopes use <code>AES-256-GCM</code> + <code>P-256</code> ECDSA.
+                </p>
               </div>
             )}
           </div>
