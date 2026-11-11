@@ -7,6 +7,8 @@ services:
     envVars:
       - key: NODE_ENV
         value: "production"
+      - key: PORT
+        value: "8788"
       - key: PS1_PORT
         value: "8788"
       - key: PS1_BIND
