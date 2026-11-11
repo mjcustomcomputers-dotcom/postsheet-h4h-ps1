@@ -1,6 +1,6 @@
 {
   "project": "Post Sheet | Ability & Purpose Crew Network (H4H-PS1)",
-  "generatedAt": "2026-11-11T14:55:38.850Z",
+  "generatedAt": "2026-11-11T15:28:32.610Z",
   "fileCount": 81,
   "files": [
     {
@@ -310,13 +310,13 @@
     },
     {
       "path": "web/src/App.jsx",
-      "bytes": 164021,
-      "sha256": "39ce1b91b12e6e8afb0ef1e16ef64727d34dfba348f628c4c55404a9bfcd57a0"
+      "bytes": 186052,
+      "sha256": "034029b12b6186c5c0a25cc9a241c0b032f3c453a826fdc60dc9ee51f3a1b872"
     },
     {
       "path": "web/src/charter-whitepaper.js",
-      "bytes": 9947,
-      "sha256": "1421e88e2a47182adde1c7ca1c95903582f95c535a53b33323a44812b5d56ba8"
+      "bytes": 10422,
+      "sha256": "1a41a453dee42e835e701df1b54f99f8cbd102d7bb44234acdff50ce9f1f3e0d"
     },
     {
       "path": "web/src/claim-operation.js",
@@ -325,8 +325,8 @@
     },
     {
       "path": "web/src/components/CrewCharterExportModal.jsx",
-      "bytes": 9311,
-      "sha256": "8d6c8b5030d9188261f32b38c1574a08bad400d3f50025c28bff025196464fc9"
+      "bytes": 9693,
+      "sha256": "6da7bfb78e5b8814466c1395344dd26b7c3e3e9f141ca743a0039488196809ef"
     },
     {
       "path": "web/src/components/EpistemicStencil.jsx",
@@ -345,8 +345,8 @@
     },
     {
       "path": "web/src/components/Overlays.jsx",
-      "bytes": 34911,
-      "sha256": "520853f3268aeb11585cc50a0a80d73605f4c0140dd791e031d44092104210b8"
+      "bytes": 35455,
+      "sha256": "3a35e6510c074972ff7b2ac91667d302a3689409ec85266d3473d97cfa1cc4cd"
     },
     {
       "path": "web/src/components/SolarBatonHorizon.jsx",
@@ -380,13 +380,13 @@
     },
     {
       "path": "web/src/style.css",
-      "bytes": 93320,
-      "sha256": "f326c82788cd643408e91e91488b3573bb8246c1055d5790c7fbed76f3dd43c3"
+      "bytes": 94360,
+      "sha256": "780315ca23d7663d6e8b3315dc8aeca9b85bde029722cd9016088e476ac51412"
     },
     {
       "path": "web/src/views/DiscoverView.jsx",
-      "bytes": 54907,
-      "sha256": "d48eccc16007e9355cb80a1183ecf618cc47a18b89a59c344710f70d5ce6c81a"
+      "bytes": 57092,
+      "sha256": "708c7a26cd619d1433a9f0c11b0dc4e83d8883eebc940edc49248915a0f6cdd3"
     },
     {
       "path": "web/src/views/MissionArchitectView.jsx",
@@ -395,18 +395,18 @@
     },
     {
       "path": "web/src/views/ProofArenaView.jsx",
-      "bytes": 14478,
-      "sha256": "718978f7f3c1213fbc33ac88248bf1b13f9a3e1c0485014fe4de2c6718d505ac"
+      "bytes": 14491,
+      "sha256": "ebfe16ea3bd7760393d0af8f9067d18a0e337b0370b67a77390ba735bddc5ec6"
     },
     {
       "path": "web/src/views/SeatAuthorityView.jsx",
-      "bytes": 37226,
-      "sha256": "009598f61ad44111cb65bb40b9400642abf40958b4e30c5ecfcd3d3970c0bfe4"
+      "bytes": 40456,
+      "sha256": "b94413b29125757e9cc0002514688322de325f65927907f3e3a66512846946f9"
     },
     {
       "path": "web/vite.config.mjs",
-      "bytes": 246,
-      "sha256": "92f85bb048aa9212870e52d440b2485c9760d1cefcd31f7c7ed7a7db5e9e2b02"
+      "bytes": 415,
+      "sha256": "8b7ea63eb9dc3319a6fa11ae7446d9d708e302749a6493cf7a9c77142fe420ee"
     }
   ]
 }

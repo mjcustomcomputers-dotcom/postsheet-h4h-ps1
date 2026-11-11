@@ -102,6 +102,7 @@ export default function DiscoverView({
   onChangeEventId,
   onEnsureEvent,
   board,
+  pinnedTeams = [],
   totalTeams,
   boardLatencyMs,
   sseConnected,
@@ -173,14 +174,39 @@ export default function DiscoverView({
   const horizonMin = Math.max(60, Math.round(Number(horizonHours || 8) * 60));
   const legacyMode = lensMode === 'legacy';
 
+  const pinnedById = useMemo(() => {
+    const map = new Map();
+    for (const pt of pinnedTeams || []) {
+      if (pt && pt.team_id) map.set(pt.team_id, pt);
+    }
+    if (selectedTeam && selectedTeam.teamId) {
+      const existing = map.get(selectedTeam.teamId);
+      map.set(selectedTeam.teamId, {
+        team_id: selectedTeam.teamId,
+        leader: selectedTeam.leader,
+        max_size: selectedTeam.maxSize || 5,
+        members: Array.isArray(selectedTeam.members) ? selectedTeam.members.length : 1,
+        touchedAt: existing?.touchedAt || Date.now()
+      });
+    }
+    return map;
+  }, [pinnedTeams, selectedTeam]);
+
   const enrichedCrews = useMemo(
-    () => board.map(t => deriveCrewProfile(t, verifiedCrewMap, customCrewMap, eventId)),
-    [board, verifiedCrewMap, customCrewMap, eventId]
+    () =>
+      board.map(t => {
+        const live = pinnedById.get(t.team_id);
+        const merged = live
+          ? { ...t, leader: live.leader, max_size: live.max_size, members: live.members }
+          : t;
+        return deriveCrewProfile(merged, verifiedCrewMap, customCrewMap, eventId);
+      }),
+    [board, pinnedById, verifiedCrewMap, customCrewMap, eventId]
   );
 
-  const filteredCrews = useMemo(() => {
+  const matchesCrewFilters = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return enrichedCrews.filter(c => {
+    return c => {
       if (q) {
         const hay = `${c.teamId} ${c.leader} ${c.mission} ${c.skills.join(' ')} ${c.secondaryContext}`.toLowerCase();
         if (!hay.includes(q)) return false;
@@ -188,18 +214,43 @@ export default function DiscoverView({
       if (selectedSkill !== 'all' && !c.skills.includes(selectedSkill)) return false;
       if (openOnly && c.openSeats <= 0) return false;
       return true;
-    });
-  }, [enrichedCrews, searchQuery, selectedSkill, openOnly]);
+    };
+  }, [searchQuery, selectedSkill, openOnly]);
+
+  const filteredCrews = useMemo(
+    () => enrichedCrews.filter(matchesCrewFilters),
+    [enrichedCrews, matchesCrewFilters]
+  );
 
   const featuredCrews = useMemo(() => {
-    const sorted = [...filteredCrews].sort((a, b) => {
+    const byId = new Map();
+    for (const pt of pinnedById.values()) {
+      byId.set(pt.team_id, deriveCrewProfile(pt, verifiedCrewMap, customCrewMap, eventId));
+    }
+    for (const c of enrichedCrews) {
+      if (!byId.has(c.teamId)) byId.set(c.teamId, c);
+    }
+    const candidatesList = Array.from(byId.values()).filter(matchesCrewFilters);
+    candidatesList.sort((a, b) => {
+      const aActive = selectedTeam?.teamId === a.teamId ? 1 : 0;
+      const bActive = selectedTeam?.teamId === b.teamId ? 1 : 0;
+      if (aActive !== bActive) return bActive - aActive;
+
+      const aTouched = pinnedById.get(a.teamId)?.touchedAt || 0;
+      const bTouched = pinnedById.get(b.teamId)?.touchedAt || 0;
+      if (aTouched !== bTouched) return bTouched - aTouched;
+
+      const aOpenMulti = a.openSeats > 0 && a.members >= 2 ? 1 : 0;
+      const bOpenMulti = b.openSeats > 0 && b.members >= 2 ? 1 : 0;
+      if (aOpenMulti !== bOpenMulti) return bOpenMulti - aOpenMulti;
+
       const aOpen = a.openSeats > 0 ? 1 : 0;
       const bOpen = b.openSeats > 0 ? 1 : 0;
       if (aOpen !== bOpen) return bOpen - aOpen;
       return 0;
     });
-    return sorted.slice(0, 4);
-  }, [filteredCrews]);
+    return candidatesList.slice(0, 4);
+  }, [pinnedById, enrichedCrews, verifiedCrewMap, customCrewMap, eventId, matchesCrewFilters, selectedTeam]);
 
   const filteredBuilders = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -900,6 +951,9 @@ export default function DiscoverView({
                           </div>
                           {!legacyMode && (
                             <div className="pill-row">
+                              {selectedTeam?.teamId === crew.teamId && (
+                                <span className="status-chip chip-ok">Active team</span>
+                              )}
                               {crew.isCustomMission && (
                                 <span className="status-chip chip-ok">Custom</span>
                               )}

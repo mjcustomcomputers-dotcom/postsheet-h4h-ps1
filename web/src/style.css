@@ -3344,6 +3344,11 @@ input[type="range"] {
   border: 1px dashed var(--accent-primary);
 }
 
+.invite-ticket.is-claimed {
+  background: var(--tone-ok-bg);
+  border: 1px solid var(--tone-ok-border);
+}
+
 .invite-code-row {
   display: flex;
   gap: 6px;
@@ -3876,6 +3881,43 @@ input[type="range"] {
   padding: 10px;
 }
 
+.active-server-team-card {
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  border: 1px solid var(--accent-primary);
+  box-shadow: inset 0 1px 0 var(--optical-rim-top), var(--shadow-operable);
+}
+
+.active-team-members-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.active-member-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--well-bg);
+  border: 1px solid var(--border-inner-subtle);
+  color: var(--text-primary);
+  font-size: 0.72rem;
+  font-weight: 640;
+}
+
+.active-member-pill.is-lead {
+  border-color: var(--accent-primary);
+  background: var(--accent-soft);
+}
+
+.simulated-wan-banner {
+  border-color: var(--tone-warn-border);
+  background: var(--tone-warn-bg);
+}
+
 .mini-board-list {
   display: flex;
   flex-direction: column;
@@ -3894,6 +3936,12 @@ input[type="range"] {
   cursor: pointer;
   font-size: 0.80rem;
   box-shadow: var(--shadow-operable);
+}
+
+.mini-board-row.is-active-team {
+  border-color: var(--accent-primary);
+  background: var(--accent-soft);
+  font-weight: 680;
 }
 
 .mini-board-row:hover {

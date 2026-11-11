@@ -64,6 +64,55 @@ import {
 const DEMO_PERSONA_CLIENT_RE =
   /^(leader-aurora|builder-kai|builder-priya|relay-mateo|race-leader|(aurora|priya|kai|mateo|lead|mem|claimant)-[A-Za-z0-9_-]{1,28})$/;
 
+function extractMemberBaseName(userId) {
+  const raw = String(userId || '').trim().toLowerCase();
+  if (!raw) return '';
+  if (raw === 'leader-aurora' || raw.startsWith('aurora-')) return 'aurora';
+  if (raw === 'builder-kai' || raw.startsWith('kai-')) return 'kai';
+  if (raw === 'builder-priya' || raw.startsWith('priya-')) return 'priya';
+  if (raw === 'relay-mateo' || raw.startsWith('mateo-')) return 'mateo';
+  const memMatch = /^mem-([a-z]{2,14})-/.exec(raw);
+  if (memMatch && !/^\d+$/.test(memMatch[1])) return memMatch[1];
+  return normalizeBuilderId(raw);
+}
+
+function buildValidDemoActorId(personHint, roleTag, uniqueSuffix) {
+  const cleanRole = String(roleTag || 'claim').replace(/[^a-z0-9]/gi, '').toLowerCase().slice(0, 6) || 'claim';
+  const cleanTag = String(uniqueSuffix || Date.now().toString(36).slice(-5))
+    .replace(/[^A-Za-z0-9]/g, '')
+    .slice(0, 10) || '1';
+  const base = normalizeBuilderId(personHint).replace(/[^a-z0-9]/g, '');
+  if (base === 'aurora' || base === 'priya' || base === 'kai' || base === 'mateo') {
+    return `${base}-${cleanRole}-${cleanTag}`;
+  }
+  const slug = (base || 'ally').slice(0, 10);
+  return `mem-${slug}-${cleanTag}`;
+}
+
+function pickNextUnseatedTeammateHint(teamDetail, planPeople, issuedInv) {
+  const seated = new Set(
+    (teamDetail?.members || []).map(m => extractMemberBaseName(m.userId)).filter(Boolean)
+  );
+  if (teamDetail?.leader) seated.add(extractMemberBaseName(teamDetail.leader));
+
+  const candidatesOrder = [
+    issuedInv?.suggestedInvitee,
+    ...(planPeople || []).map(p => p?.id),
+    'priya',
+    'kai',
+    'mateo',
+    'sana',
+    'devon',
+    'elena',
+    'tariq'
+  ];
+  for (const cand of candidatesOrder) {
+    const norm = normalizeBuilderId(cand).replace(/[^a-z0-9]/g, '');
+    if (norm && !seated.has(norm)) return norm;
+  }
+  return 'priya';
+}
+
 const PRIMARY_TABS = [
   { id: 'discover', num: '1', label: 'Find teammates', short: 'Find teammates', hotkey: 'Alt+1', Icon: CompassIcon },
   { id: 'architect', num: '2', label: 'Plan the work', short: 'Plan the work', hotkey: 'Alt+2', Icon: GitBranchIcon },
@@ -217,6 +266,8 @@ export default function App() {
   const [pageIndex, setPageIndex] = useState(0);
   const [pageSize, setPageSize] = useState(24);
   const [selectedTeam, setSelectedTeam] = useState(null);
+  const [pinnedTeamsMap, setPinnedTeamsMap] = useState({});
+  const autoInspectedEventRef = useRef('');
   const [spawningDemo, setSpawningDemo] = useState(false);
   const [verifiedCrewMap, setVerifiedCrewMap] = useState({});
   const [customCrewMap, setCustomCrewMap] = useState(() => loadCustomCrewOverlay());
@@ -253,6 +304,7 @@ export default function App() {
   const lastClaimRef = useRef(null);
   const claimantDirectTokenRef = useRef('');
   const [hasLastClaim, setHasLastClaim] = useState(false);
+  const [lastClaimCode, setLastClaimCode] = useState('');
   const [highlightRelayWalkthrough, setHighlightRelayWalkthrough] = useState(false);
   const [wanOffline, setWanOffline] = useState(false);
   const [queuedClaim, setQueuedClaim] = useState(null);
@@ -488,10 +540,83 @@ export default function App() {
     }
   }, []);
 
+  const recordConfirmedTeamDetail = useCallback(
+    (detail, targetEv = eventId) => {
+      if (!detail || !detail.teamId) return;
+      const memberCount = Array.isArray(detail.members) ? detail.members.length : 1;
+      const maxSz = Number(detail.maxSize || eventMaxSize || 5);
+      setSelectedTeam(detail);
+      setPinnedTeamsMap(prev => ({
+        ...prev,
+        [`${targetEv}::${detail.teamId}`]: {
+          eventId: targetEv,
+          team_id: detail.teamId,
+          leader: detail.leader,
+          max_size: maxSz,
+          members: memberCount,
+          touchedAt: Date.now()
+        }
+      }));
+      setBoard(prev =>
+        prev.some(t => t.team_id === detail.teamId)
+          ? prev.map(t =>
+              t.team_id === detail.teamId
+                ? { ...t, leader: detail.leader, max_size: maxSz, members: memberCount }
+                : t
+            )
+          : prev
+      );
+    },
+    [eventId, eventMaxSize]
+  );
+
+  const removeDeletedTeamRecord = useCallback(
+    (deletedTid, targetEv = eventId) => {
+      setSelectedTeam(prev => (prev?.teamId === deletedTid ? null : prev));
+      setPinnedTeamsMap(prev => {
+        const next = { ...prev };
+        delete next[`${targetEv}::${deletedTid}`];
+        return next;
+      });
+      setBoard(prev => prev.filter(t => t.team_id !== deletedTid));
+    },
+    [eventId]
+  );
+
+  const markInviteAccepted = useCallback((usedCode, joinedActor, clearInput = true) => {
+    if (!usedCode) return;
+    setIssuedInvite(prev =>
+      prev && prev.code === usedCode
+        ? { ...prev, claimedBy: joinedActor || 'teammate', claimedAt: Date.now() }
+        : prev
+    );
+    if (clearInput) {
+      setInviteCode(prev => (prev === usedCode ? '' : prev));
+    }
+  }, []);
+
+  const handleChangeActiveTeamId = useCallback(
+    nextTid => {
+      setTeamId(nextTid);
+      setInviteCode(prev => {
+        if (issuedInvite?.code) {
+          if (issuedInvite.teamId && issuedInvite.teamId !== nextTid && prev === issuedInvite.code) {
+            return '';
+          }
+          if (issuedInvite.teamId === nextTid && !issuedInvite.claimedBy && !prev) {
+            return issuedInvite.code;
+          }
+        }
+        return prev;
+      });
+    },
+    [issuedInvite]
+  );
+
   // Board refresh with live latency measurement
   const refreshBoard = useCallback(
-    async (manual = false) => {
-      if (wanOffline) {
+    async (manual = false, forceOnline = false) => {
+      if (wanOffline && !forceOnline) {
         setAuthorityHealth('wan-dropped');
         if (manual === true) {
           notifyToast('Direct connection is currently turned off in Step 3.', 'warn');
@@ -511,12 +636,49 @@ export default function App() {
         );
         const data = await readApiJson(res);
         const dt = performance.now() - t0;
-        setBoard(data.teams || []);
+        const rows = data.teams || [];
+        setBoard(rows);
         if (typeof data.totalTeams === 'number') setTotalTeams(data.totalTeams);
         if (typeof data.totalMembers === 'number') setTotalMembers(data.totalMembers);
         if (typeof data.maxSize === 'number') setEventMaxSize(data.maxSize);
         setBoardLatencyMs(dt);
         setAuthorityHealth('online');
+
+        // On first load of an event, inspect a real open multi-member team so active team spots match server truth
+        if (autoInspectedEventRef.current !== eventId && rows.length > 0) {
+          autoInspectedEventRef.current = eventId;
+          const pickInitial =
+            rows.find(t => t.members >= 2 && t.members < t.max_size) ||
+            rows.find(t => t.members < t.max_size) ||
+            rows[0];
+          if (pickInitial?.team_id) {
+            fetch(
+              `/api/events/${encodeURIComponent(eventId)}/teams/${encodeURIComponent(pickInitial.team_id)}`,
+              { cache: 'no-store' }
+            )
+              .then(readApiJson)
+              .then(detail => {
+                setSelectedTeam(prev => {
+                  if (prev) return prev;
+                  setTeamId(detail.teamId);
+                  setPinnedTeamsMap(pm => ({
+                    ...pm,
+                    [`${eventId}::${detail.teamId}`]: {
+                      eventId,
+                      team_id: detail.teamId,
+                      leader: detail.leader,
+                      max_size: detail.maxSize || 5,
+                      members: Array.isArray(detail.members) ? detail.members.length : 1,
+                      touchedAt: Date.now()
+                    }
+                  }));
+                  return detail;
+                });
+              })
+              .catch(() => {});
+          }
+        }
+
         if (manual === true) {
           notifyToast(`Refreshed server team list (${dt.toFixed(1)} ms).`, 'ok');
         }
@@ -1278,51 +1440,65 @@ export default function App() {
   }
 
   // Cross-View Actions
-  async function inspectTeam(tid, silent = false) {
+  async function inspectTeam(tid, silent = false, targetEv = eventId) {
+    if (!tid) return null;
     try {
       const detail = await readApiJson(
-        await fetch(`/api/events/${encodeURIComponent(eventId)}/teams/${encodeURIComponent(tid)}`, {
+        await fetch(`/api/events/${encodeURIComponent(targetEv)}/teams/${encodeURIComponent(tid)}`, {
           cache: 'no-store'
         })
       );
-      setSelectedTeam(detail);
-      setTeamId(tid);
-      setStatusMessage(`Confirmed by server: ${detail.members.length}/${detail.maxSize} spots filled on '${tid}'.`);
+      recordConfirmedTeamDetail(detail, targetEv);
+      handleChangeActiveTeamId(detail.teamId || tid);
+      setStatusMessage(`Confirmed by server: ${detail.members.length}/${detail.maxSize} spots filled on '${detail.teamId || tid}'.`);
       if (!silent) {
         notifyToast(
-          `Loaded '${tid}': ${detail.members.length}/${detail.maxSize} spots confirmed by server.`,
+          `Loaded '${detail.teamId || tid}': ${detail.members.length}/${detail.maxSize} spots confirmed by server.`,
           'info'
         );
       }
+      return detail;
     } catch (e) {
       setSelectedTeam(null);
       setStatusMessage(`Team lookup: ${e.message}`);
       if (!silent) {
         notifyToast(`Could not load '${tid}': ${e.message}`, 'err');
       }
+      return null;
     }
   }
 
-  // Step 2 -> Step 3: Create Team & Single-Use Invite on Server
+  // Step 2 -> Step 3: Create Team, Seat Planned Teammates & Generate Single-Use Invite on Server
   async function handleLockPlanAndMintInvite() {
     await runProtectedAction('Create Team & Single-Use Invite', async freshTok => {
       setLockingPlan(true);
       try {
-        await sendPost('/api/events', { eventId, maxSize: 5 }, freshTok);
-        const tag = String(Date.now()).slice(-4);
+        if (wanOffline && !queuedClaim) {
+          setWanOffline(false);
+          setAuthorityHealth('online');
+        }
+        const maxSpots = Math.max(2, Number(eventMaxSize || 5));
+        await sendPost('/api/events', { eventId, maxSize: maxSpots }, freshTok);
+        const tag = Date.now().toString(36).slice(-6);
         const targetTid = `00-feasible-${tag}`;
+        const leadPersonHint = teamPeople[0]?.id || 'aurora';
         let activeTok = freshTok;
         let activeLead = actorRef.current || 'leader-aurora';
 
         try {
           await sendPost('/api/teams', { eventId, teamId: targetTid }, activeTok);
         } catch (teamErr) {
-          if (teamErr.code === 'ONE_TEAM_PER_EVENT' || String(teamErr.message).includes('ONE_TEAM_PER_EVENT')) {
+          if (
+            teamErr.code === 'ONE_TEAM_PER_EVENT' ||
+            String(teamErr.message).includes('ONE_TEAM_PER_EVENT') ||
+            teamErr.code === 'TEAM_EXISTS'
+          ) {
+            const leadPersonaId = buildValidDemoActorId(leadPersonHint, 'plan', tag);
             const freshPersona = await readApiJson(
               await fetch('/api/auth/demo', {
                 method: 'POST',
                 headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({ actorId: `aurora-plan-${tag}`, eventId, maxSize: 5 })
+                body: JSON.stringify({ actorId: leadPersonaId, eventId, maxSize: maxSpots })
               })
             );
             activeTok = freshPersona.token;
@@ -1334,6 +1510,48 @@ export default function App() {
             await sendPost('/api/teams', { eventId, teamId: targetTid }, activeTok);
           } else {
             throw teamErr;
+          }
+        }
+
+        // Seat planned teammates via genuine server invites & claims while keeping >=1 spot open for an active invite
+        let seatedCount = 1;
+        const maxAutoSeatExtras = Math.max(0, Math.min(teamPeople.length - 1, maxSpots - 2));
+        const plannedExtras = teamPeople.slice(1, 1 + maxAutoSeatExtras);
+        const unseatedNextPerson =
+          teamPeople.length > 1 + maxAutoSeatExtras ? teamPeople[1 + maxAutoSeatExtras]?.id : null;
+
+        if (!signedOutManuallyRef.current && plannedExtras.length > 0) {
+          for (let idx = 0; idx < plannedExtras.length; idx++) {
+            const extraPerson = plannedExtras[idx];
+            try {
+              const memberInv = await sendPost(
+                '/api/invitations',
+                { eventId, teamId: targetTid, expiresAt: Date.now() + 600000 },
+                activeTok
+              );
+              const memberActorId = buildValidDemoActorId(extraPerson?.id || `ally${idx + 1}`, 'plan', `${tag}${idx}`);
+              const memberSess = await readApiJson(
+                await fetch('/api/auth/demo', {
+                  method: 'POST',
+                  headers: { 'content-type': 'application/json' },
+                  body: JSON.stringify({ actorId: memberActorId, eventId, maxSize: maxSpots })
+                })
+              );
+              await sendPost(
+                '/api/invitations/claim',
+                {
+                  eventId,
+                  teamId: targetTid,
+                  code: memberInv.code,
+                  opId: `plan-seat-${tag}-${idx}`
+                },
+                memberSess.token
+              );
+              seatedCount += 1;
+            } catch {
+              // Stop auto-seating extras if demo personas are disabled (PS1_DEMO_AUTH=0)
+              break;
+            }
           }
         }
 
@@ -1358,18 +1576,30 @@ export default function App() {
           activeTok
         );
         setTeamId(targetTid);
-        setIssuedInvite({ ...inv, teamId: targetTid, eventId, issuedBy: activeLead });
+        setIssuedInvite({
+          ...inv,
+          teamId: targetTid,
+          eventId,
+          issuedBy: activeLead,
+          suggestedInvitee: unseatedNextPerson || null,
+          claimedBy: null,
+          claimedAt: null
+        });
         setInviteCode(inv.code);
         setPageIndex(0);
-        await refreshBoard();
-        await inspectTeam(targetTid, true);
+        await refreshBoard(false, true);
+        const confirmedDetail = await inspectTeam(targetTid, true);
+        const finalSeated = confirmedDetail?.members?.length || seatedCount;
         const aud = await sendGetAuth(`/api/events/${encodeURIComponent(eventId)}/audit`, activeTok);
         setAuditRows(aud.audit || []);
         setActiveView('authority');
         setStatusMessage(
-          `Confirmed by server: created team '${targetTid}' and generated a single-use invite in Step 3.`
+          `Confirmed by server: '${targetTid}' has ${finalSeated}/${maxSpots} spots confirmed plus 1 open single-use invite ready in Step 3.`
         );
-        notifyToast(`Created team '${targetTid}' & single-use invite on server!`, 'ok');
+        notifyToast(
+          `Created '${targetTid}' (${finalSeated}/${maxSpots} spots confirmed) & single-use invite!`,
+          'ok'
+        );
       } catch (e) {
         if (e?.status === 401 || e?.message === 'UNAUTHORIZED') throw e;
         setStatusMessage(`Create team failed: ${e.message}`);
@@ -1406,7 +1636,7 @@ export default function App() {
   }
 
   function handleRequestSeatForTeam(tid) {
-    setTeamId(tid);
+    handleChangeActiveTeamId(tid);
     inspectTeam(tid, true);
     setActiveView('authority');
     notifyToast(`Opened '${tid}' in Step 3: Manage your team.`, 'info');
@@ -1637,11 +1867,17 @@ export default function App() {
   async function handleCreateTeam(customMeta = {}) {
     try {
       await runProtectedAction(`Create Team (${teamId})`, async (freshTok, freshActor) => {
+        if (wanOffline && !queuedClaim) {
+          setWanOffline(false);
+          setAuthorityHealth('online');
+        }
         const { createdTeamId, activeTok, activeLead } = await createCleanTeamWithLead(
           teamId,
           freshTok,
           freshActor
         );
+        setIssuedInvite(null);
+        setInviteCode('');
         if (customMeta && (customMeta.mission || customMeta.skills)) {
           const nextCustom = saveCustomCrewOverlayEntry(eventId, createdTeamId, {
             mission: customMeta.mission,
@@ -1653,7 +1889,7 @@ export default function App() {
           `Confirmed by server: created team '${createdTeamId}' led by '${activeLead}'.`
         );
         notifyToast(`Confirmed by server: created team '${createdTeamId}'`, 'ok');
-        await refreshBoard();
+        await refreshBoard(false, true);
         await inspectTeam(createdTeamId, true);
         await loadAudit(activeTok);
       });
@@ -1666,6 +1902,10 @@ export default function App() {
   async function handleCreateInvite() {
     try {
       await runProtectedAction(`Create Invite (${teamId})`, async (freshTok, freshActor) => {
+        if (wanOffline && !queuedClaim) {
+          setWanOffline(false);
+          setAuthorityHealth('online');
+        }
         const expiresAt = Date.now() + 600000;
         let targetTid =
           String(teamId || 'crew-alpha')
@@ -1728,13 +1968,26 @@ export default function App() {
           }
         }
 
+        const latestDetail = await inspectTeam(targetTid, true);
+        const suggestedInvitee = pickNextUnseatedTeammateHint(
+          latestDetail || (selectedTeam?.teamId === targetTid ? selectedTeam : null),
+          teamPeople,
+          null
+        );
         setTeamId(targetTid);
-        setIssuedInvite({ ...res, teamId: targetTid, eventId, issuedBy: activeLead });
+        setIssuedInvite({
+          ...res,
+          teamId: targetTid,
+          eventId,
+          issuedBy: activeLead,
+          suggestedInvitee,
+          claimedBy: null,
+          claimedAt: null
+        });
         setInviteCode(res.code);
         setStatusMessage(`Confirmed by server: created single-use invite for '${targetTid}' (expires in 10m).`);
         notifyToast(`Created single-use invite for '${targetTid}'.`, 'ok');
-        await refreshBoard();
-        await inspectTeam(targetTid, true);
+        await refreshBoard(false, true);
         await loadAudit(activeTok);
       });
     } catch (e) {
@@ -1761,6 +2014,8 @@ export default function App() {
         }
 
         const tag = makeUniqueTag();
+        const nextHint = pickNextUnseatedTeammateHint(detail, teamPeople, null);
+        const nextPersonaId = buildValidDemoActorId(nextHint, 'open', tag);
         let leadTok = await ensureToken(freshTok);
         if (
           detail.leader &&
@@ -1780,7 +2035,15 @@ export default function App() {
           { eventId, teamId: targetTid, expiresAt: Date.now() + 600000 },
           leadTok
         );
-        setIssuedInvite({ ...inv, teamId: targetTid, eventId, issuedBy: detail.leader });
+        setIssuedInvite({
+          ...inv,
+          teamId: targetTid,
+          eventId,
+          issuedBy: detail.leader,
+          suggestedInvitee: nextHint,
+          claimedBy: null,
+          claimedAt: null
+        });
         setInviteCode(inv.code);
 
         let claimantTok = await ensureToken(freshTok);
@@ -1791,7 +2054,7 @@ export default function App() {
           (detail.members || []).some(m => m.userId === claimantActor);
 
         if (alreadyInSelected) {
-          const candSession = await mintDemoSession(`priya-open-${tag}`, eventId, detail.maxSize || 5);
+          const candSession = await mintDemoSession(nextPersonaId, eventId, detail.maxSize || 5);
           signedOutManuallyRef.current = false;
           claimantTok = candSession.token;
           claimantActor = candSession.actorId;
@@ -1811,7 +2074,7 @@ export default function App() {
         if (wanOffline) {
           if (claimantActor === 'relay-mateo') {
             try {
-              const candSession = await mintDemoSession(`priya-open-${tag}`, eventId, detail.maxSize || 5);
+              const candSession = await mintDemoSession(nextPersonaId, eventId, detail.maxSize || 5);
               signedOutManuallyRef.current = false;
               claimantTok = candSession.token;
               claimantActor = candSession.actorId;
@@ -1856,7 +2119,8 @@ export default function App() {
           );
         } catch (claimErr) {
           if (String(claimErr?.code || claimErr?.message || '').includes('ONE_TEAM_PER_EVENT')) {
-            const candSession = await mintDemoSession(`priya-open-${tag}`, eventId, detail.maxSize || 5);
+            const retryPersonaId = buildValidDemoActorId(nextHint, 'join', `${tag}r`);
+            const candSession = await mintDemoSession(retryPersonaId, eventId, detail.maxSize || 5);
             signedOutManuallyRef.current = false;
             claimantTok = candSession.token;
             claimantActor = candSession.actorId;
@@ -1874,8 +2138,11 @@ export default function App() {
           }
         }
 
+        const joinedActor = result.actorId || claimantActor;
         if (result.status === 'COMMITTED') {
           finishClaimOperation(sessionStorage, operation.key);
+          setLastClaimCode(inv.code);
+          markInviteAccepted(inv.code, joinedActor, true);
         }
         const savedClaim = {
           eventId,
@@ -1883,16 +2150,19 @@ export default function App() {
           code: inv.code,
           opId: operation.opId,
           key: operation.key,
-          actorId: result.actorId || claimantActor,
+          actorId: joinedActor,
           claimantToken: claimantTok
         };
         lastClaimRef.current = savedClaim;
         setHasLastClaim(true);
         setQueuedClaim(null);
-        setStatusMessage(`Confirmed by server: '${result.actorId || claimantActor}' joined '${targetTid}'.`);
-        notifyToast(`Confirmed by server: '${result.actorId || claimantActor}' joined '${targetTid}'!`, 'ok');
-        await refreshBoard();
-        await inspectTeam(targetTid, true);
+        const updatedDetail = await inspectTeam(targetTid, true);
+        const countLabel = updatedDetail
+          ? ` (${updatedDetail.members.length}/${updatedDetail.maxSize} spots)`
+          : '';
+        setStatusMessage(`Confirmed by server: '${joinedActor}' joined '${targetTid}'${countLabel}.`);
+        notifyToast(`Confirmed by server: '${formatHumanActorName(joinedActor, true)}' joined '${targetTid}'${countLabel}!`, 'ok');
+        await refreshBoard(false, true);
         await loadAudit(claimantTok);
       });
     } catch (e) {
@@ -1905,17 +2175,44 @@ export default function App() {
   }
 
   async function handleClaimAsFreshCandidate() {
-    if (joiningLock.current || !inviteCode) return;
+    const activeCode = String(
+      inviteCode || (issuedInvite && !issuedInvite.claimedBy ? issuedInvite.code : '') || ''
+    ).trim();
+    if (joiningLock.current || !activeCode) return;
     joiningLock.current = true;
     setJoining(true);
     try {
+      const effectiveTid =
+        issuedInvite && issuedInvite.code === activeCode && issuedInvite.teamId
+          ? issuedInvite.teamId
+          : teamId;
+      if (effectiveTid !== teamId) {
+        setTeamId(effectiveTid);
+      }
+
+      let teamDetail = selectedTeam?.teamId === effectiveTid ? selectedTeam : null;
+      if (!teamDetail) {
+        try {
+          teamDetail = await readApiJson(
+            await fetch(
+              `/api/events/${encodeURIComponent(eventId)}/teams/${encodeURIComponent(effectiveTid)}`,
+              { cache: 'no-store' }
+            )
+          );
+        } catch {
+          teamDetail = null;
+        }
+      }
+
       const suffix = makeUniqueTag();
-      const freshCandidateId = `priya-claim-${suffix}`;
+      const nextHint = pickNextUnseatedTeammateHint(teamDetail, teamPeople, issuedInvite);
+      const freshCandidateId = buildValidDemoActorId(nextHint, 'claim', suffix);
+      const maxSpots = teamDetail?.maxSize || eventMaxSize || 5;
       let claimantTok = '';
       let claimantActor = freshCandidateId;
 
       try {
-        const candSession = await mintDemoSession(freshCandidateId, eventId, 5);
+        const candSession = await mintDemoSession(freshCandidateId, eventId, maxSpots);
         claimantTok = candSession.token;
         claimantActor = candSession.actorId;
         signedOutManuallyRef.current = false;
@@ -1924,23 +2221,29 @@ export default function App() {
         setToken(claimantTok);
         setActorId(claimantActor);
       } catch {
-        await runProtectedAction(`Join ${teamId} as Invited Teammate`, async (replayedTok, replayedActor) => {
+        await runProtectedAction(`Join ${effectiveTid} as Invited Teammate`, async (replayedTok, replayedActor) => {
           const op = await getOrCreateClaimOperation({
             eventId,
-            teamId,
-            code: inviteCode,
+            teamId: effectiveTid,
+            code: activeCode,
             store: sessionStorage
           });
           const res = await sendPost(
             '/api/invitations/claim',
-            { eventId, teamId, code: inviteCode, opId: op.opId },
+            { eventId, teamId: effectiveTid, code: activeCode, opId: op.opId },
             replayedTok
           );
-          if (res.status === 'COMMITTED') finishClaimOperation(sessionStorage, op.key);
-          setStatusMessage(`Confirmed by server: '${replayedActor || res.actorId}' joined '${res.teamId}'.`);
-          notifyToast(`Confirmed by server: joined '${res.teamId}'!`, 'ok');
-          await refreshBoard();
-          await inspectTeam(teamId, true);
+          const joinedWho = res.actorId || replayedActor;
+          if (res.status === 'COMMITTED') {
+            finishClaimOperation(sessionStorage, op.key);
+            setLastClaimCode(activeCode);
+            markInviteAccepted(activeCode, joinedWho, true);
+          }
+          const updated = await inspectTeam(effectiveTid, true);
+          const spotsInfo = updated ? ` (${updated.members.length}/${updated.maxSize} spots)` : '';
+          setStatusMessage(`Confirmed by server: '${joinedWho}' joined '${res.teamId}'${spotsInfo}.`);
+          notifyToast(`Confirmed by server: joined '${res.teamId}'${spotsInfo}!`, 'ok');
+          await refreshBoard(false, true);
           await loadAudit(replayedTok);
         });
         return;
@@ -1948,55 +2251,69 @@ export default function App() {
 
       const operation = await getOrCreateClaimOperation({
         eventId,
-        teamId,
-        code: inviteCode,
+        teamId: effectiveTid,
+        code: activeCode,
         store: sessionStorage
       });
 
       if (wanOffline) {
+        claimantDirectTokenRef.current = claimantTok;
+        const warrant = await mintClaimantWarrant(
+          { targetEventId: eventId, targetTeamId: effectiveTid, opId: operation.opId, code: activeCode },
+          claimantTok
+        );
         const armed = {
           eventId,
-          teamId,
-          code: inviteCode,
+          teamId: effectiveTid,
+          code: activeCode,
           opId: operation.opId,
           key: operation.key,
           actorId: claimantActor,
-          claimantToken: claimantTok
+          ...(warrant ? { claimantWarrant: warrant } : { claimantToken: claimantTok })
         };
         setQueuedClaim(armed);
         lastClaimRef.current = armed;
         setHasLastClaim(true);
         setRelayedReceipt(null);
         setReplayReceipt(null);
-        setStatusMessage(`Saved on this device. Waiting to send (${claimantActor} -> ${teamId}).`);
+        setStatusMessage(`Saved on this device. Waiting to send (${claimantActor} -> ${effectiveTid}).`);
         notifyToast('Saved on this device. Waiting to send.', 'warn');
         return;
       }
 
       const result = await sendPost(
         '/api/invitations/claim',
-        { eventId, teamId, code: inviteCode, opId: operation.opId },
+        { eventId, teamId: effectiveTid, code: activeCode, opId: operation.opId },
         claimantTok
       );
+      const joinedActor = result.actorId || claimantActor;
       if (result.status === 'COMMITTED') {
         finishClaimOperation(sessionStorage, operation.key);
+        setLastClaimCode(activeCode);
+        markInviteAccepted(activeCode, joinedActor, true);
       }
       const savedClaim = {
         eventId,
-        teamId,
-        code: inviteCode,
+        teamId: effectiveTid,
+        code: activeCode,
         opId: operation.opId,
         key: operation.key,
-        actorId: claimantActor,
+        actorId: joinedActor,
         claimantToken: claimantTok
       };
       lastClaimRef.current = savedClaim;
       setHasLastClaim(true);
       setQueuedClaim(null);
-      setStatusMessage(`Confirmed by server: '${claimantActor}' joined '${result.teamId}'.`);
-      notifyToast(`Confirmed by server: '${claimantActor}' joined '${result.teamId}'!`, 'ok');
-      await refreshBoard();
-      await inspectTeam(teamId, true);
+      const updatedDetail = await inspectTeam(effectiveTid, true);
+      const countLabel = updatedDetail
+        ? ` (${updatedDetail.members.length}/${updatedDetail.maxSize} spots)`
+        : '';
+      setStatusMessage(`Confirmed by server: '${joinedActor}' joined '${result.teamId}'${countLabel}.`);
+      notifyToast(
+        `Confirmed by server: '${formatHumanActorName(joinedActor, true)}' joined '${result.teamId}'${countLabel}!`,
+        'ok'
+      );
+      await refreshBoard(false, true);
       await loadAudit(claimantTok);
     } catch (e) {
       setStatusMessage(`Join request: ${e.message}`);
@@ -2016,6 +2333,7 @@ export default function App() {
     if (
       allowExistingInvite &&
       issuedInvite &&
+      !issuedInvite.claimedBy &&
       issuedInvite.eventId === eventId &&
       issuedInvite.teamId === teamId &&
       issuedInvite.code &&
@@ -2054,8 +2372,16 @@ export default function App() {
       );
       prepCode = inv.code;
       setTeamId(prepTeam);
-      setIssuedInvite({ ...inv, teamId: prepTeam, eventId, issuedBy: leadSession.actorId });
+      setIssuedInvite({
+        ...inv,
+        teamId: prepTeam,
+        eventId,
+        issuedBy: leadSession.actorId,
+        claimedBy: null,
+        claimedAt: null
+      });
       setInviteCode(inv.code);
+      await inspectTeam(prepTeam, true);
     }
 
     const priyaSession = await mintDemoSession(`priya-wan-${tag}`, eventId, 5);
@@ -2109,9 +2435,14 @@ export default function App() {
       await runProtectedAction(`Join ${teamId}`, async (freshTok, freshActor) => {
         let useTok = await ensureToken(freshTok);
         let useActor = freshActor || actorRef.current || 'builder-priya';
-        let targetTid = teamId;
         let activeCode = String(inviteCode || '').trim();
-        const hadInviteInitially = Boolean(activeCode);
+        let targetTid =
+          issuedInvite && activeCode && issuedInvite.code === activeCode && issuedInvite.teamId
+            ? issuedInvite.teamId
+            : teamId;
+        if (targetTid !== teamId) {
+          setTeamId(targetTid);
+        }
 
         // Self-arm if inviteCode is empty when clicking Step 1B
         if (!activeCode) {
@@ -2131,7 +2462,14 @@ export default function App() {
                 leadSession.token
               );
               activeCode = inv.code;
-              setIssuedInvite({ ...inv, teamId: targetTid, eventId, issuedBy: selectedTeam.leader });
+              setIssuedInvite({
+                ...inv,
+                teamId: targetTid,
+                eventId,
+                issuedBy: selectedTeam.leader,
+                claimedBy: null,
+                claimedAt: null
+              });
               setInviteCode(inv.code);
               minted = true;
             } catch {
@@ -2154,10 +2492,25 @@ export default function App() {
             );
             activeCode = inv.code;
             setTeamId(targetTid);
-            setIssuedInvite({ ...inv, teamId: targetTid, eventId, issuedBy: leadSession.actorId });
+            setIssuedInvite({
+              ...inv,
+              teamId: targetTid,
+              eventId,
+              issuedBy: leadSession.actorId,
+              claimedBy: null,
+              claimedAt: null
+            });
             setInviteCode(inv.code);
+            await inspectTeam(targetTid, true);
           }
         }
+
+        const isIdempotentReplayBySameClaimant = Boolean(
+          lastClaimRef.current &&
+            lastClaimRef.current.code === activeCode &&
+            lastClaimRef.current.teamId === targetTid &&
+            lastClaimRef.current.actorId === useActor
+        );
 
         const actorAlreadyInTargetTeam = Boolean(
           useActor &&
@@ -2172,15 +2525,22 @@ export default function App() {
         );
 
         if (
-          (wanOffline && (actorAlreadyInTargetTeam || useActor === 'relay-mateo')) ||
-          (!hadInviteInitially && (wanOffline || actorAlreadyInTargetTeam))
+          !isIdempotentReplayBySameClaimant &&
+          !signedOutManuallyRef.current &&
+          (actorAlreadyInTargetTeam || (wanOffline && useActor === 'relay-mateo'))
         ) {
           try {
             const tag = makeUniqueTag();
-            const priyaSession = await mintDemoSession(`priya-wan-${tag}`, eventId, 5);
+            const nextHint = pickNextUnseatedTeammateHint(
+              selectedTeam?.teamId === targetTid ? selectedTeam : null,
+              teamPeople,
+              issuedInvite
+            );
+            const candPersonaId = buildValidDemoActorId(nextHint, wanOffline ? 'wan' : 'claim', tag);
+            const candSession = await mintDemoSession(candPersonaId, eventId, eventMaxSize || 5);
             signedOutManuallyRef.current = false;
-            useTok = priyaSession.token;
-            useActor = priyaSession.actorId;
+            useTok = candSession.token;
+            useActor = candSession.actorId;
             tokenRef.current = useTok;
             actorRef.current = useActor;
             setToken(useTok);
@@ -2241,11 +2601,18 @@ export default function App() {
           );
         } catch (claimErr) {
           if (
-            (fromStep1 || !hadInviteInitially) &&
+            !signedOutManuallyRef.current &&
+            (fromStep1 || String(claimErr?.code || claimErr?.message || '').includes('ONE_TEAM_PER_EVENT')) &&
             String(claimErr?.code || claimErr?.message || '').includes('ONE_TEAM_PER_EVENT')
           ) {
             const tag = makeUniqueTag();
-            const candSession = await mintDemoSession(`priya-claim-${tag}`, eventId, 5);
+            const nextHint = pickNextUnseatedTeammateHint(
+              selectedTeam?.teamId === targetTid ? selectedTeam : null,
+              teamPeople,
+              issuedInvite
+            );
+            const candPersonaId = buildValidDemoActorId(nextHint, 'claim', tag);
+            const candSession = await mintDemoSession(candPersonaId, eventId, eventMaxSize || 5);
             signedOutManuallyRef.current = false;
             useTok = candSession.token;
             useActor = candSession.actorId;
@@ -2268,8 +2635,11 @@ export default function App() {
           }
         }
 
+        const joinedActor = result.actorId || useActor;
         if (result.status === 'COMMITTED') {
           finishClaimOperation(sessionStorage, operation.key);
+          setLastClaimCode(activeCode);
+          markInviteAccepted(activeCode, joinedActor, true);
         }
         if (result.replayed) {
           setReplayReceipt(result);
@@ -2280,25 +2650,28 @@ export default function App() {
           code: activeCode,
           opId: operation.opId,
           key: operation.key,
-          actorId: result.actorId || useActor,
+          actorId: joinedActor,
           claimantToken: useTok
         };
         lastClaimRef.current = savedClaim;
         setHasLastClaim(true);
         setQueuedClaim(null);
+        const updatedDetail = await inspectTeam(targetTid, true);
+        const countLabel = updatedDetail
+          ? ` (${updatedDetail.members.length}/${updatedDetail.maxSize} spots)`
+          : '';
         setStatusMessage(
           result.replayed
-            ? `The server returned the original result for '${result.actorId}' on '${result.teamId}' (0 duplicates).`
-            : `Confirmed by server: '${result.actorId}' joined '${result.teamId}'.`
+            ? `The server returned the original result for '${joinedActor}' on '${result.teamId}' (0 duplicates).`
+            : `Confirmed by server: '${joinedActor}' joined '${result.teamId}'${countLabel}.`
         );
         notifyToast(
           result.replayed
             ? 'The server returned the original result for this request.'
-            : `Confirmed by server: '${result.actorId}' joined '${result.teamId}'!`,
+            : `Confirmed by server: '${formatHumanActorName(joinedActor, true)}' joined '${result.teamId}'${countLabel}!`,
           'ok'
         );
-        await refreshBoard();
-        await inspectTeam(targetTid, true);
+        await refreshBoard(false, true);
         await loadAudit(useTok);
       });
     } catch (e) {
@@ -2417,12 +2790,19 @@ export default function App() {
         setHasLastClaim(true);
         setRelayedReceipt(res);
         setForwardingPeer(false);
+        if (res?.status === 'COMMITTED') {
+          setLastClaimCode(activeClaim.code);
+          markInviteAccepted(activeClaim.code, res.actorId || activeClaim.actorId, true);
+        }
+        const updatedDetail = await inspectTeam(activeClaim.teamId, true);
+        const countLabel = updatedDetail
+          ? ` (${updatedDetail.members.length}/${updatedDetail.maxSize} spots)`
+          : '';
         setStatusMessage(
-          `Sent through Mateo. Confirmed by server for '${res.actorId}' on '${res.teamId}'. Now run Step 3 to reconnect.`
+          `Sent through Mateo. Confirmed by server for '${res.actorId}' on '${res.teamId}'${countLabel}. Now run Step 3 to reconnect.`
         );
-        notifyToast('Sent through Mateo. Confirmed by server!', 'ok');
-        await refreshBoard();
-        await inspectTeam(activeClaim.teamId, true);
+        notifyToast(`Sent through Mateo. Confirmed by server${countLabel}!`, 'ok');
+        await refreshBoard(false, true);
         await loadAudit(useRelayTok);
       });
     } catch (e) {
@@ -2439,7 +2819,7 @@ export default function App() {
     setAuthorityHealth('online');
     if (!targetClaim) {
       notifyToast('Reconnected to server.', 'ok');
-      refreshBoard();
+      refreshBoard(false, true);
       return;
     }
 
@@ -2458,18 +2838,20 @@ export default function App() {
         );
         if (result.status === 'COMMITTED') {
           finishClaimOperation(sessionStorage, targetClaim.key);
+          setLastClaimCode(targetClaim.code);
+          markInviteAccepted(targetClaim.code, result.actorId || targetClaim.actorId, true);
         }
         lastClaimRef.current = targetClaim;
         setHasLastClaim(true);
         setReplayReceipt(result);
         setQueuedClaim(null);
+        await refreshBoard(false, true);
+        await inspectTeam(targetClaim.teamId, true);
+        await loadAudit(directTok);
         setStatusMessage(
           `The server returned the original result for '${result.actorId}' on '${result.teamId}' (replayed=${String(result.replayed)}, 0 duplicate spots).`
         );
         notifyToast('The server returned the original result for this request!', 'ok');
-        await refreshBoard();
-        await inspectTeam(targetClaim.teamId, true);
-        await loadAudit(directTok);
       });
     } catch (e) {
       setStatusMessage(`Reconnect check: ${e.message}`);
@@ -2506,13 +2888,22 @@ export default function App() {
         setToken(priyaSession.token);
         setRelayToken(relaySession.token);
         setTeamId(demoTeam);
-        setIssuedInvite({ ...inv, teamId: demoTeam, eventId, issuedBy: leadSession.actorId });
+        setIssuedInvite({
+          ...inv,
+          teamId: demoTeam,
+          eventId,
+          issuedBy: leadSession.actorId,
+          suggestedInvitee: 'priya',
+          claimedBy: null,
+          claimedAt: null
+        });
         setInviteCode(inv.code);
         lastClaimRef.current = null;
         setHasLastClaim(false);
         setQueuedClaim(null);
         setRelayedReceipt(null);
         setReplayReceipt(null);
+        await refreshBoard(false, true);
         await inspectTeam(demoTeam, true);
         setWanOffline(true);
         setAuthorityHealth('wan-dropped');
@@ -2559,8 +2950,8 @@ export default function App() {
           }
         }
         setStatusMessage(`Confirmed by server: '${res.leader}' is now team lead for '${teamId}'.`);
-        notifyToast(`'${res.leader}' is now team lead for '${teamId}'.`, 'ok');
-        await refreshBoard();
+        notifyToast(`'${formatHumanActorName(res.leader, true)}' is now team lead for '${teamId}'.`, 'ok');
+        await refreshBoard(false, true);
         await inspectTeam(teamId, true);
         await loadAudit(activeTok);
       });
@@ -2591,7 +2982,37 @@ export default function App() {
   async function handleLeaveTeam() {
     try {
       await runProtectedAction(`Leave Team (${teamId})`, async freshTok => {
-        const res = await sendPost('/api/teams/leave', { eventId, teamId }, freshTok);
+        let activeTok = await ensureToken(freshTok);
+        let res;
+        try {
+          res = await sendPost('/api/teams/leave', { eventId, teamId }, activeTok);
+        } catch (lvErr) {
+          const codeStr = String(lvErr?.code || lvErr?.message || '');
+          if (
+            codeStr.includes('NOT_MEMBER') &&
+            !signedOutManuallyRef.current &&
+            selectedTeam?.teamId === teamId &&
+            Array.isArray(selectedTeam.members)
+          ) {
+            const demoMember =
+              selectedTeam.members.find(
+                m => m.userId !== selectedTeam.leader && DEMO_PERSONA_CLIENT_RE.test(m.userId)
+              ) || selectedTeam.members.find(m => DEMO_PERSONA_CLIENT_RE.test(m.userId));
+            if (demoMember) {
+              const memSession = await mintDemoSession(demoMember.userId, eventId, selectedTeam.maxSize || 5);
+              activeTok = memSession.token;
+              tokenRef.current = activeTok;
+              actorRef.current = memSession.actorId;
+              setToken(activeTok);
+              setActorId(memSession.actorId);
+              res = await sendPost('/api/teams/leave', { eventId, teamId }, activeTok);
+            } else {
+              throw lvErr;
+            }
+          } else {
+            throw lvErr;
+          }
+        }
         setStatusMessage(
           res.leader
             ? `Confirmed by server: left '${teamId}'; '${res.leader}' is now team lead.`
@@ -2599,14 +3020,21 @@ export default function App() {
         );
         notifyToast(
           res.leader
-            ? `Left '${teamId}'; '${res.leader}' is now team lead.`
+            ? `Left '${teamId}'; '${formatHumanActorName(res.leader, true)}' is now team lead.`
             : `Left '${teamId}'; empty team removed.`,
           'info'
         );
-        if (res.status === 'TEAM_DELETED') setSelectedTeam(null);
-        else await inspectTeam(teamId, true);
-        await refreshBoard();
-        await loadAudit(freshTok);
+        if (res.status === 'TEAM_DELETED') {
+          removeDeletedTeamRecord(teamId, eventId);
+          if (issuedInvite?.teamId === teamId) {
+            setIssuedInvite(null);
+            setInviteCode('');
+          }
+        } else {
+          await inspectTeam(teamId, true);
+        }
+        await refreshBoard(false, true);
+        await loadAudit(activeTok);
       });
     } catch (e) {
       setStatusMessage(`Leave team: ${e.message}`);
@@ -2790,6 +3218,10 @@ export default function App() {
     await runProtectedAction('Run 50-Person Last-Spot Test', async freshTok => {
       setRunningRace(true);
       try {
+        if (wanOffline && !queuedClaim) {
+          setWanOffline(false);
+          setAuthorityHealth('online');
+        }
         let res;
         try {
           res = await sendPost('/api/demo/race-50', {}, freshTok);
@@ -2821,6 +3253,10 @@ export default function App() {
   async function handleRunLatencyProbe() {
     setProbingLatency(true);
     try {
+      if (wanOffline && !queuedClaim) {
+        setWanOffline(false);
+        setAuthorityHealth('online');
+      }
       const samples = [];
       for (let i = 0; i < 5; i++) {
         const t0 = performance.now();
@@ -2835,6 +3271,7 @@ export default function App() {
         medianMs: sorted[Math.floor(sorted.length / 2)],
         maxMs: sorted[sorted.length - 1]
       });
+      setBoardLatencyMs(sorted[2]);
       setStatusMessage(`Live board speed: median ${sorted[2]} ms (fastest ${sorted[0]} ms, slowest ${sorted[4]} ms).`);
       notifyToast(`Live board speed: median ${sorted[2]} ms`, 'ok');
     } catch (e) {
@@ -3136,8 +3573,66 @@ export default function App() {
       ? 'is-split-studio'
       : 'is-calm-focus';
 
-  const spotsUsed = selectedTeam ? selectedTeam.members.length : board[0]?.members ?? 1;
-  const spotsMax = selectedTeam ? selectedTeam.maxSize : board[0]?.max_size ?? eventMaxSize ?? 5;
+  const pinnedTeamsForEvent = useMemo(
+    () =>
+      Object.values(pinnedTeamsMap)
+        .filter(entry => entry && entry.eventId === eventId && entry.team_id)
+        .sort((a, b) => (b.touchedAt || 0) - (a.touchedAt || 0)),
+    [pinnedTeamsMap, eventId]
+  );
+
+  const col3TeamsList = useMemo(() => {
+    const merged = [];
+    const seen = new Set();
+    const pushRow = row => {
+      if (!row || !row.team_id || seen.has(row.team_id)) return;
+      seen.add(row.team_id);
+      merged.push(row);
+    };
+    if (selectedTeam?.teamId) {
+      pushRow({
+        team_id: selectedTeam.teamId,
+        leader: selectedTeam.leader,
+        members: Array.isArray(selectedTeam.members) ? selectedTeam.members.length : 1,
+        max_size: selectedTeam.maxSize || eventMaxSize || 5
+      });
+    }
+    for (const pt of pinnedTeamsForEvent) {
+      const liveRow = board.find(b => b.team_id === pt.team_id);
+      pushRow({
+        team_id: pt.team_id,
+        leader: pt.leader || liveRow?.leader,
+        members: pt.members ?? liveRow?.members ?? 1,
+        max_size: pt.max_size ?? liveRow?.max_size ?? eventMaxSize ?? 5
+      });
+    }
+    for (const b of board) {
+      if (b.members >= 2 && b.members < b.max_size) pushRow(b);
+    }
+    for (const b of board) {
+      if (b.members < b.max_size) pushRow(b);
+    }
+    for (const b of board) {
+      pushRow(b);
+    }
+    return merged.slice(0, 4);
+  }, [selectedTeam, pinnedTeamsForEvent, board, eventMaxSize]);
+
+  async function handleSyncCol3() {
+    const activeTid = selectedTeam?.teamId || teamId;
+    await refreshBoard(false, true);
+    if (activeTid) {
+      await inspectTeam(activeTid, true);
+    }
+    await loadAudit(undefined, true);
+  }
+
+  const spotsUsed = selectedTeam
+    ? selectedTeam.members.length
+    : col3TeamsList[0]?.members ?? board[0]?.members ?? 1;
+  const spotsMax = selectedTeam
+    ? selectedTeam.maxSize
+    : col3TeamsList[0]?.max_size ?? board[0]?.max_size ?? eventMaxSize ?? 5;
   const humanActorName = formatHumanActorName(actorId, Boolean(token));
 
   // CRR-07: Peripheral unresolved contour driven strictly by actual application state
@@ -3424,6 +3919,37 @@ export default function App() {
         </div>
       )}
 
+      {/* Simulated Offline Mode Banner (when browsing Steps 1, 2, or 4 while Step 3 Offline Walkthrough is active) */}
+      {wanOffline && activeView !== 'authority' && (
+        <div role="status" className="offline-server-banner simulated-wan-banner no-print">
+          <div className="offline-server-copy">
+            <OutboxIcon size={17} />
+            <div>
+              <strong>Simulated Offline Mode Active (from Step 3):</strong>{' '}
+              {queuedClaim
+                ? `1 join request (${queuedClaim.actorId} -> ${queuedClaim.teamId}) is saved on this device waiting to relay or reconnect.`
+                : 'Direct server requests are paused so you can test offline device storage and Mateo relay.'}
+            </div>
+          </div>
+          <div className="pill-row">
+            <button
+              type="button"
+              className="btn btn-secondary btn-compact"
+              onClick={() => setActiveView('authority')}
+            >
+              Open Step 3
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary btn-compact"
+              onClick={handleReconnectAndRetryDirect}
+            >
+              <RefreshIcon size={13} /> Reconnect now
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Main Full-Bleed Workspace (44fr / 28fr / 28fr on >=1100px Desktop Panorama) */}
       <div className={`workspace-layout no-print ${layoutClass}`}>
         <main
@@ -3446,6 +3972,7 @@ export default function App() {
               onChangeEventId={handleChangeEventScope}
               onEnsureEvent={handleEnsureEvent}
               board={board}
+              pinnedTeams={pinnedTeamsForEvent}
               totalTeams={totalTeams}
               boardLatencyMs={boardLatencyMs}
               sseConnected={sseConnected}
@@ -3530,13 +4057,15 @@ export default function App() {
               eventId={eventId}
               actorId={actorId}
               teamId={teamId}
-              onChangeTeamId={setTeamId}
+              onChangeTeamId={handleChangeActiveTeamId}
               board={board}
+              pinnedTeams={pinnedTeamsForEvent}
               selectedTeam={selectedTeam}
               onInspectTeam={inspectTeam}
               inviteCode={inviteCode}
               onChangeInviteCode={setInviteCode}
               issuedInvite={issuedInvite}
+              lastClaimCode={lastClaimCode}
               onCreateTeam={handleCreateTeam}
               onCreateInvite={handleCreateInvite}
               onJoinSeat={handleJoinSeat}
@@ -3869,8 +4398,8 @@ export default function App() {
                 <button
                   type="button"
                   className="btn btn-ghost btn-compact"
-                  onClick={() => loadAudit(undefined, true)}
-                  title="Refresh server activity"
+                  onClick={handleSyncCol3}
+                  title="Refresh active team spots, board, and server history"
                 >
                   <RefreshIcon size={13} /> Sync
                 </button>
@@ -3883,9 +4412,50 @@ export default function App() {
                 Active team: <code>{selectedTeam?.teamId || teamId}</code> · Acting as: <strong>{humanActorName}</strong>
               </div>
 
-              {/* Confirmed Server Teams Quick List */}
+              {/* Live Active Server Team Card (Always Synchronized with Accepted Invites) */}
+              {selectedTeam && (
+                <div className="active-server-team-card top-gap-xs" aria-live="polite">
+                  <div className="row-between wrap-gap">
+                    <span className="tiny-copy">
+                      <strong>Confirmed team:</strong> <code>{selectedTeam.teamId}</code>
+                    </span>
+                    <span
+                      className={`status-chip ${
+                        selectedTeam.members.length >= selectedTeam.maxSize ? 'chip-warn' : 'chip-ok'
+                      }`}
+                    >
+                      {selectedTeam.members.length}/{selectedTeam.maxSize} spots
+                    </span>
+                  </div>
+                  <div className="active-team-members-row top-gap-xs">
+                    {selectedTeam.members.map(m => {
+                      const isLead = m.userId === selectedTeam.leader || m.isLeader;
+                      return (
+                        <span
+                          key={m.userId}
+                          className={`active-member-pill ${isLead ? 'is-lead' : ''}`}
+                          title={m.userId}
+                        >
+                          {isLead ? '★ ' : '✓ '}
+                          {formatHumanActorName(m.userId, true)}
+                        </span>
+                      );
+                    })}
+                  </div>
+                  {issuedInvite && issuedInvite.teamId === selectedTeam.teamId && (
+                    <div className="tiny-copy muted-copy top-gap-xs">
+                      {issuedInvite.claimedBy
+                        ? `Invite accepted by ${formatHumanActorName(issuedInvite.claimedBy, true)}`
+                        : '1 single-use invite open'}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Confirmed Server Teams Quick List (Pinned Active & Open Teams First) */}
               <div className="mini-board-list top-gap-xs">
-                {board.slice(0, 4).map(t => {
+                {col3TeamsList.map(t => {
+                  const isActiveRow = selectedTeam?.teamId === t.team_id;
                   const isLinked = activeLinkId === t.team_id;
                   return (
                     <button
@@ -3894,10 +4464,15 @@ export default function App() {
                       data-link-id={t.team_id}
                       onMouseEnter={() => setActiveLinkId(t.team_id)}
                       onMouseLeave={() => setActiveLinkId(null)}
-                      className={`mini-board-row ${isLinked ? 'is-linked-ridge' : ''}`}
+                      className={`mini-board-row ${isActiveRow ? 'is-active-team' : ''} ${
+                        isLinked ? 'is-linked-ridge' : ''
+                      }`}
                       onClick={() => handleRequestSeatForTeam(t.team_id)}
                     >
-                      <span>{t.team_id}</span>
+                      <span>
+                        {isActiveRow ? '● ' : ''}
+                        {t.team_id}
+                      </span>
                       <code>{t.members}/{t.max_size} spots</code>
                     </button>
                   );

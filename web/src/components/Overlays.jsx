@@ -24,6 +24,7 @@ import {
 
 export function formatHumanActorName(actorId, hasToken = true) {
   if (!actorId || !hasToken) return 'Guest';
+  const raw = String(actorId).trim();
   const map = {
     'leader-aurora': 'Aurora',
     aurora: 'Aurora',
@@ -32,10 +33,24 @@ export function formatHumanActorName(actorId, hasToken = true) {
     'builder-priya': 'Priya',
     priya: 'Priya',
     'relay-mateo': 'Mateo',
-    mateo: 'Mateo'
+    mateo: 'Mateo',
+    'race-leader': 'Race Lead'
   };
-  if (map[actorId]) return map[actorId];
-  const cleaned = String(actorId).replace(/^(leader|builder|relay)-/, '');
+  if (map[raw]) return map[raw];
+  const lower = raw.toLowerCase();
+  const knownPrefix = /^(aurora|kai|priya|mateo)-/.exec(lower);
+  if (knownPrefix) {
+    return knownPrefix[1].charAt(0).toUpperCase() + knownPrefix[1].slice(1);
+  }
+  const memNamed = /^mem-([a-z]{2,14})-/.exec(lower);
+  if (memNamed && !/^\d+$/.test(memNamed[1])) {
+    return memNamed[1].charAt(0).toUpperCase() + memNamed[1].slice(1);
+  }
+  const leadNamed = /^lead-([a-z]{2,14})-/.exec(lower);
+  if (leadNamed) {
+    return `Lead (${leadNamed[1]})`;
+  }
+  const cleaned = raw.replace(/^(leader|builder|relay)-/, '');
   return cleaned.charAt(0).toUpperCase() + cleaned.slice(1, 14);
 }
 

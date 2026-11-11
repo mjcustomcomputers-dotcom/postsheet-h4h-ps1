@@ -18,6 +18,9 @@ import {
   FileTextIcon
 } from '../icons.jsx';
 
+const DEMO_LEAD_CLIENT_RE =
+  /^(leader-aurora|builder-kai|builder-priya|relay-mateo|race-leader|(aurora|priya|kai|mateo|lead|mem|claimant)-[A-Za-z0-9_-]{1,28})$/;
+
 function formatCountdown(expiresAt, nowMs) {
   if (!expiresAt) return null;
   const diffSec = Math.max(0, Math.floor((expiresAt - nowMs) / 1000));
@@ -34,9 +37,11 @@ export default function SeatAuthorityView({
   teamId,
   onChangeTeamId,
   board,
+  pinnedTeams = [],
   selectedTeam,
   onInspectTeam,
   inviteCode,
+  lastClaimCode = '',
   onChangeInviteCode,
   issuedInvite,
   onCreateTeam,
@@ -94,13 +99,14 @@ export default function SeatAuthorityView({
 
   useEffect(() => {
     let cancelled = false;
+    const inspectCode = inviteCode || queuedClaim?.code || lastClaimCode || '';
     async function inspectStorageKey() {
-      if (!eventId || !teamId || !inviteCode || inviteCode.length < 30) {
+      if (!eventId || !teamId || !inspectCode || inspectCode.length < 30) {
         setStoragePreview({ key: null, savedOpId: null });
         return;
       }
       try {
-        const k = await claimKey(eventId, teamId, inviteCode);
+        const k = await claimKey(eventId, teamId, inspectCode);
         if (!cancelled) {
           const saved = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(k) : null;
           setStoragePreview({ key: k, savedOpId: saved });
@@ -113,7 +119,7 @@ export default function SeatAuthorityView({
     return () => {
       cancelled = true;
     };
-  }, [eventId, teamId, inviteCode, queuedClaim, relayedReceipt, replayReceipt, joining]);
+  }, [eventId, teamId, inviteCode, lastClaimCode, queuedClaim, relayedReceipt, replayReceipt, joining]);
 
   async function copyInvite() {
     if (!issuedInvite?.code) return;
@@ -156,6 +162,10 @@ export default function SeatAuthorityView({
 
   const countdown = issuedInvite?.expiresAt ? formatCountdown(issuedInvite.expiresAt, nowMs) : null;
   const expired = issuedInvite?.expiresAt && nowMs >= issuedInvite.expiresAt;
+  const inviteClaimed = Boolean(issuedInvite?.claimedBy);
+  const inviteMatchesCurrentTeam = Boolean(
+    issuedInvite?.code && (!issuedInvite.teamId || issuedInvite.teamId === teamId)
+  );
   const isSelectedTeamCurrent = Boolean(selectedTeam && selectedTeam.teamId === teamId);
   const actorOnSelectedTeam = Boolean(
     actorId &&
@@ -176,13 +186,29 @@ export default function SeatAuthorityView({
       issuedInvite &&
       issuedInvite.teamId === selectedTeam?.teamId &&
       issuedInvite.code === inviteCode &&
-      !expired
+      !expired &&
+      !inviteClaimed
   );
   const hasOpenSpotWithoutInvite = Boolean(
     isSelectedTeamCurrent &&
       (selectedTeam.members?.length || 0) < (selectedTeam.maxSize || 5) &&
       !hasMatchingInviteForSelected
   );
+  const canDemoActAsLeader = Boolean(
+    isSelectedTeamCurrent &&
+      (selectedTeam.leader === actorId || DEMO_LEAD_CLIENT_RE.test(selectedTeam.leader || ''))
+  );
+  const pickerTeams = (() => {
+    const seen = new Set();
+    const list = [];
+    for (const t of [...(pinnedTeams || []), ...(board || [])]) {
+      if (!t?.team_id || seen.has(t.team_id)) continue;
+      seen.add(t.team_id);
+      list.push(t);
+      if (list.length >= 24) break;
+    }
+    return list;
+  })();
   const eligibleTransferMembers = isSelectedTeamCurrent
     ? (selectedTeam.members || []).filter(m => !m.isLeader && m.userId !== selectedTeam.leader)
     : [];
@@ -468,7 +494,7 @@ export default function SeatAuthorityView({
                   onChange={e => onChangeTeamId(e.target.value.replace(/[^A-Za-z0-9_.:@-]/g, ''))}
                   placeholder="e.g. crew-alpha"
                 />
-                {board.length > 0 && (
+                {pickerTeams.length > 0 && (
                   <select
                     aria-label="Choose an existing team from the current page"
                     value=""
@@ -481,7 +507,7 @@ export default function SeatAuthorityView({
                     className="compact-select"
                   >
                     <option value="">Choose from board...</option>
-                    {board.slice(0, 20).map(t => (
+                    {pickerTeams.map(t => (
                       <option key={t.team_id} value={t.team_id}>
                         {t.team_id} ({t.members}/{t.max_size} spots)
                       </option>
@@ -558,26 +584,70 @@ export default function SeatAuthorityView({
             </div>
 
             {/* Single-Use Invite Card */}
-            {issuedInvite?.code && (
-              <div className="invite-ticket" role="region" aria-label="Active single-use invite">
+            {inviteMatchesCurrentTeam && (
+              <div
+                className={`invite-ticket ${inviteClaimed ? 'is-claimed' : ''}`}
+                role="region"
+                aria-label="Single-use invite status"
+              >
                 <div className="row-between wrap-gap">
                   <strong>
-                    Single-use invite code
+                    {inviteClaimed ? 'Single-use invite accepted' : 'Single-use invite code'}
                     {issuedInvite.teamId ? ` (${issuedInvite.teamId})` : ''}
                   </strong>
-                  <span className={`status-chip ${expired ? 'chip-err' : 'chip-ok'}`}>
-                    <ClockIcon size={13} /> {expired ? 'Expired' : `Expires in ${countdown}`}
-                  </span>
+                  {inviteClaimed ? (
+                    <span className="status-chip chip-ok">
+                      <CheckCircleIcon size={13} /> Accepted by {issuedInvite.claimedBy}
+                    </span>
+                  ) : (
+                    <span className={`status-chip ${expired ? 'chip-err' : 'chip-ok'}`}>
+                      <ClockIcon size={13} /> {expired ? 'Expired' : `Expires in ${countdown}`}
+                    </span>
+                  )}
                 </div>
-                <div className="invite-code-row">
-                  <input type="text" readOnly value={issuedInvite.code} aria-label="Single-use invite code" className="mono-field" />
-                  <button type="button" className="btn btn-secondary btn-compact" onClick={copyInvite}>
-                    <CopyIcon size={14} /> {copied ? 'Copied!' : 'Copy'}
-                  </button>
-                </div>
-                <p className="muted-copy small-copy">
-                  <LockIcon size={13} /> Created by <code>{issuedInvite.issuedBy || actorId || 'lead'}</code> for <code>{issuedInvite.teamId || teamId}</code> · Works once, checked on server.
-                </p>
+
+                {inviteClaimed ? (
+                  <div className="row-between wrap-gap top-gap-xs">
+                    <p className="muted-copy small-copy">
+                      Spot confirmed on <code>{issuedInvite.teamId || teamId}</code>
+                      {isSelectedTeamCurrent
+                        ? ` (${selectedTeam.members.length}/${selectedTeam.maxSize} spots filled)`
+                        : ''}
+                      . Single-use codes work once.
+                    </p>
+                    {(!isSelectedTeamCurrent ||
+                      (selectedTeam.members?.length || 0) < (selectedTeam.maxSize || 5)) && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-compact"
+                        disabled={joining || forwardingPeer}
+                        onClick={onCreateInvite}
+                      >
+                        Create another invite
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <div className="invite-code-row">
+                      <input
+                        type="text"
+                        readOnly
+                        value={issuedInvite.code}
+                        aria-label="Single-use invite code"
+                        className="mono-field"
+                      />
+                      <button type="button" className="btn btn-secondary btn-compact" onClick={copyInvite}>
+                        <CopyIcon size={14} /> {copied ? 'Copied!' : 'Copy'}
+                      </button>
+                    </div>
+                    <p className="muted-copy small-copy">
+                      <LockIcon size={13} /> Created by <code>{issuedInvite.issuedBy || actorId || 'lead'}</code> for{' '}
+                      <code>{issuedInvite.teamId || teamId}</code>
+                      {issuedInvite.suggestedInvitee ? ` · Ready for ${issuedInvite.suggestedInvitee}` : ''} · Works once, checked on server.
+                    </p>
+                  </>
+                )}
               </div>
             )}
 
@@ -598,7 +668,7 @@ export default function SeatAuthorityView({
                 <div className="self-claim-guard subcard tone-ok top-gap-xs" role="region" aria-label="Switch to invited teammate helper">
                   <div className="small-copy">
                     <strong>{humanActor} (<code>{actorId}</code>) is already on <code>{teamId}</code>.</strong>{' '}
-                    Each person can join one team per event. Switch to an invited teammate in one click to use this invite:
+                    Each person can join one team per event. Accept this single-use invite as an invited teammate in one click:
                   </div>
                   <div className="pill-row top-gap-xs">
                     <button
@@ -608,7 +678,14 @@ export default function SeatAuthorityView({
                       onClick={onClaimAsFreshCandidate}
                     >
                       <SparklesIcon size={15} />{' '}
-                      {joining ? 'Joining...' : 'Switch to invited teammate & join'}
+                      {joining ? 'Accepting invite...' : 'Accept invite as new teammate'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-compact"
+                      onClick={onOpenCharterExport}
+                    >
+                      <FileTextIcon size={14} /> Preview / Print Summary
                     </button>
                   </div>
                 </div>
@@ -629,23 +706,25 @@ export default function SeatAuthorityView({
                 </div>
               )}
 
-              <div className="pill-row top-gap-xs">
-                <button
-                  type="button"
-                  className={inviteCode && actorAlreadyInTargetTeam ? 'btn btn-secondary btn-compact' : 'btn btn-primary btn-compact'}
-                  disabled={joining || !inviteCode}
-                  onClick={() => onJoinSeat({ fromWalkthroughStep1: false })}
-                >
-                  <ShieldCheckIcon size={15} /> {joining ? 'Sending request...' : `Join as ${humanActor}`}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-compact"
-                  onClick={onOpenCharterExport}
-                >
-                  <FileTextIcon size={14} /> Preview / Print Summary
-                </button>
-              </div>
+              {!(inviteCode && actorAlreadyInTargetTeam && onClaimAsFreshCandidate) && (
+                <div className="pill-row top-gap-xs">
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-compact"
+                    disabled={joining || !inviteCode}
+                    onClick={() => onJoinSeat({ fromWalkthroughStep1: false })}
+                  >
+                    <ShieldCheckIcon size={15} /> {joining ? 'Sending request...' : `Accept invite as ${humanActor}`}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-compact"
+                    onClick={onOpenCharterExport}
+                  >
+                    <FileTextIcon size={14} /> Preview / Print Summary
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Confirmed Team Members & Leadership Transfer */}
@@ -684,7 +763,7 @@ export default function SeatAuthorityView({
                             {m.isLeader ? '★ Team Lead' : 'Confirmed Member'}
                           </span>
                         </div>
-                        {!m.isLeader && selectedTeam.leader === actorId && (
+                        {!m.isLeader && canDemoActAsLeader && (
                           <button
                             type="button"
                             className="btn btn-secondary btn-compact"

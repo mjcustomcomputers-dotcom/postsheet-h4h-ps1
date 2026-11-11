@@ -143,8 +143,11 @@ export function derivePlanExportModel({
     };
   });
 
-  const rosterRows = selectedTeam?.members?.length
-    ? selectedTeam.members.map(m => ({
+  const matchingServerTeam =
+    selectedTeam && (!teamId || selectedTeam.teamId === teamId) ? selectedTeam : null;
+
+  const rosterRows = matchingServerTeam?.members?.length
+    ? matchingServerTeam.members.map(m => ({
         id: m.userId,
         role: m.isLeader ? 'Team Leader (Server confirmed)' : 'Member (Server confirmed)',
         source: 'SQLITE_AUTHORITY'
@@ -185,7 +188,7 @@ export function derivePlanExportModel({
     goalDescription,
     horizonHours,
     plan,
-    selectedTeam,
+    selectedTeam: matchingServerTeam,
     teamPeople,
     issuedInvite
   };
@@ -253,7 +256,9 @@ export function buildTeamPlanWhitePaperHtml(input) {
     '      </table>',
     '    </section>',
     m.issuedInvite?.code
-      ? `    <section class="charter-section"><h3>4. Active Invite Reference</h3><div class="charter-meta">Team: ${escapeHtml(m.issuedInvite.teamId || m.teamId)} · Single-use SHA-256 invite active (expires epoch ${escapeHtml(m.issuedInvite.expiresAt)})</div></section>`
+      ? m.issuedInvite.claimedBy
+        ? `    <section class="charter-section"><h3>4. Single-Use Invite Receipt</h3><div class="charter-meta">Team: ${escapeHtml(m.issuedInvite.teamId || m.teamId)} · Single-use SHA-256 invite accepted by ${escapeHtml(m.issuedInvite.claimedBy)} (spot confirmed on server)</div></section>`
+        : `    <section class="charter-section"><h3>4. Active Invite Reference</h3><div class="charter-meta">Team: ${escapeHtml(m.issuedInvite.teamId || m.teamId)} · Single-use SHA-256 invite active (expires epoch ${escapeHtml(m.issuedInvite.expiresAt)})</div></section>`
       : '',
     '    <footer class="charter-footer">',
     '      Server membership changes run inside atomic SQLite BEGIN IMMEDIATE transactions. Preview plans and peer-relayed messages never grant membership without server confirmation.',

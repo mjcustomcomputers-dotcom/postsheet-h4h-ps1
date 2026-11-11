@@ -179,8 +179,8 @@ export default function CrewCharterExportModal({
               <div className="charter-kv">
                 <span>Team Spots</span>
                 <strong>
-                  {selectedTeam
-                    ? `${selectedTeam.members.length} / ${selectedTeam.maxSize} Confirmed by server`
+                  {model.selectedTeam
+                    ? `${model.selectedTeam.members.length} / ${model.selectedTeam.maxSize} Confirmed by server`
                     : `${teamPeople.length} in plan preview (not joined yet)`}
                 </strong>
               </div>
@@ -237,11 +237,15 @@ export default function CrewCharterExportModal({
             </table>
           </section>
 
-          {issuedInvite?.code && (
+          {issuedInvite?.code && (!teamId || !issuedInvite.teamId || issuedInvite.teamId === teamId) && (
             <section className="charter-section">
-              <h3>4. Active Single-Use Invite Reference</h3>
+              <h3>
+                {issuedInvite.claimedBy ? '4. Single-Use Invite Receipt' : '4. Active Single-Use Invite Reference'}
+              </h3>
               <div className="charter-meta">
-                Team: {issuedInvite.teamId || teamId} · Single-use SHA-256 invite issued (Expires epoch {issuedInvite.expiresAt})
+                {issuedInvite.claimedBy
+                  ? `Team: ${issuedInvite.teamId || teamId} · Single-use SHA-256 invite accepted by ${issuedInvite.claimedBy} (confirmed by server)`
+                  : `Team: ${issuedInvite.teamId || teamId} · Single-use SHA-256 invite issued (Expires epoch ${issuedInvite.expiresAt})`}
               </div>
             </section>
           )}
