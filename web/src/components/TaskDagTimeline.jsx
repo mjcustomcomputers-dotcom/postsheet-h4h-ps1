@@ -1,0 +1,416 @@
+import React, { useMemo, useState } from 'react';
+
+function computeClientSchedule(tasks, horizonMin) {
+  const byId = new Map(tasks.map(t => [t.id, t]));
+  const children = new Map(tasks.map(t => [t.id, []]));
+  const visited = new Set();
+  const active = new Set();
+  const topo = [];
+  let hasCycle = false;
+
+  function visit(id) {
+    if (active.has(id)) {
+      hasCycle = true;
+      return;
+    }
+    if (visited.has(id) || !byId.has(id)) return;
+    active.add(id);
+    const t = byId.get(id);
+    for (const dep of t.after || []) {
+      if (byId.has(dep)) {
+        children.get(dep).push(id);
+        visit(dep);
+      }
+    }
+    active.delete(id);
+    visited.add(id);
+    topo.push(t);
+  }
+
+  for (const t of tasks) visit(t.id);
+  if (hasCycle) return { hasCycle: true, rows: [] };
+
+  const es = new Map();
+  const ef = new Map();
+  for (const t of topo) {
+    let ready = 0;
+    const lag = Math.max(0, Number(t.lagMin) || 0);
+    for (const dep of t.after || []) {
+      if (ef.has(dep)) ready = Math.max(ready, ef.get(dep) + lag);
+    }
+    const dur = Math.max(1, Number(t.durationMin) || 60);
+    es.set(t.id, ready);
+    ef.set(t.id, ready + dur);
+  }
+
+  const lf = new Map();
+  const ls = new Map();
+  for (let i = topo.length - 1; i >= 0; i--) {
+    const t = topo[i];
+    let latestFin = horizonMin;
+    for (const chId of children.get(t.id) || []) {
+      const ch = byId.get(chId);
+      const chLag = Math.max(0, Number(ch?.lagMin) || 0);
+      latestFin = Math.min(latestFin, (ls.get(chId) ?? horizonMin) - chLag);
+    }
+    const dur = Math.max(1, Number(t.durationMin) || 60);
+    lf.set(t.id, latestFin);
+    ls.set(t.id, latestFin - dur);
+  }
+
+  return {
+    hasCycle: false,
+    rows: topo.map(t => ({
+      taskId: t.id,
+      title: t.title || t.id,
+      skill: t.skill,
+      durationMin: Math.max(1, Number(t.durationMin) || 60),
+      lagMin: Math.max(0, Number(t.lagMin) || 0),
+      after: (t.after || []).filter(d => byId.has(d)),
+      earliestStartMin: es.get(t.id),
+      earliestFinishMin: ef.get(t.id),
+      latestStartMin: ls.get(t.id),
+      latestFinishMin: lf.get(t.id),
+      slackMin: ls.get(t.id) - es.get(t.id)
+    }))
+  };
+}
+
+function fmtMin(m) {
+  const sign = m < 0 ? '-' : '';
+  const abs = Math.abs(Math.round(m));
+  const h = Math.floor(abs / 60);
+  const rem = abs % 60;
+  if (h === 0) return `${sign}${rem}m`;
+  if (rem === 0) return `${sign}${h}h`;
+  return `${sign}${h}h ${rem}m`;
+}
+
+export default function TaskDagTimeline({ tasks, horizonMin, plan }) {
+  const [viewMode, setViewMode] = useState('dual'); // 'dual' | 'dag' | 'table'
+
+  const schedule = useMemo(() => {
+    const preview = computeClientSchedule(tasks, horizonMin);
+    if (preview.hasCycle) return preview;
+
+    const serverMeta = new Map((plan?.criticalPath || []).map(m => [m.taskId, m]));
+    const assignMap = new Map((plan?.witness?.assignments || []).map(a => [a.taskId, a]));
+
+    const rows = preview.rows.map(r => {
+      const sm = serverMeta.get(r.taskId);
+      const asg = assignMap.get(r.taskId) || null;
+      return {
+        ...r,
+        earliestStartMin: sm ? sm.earliestStartMin : r.earliestStartMin,
+        earliestFinishMin: sm ? sm.earliestFinishMin : r.earliestFinishMin,
+        latestStartMin: sm ? sm.latestStartMin : r.latestStartMin,
+        latestFinishMin: sm ? sm.latestFinishMin : r.latestFinishMin,
+        slackMin: sm ? sm.slackMin : r.slackMin,
+        assignment: asg
+      };
+    });
+
+    return { hasCycle: false, rows };
+  }, [tasks, horizonMin, plan]);
+
+  if (schedule.hasCycle) {
+    return (
+      <div role="alert" className="inline-alert tone-error">
+        Cyclic task dependency detected. Remove circular prerequisite links so the critical-path DAG can evaluate.
+      </div>
+    );
+  }
+
+  const rows = schedule.rows;
+  const maxTime = Math.max(
+    horizonMin,
+    ...rows.map(r => Math.max(r.earliestFinishMin, r.latestFinishMin, r.assignment?.endMin || 0)),
+    60
+  );
+
+  // SVG coordinate layout
+  const leftGutter = 185;
+  const rightGutter = 135;
+  const plotWidth = 540;
+  const svgWidth = leftGutter + plotWidth + rightGutter;
+  const topHeader = 38;
+  const rowHeight = 56;
+  const svgHeight = topHeader + Math.max(1, rows.length) * rowHeight + 22;
+
+  const xOf = min => leftGutter + Math.max(0, Math.min(1, min / maxTime)) * plotWidth;
+  const rowIndexById = new Map(rows.map((r, idx) => [r.taskId, idx]));
+
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map(frac => Math.round(maxTime * frac));
+
+  return (
+    <div className="dag-container">
+      <div className="row-between wrap-gap dag-toolbar">
+        <div>
+          <h3 className="card-subtitle">Spatial Task Dependency DAG &amp; Backward-Slack Critical Path</h3>
+          <p className="muted-copy small-copy">
+            Solid bars show scheduled/earliest execution; dashed whiskers show backward-slack window (<code>ES..LF</code>); <code>0m slack</code> marks critical-path bottlenecks.
+          </p>
+        </div>
+        <div className="pill-row" role="group" aria-label="Schedule visualization mode">
+          {[
+            { id: 'dual', label: 'Dual (SVG + Table)' },
+            { id: 'dag', label: 'Spatial SVG Only' },
+            { id: 'table', label: 'Accessible Table Only' }
+          ].map(m => (
+            <button
+              key={m.id}
+              type="button"
+              aria-pressed={viewMode === m.id}
+              className={`chip-toggle ${viewMode === m.id ? 'active' : ''}`}
+              onClick={() => setViewMode(m.id)}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {(viewMode === 'dual' || viewMode === 'dag') && (
+        <div className="svg-scroll-frame" role="img" aria-label="Directed task dependency timeline and critical-path slack diagram">
+          <svg
+            viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+            className="dag-svg"
+          >
+            <defs>
+              <marker id="dag-arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 1 L 8 5 L 0 9 z" fill="var(--dag-edge)" />
+              </marker>
+            </defs>
+
+            {/* Time grid ticks */}
+            {ticks.map((tVal, i) => {
+              const x = xOf(tVal);
+              return (
+                <g key={i}>
+                  <line
+                    x1={x}
+                    y1={topHeader - 8}
+                    x2={x}
+                    y2={svgHeight - 12}
+                    stroke="var(--border-subtle)"
+                    strokeDasharray={tVal === horizonMin ? 'none' : '3 4'}
+                  />
+                  <text
+                    x={x}
+                    y={22}
+                    textAnchor={i === 0 ? 'start' : i === ticks.length - 1 ? 'end' : 'middle'}
+                    className="svg-tick-label"
+                  >
+                    T+{fmtMin(tVal)} ({tVal}m)
+                  </text>
+                </g>
+              );
+            })}
+
+            {/* Deadline marker line */}
+            <line
+              x1={xOf(horizonMin)}
+              y1={topHeader - 10}
+              x2={xOf(horizonMin)}
+              y2={svgHeight - 10}
+              stroke="var(--tone-warn-ink)"
+              strokeWidth="1.8"
+            />
+
+            {/* Dependency edges */}
+            {rows.flatMap(r => {
+              const toIdx = rowIndexById.get(r.taskId);
+              const toStart = r.assignment ? r.assignment.startMin : r.earliestStartMin;
+              const x2 = xOf(toStart);
+              const y2 = topHeader + toIdx * rowHeight + rowHeight / 2;
+
+              return r.after.map(depId => {
+                const fromIdx = rowIndexById.get(depId);
+                if (fromIdx === undefined) return null;
+                const depRow = rows[fromIdx];
+                const fromEnd = depRow.assignment ? depRow.assignment.endMin : depRow.earliestFinishMin;
+                const x1 = xOf(fromEnd);
+                const y1 = topHeader + fromIdx * rowHeight + rowHeight / 2;
+                const midX = (x1 + x2) / 2;
+                return (
+                  <g key={`${depId}->${r.taskId}`}>
+                    <path
+                      d={`M ${x1} ${y1} C ${midX + 14} ${y1}, ${midX - 14} ${y2}, ${Math.max(x1 + 6, x2 - 4)} ${y2}`}
+                      fill="none"
+                      stroke="var(--dag-edge)"
+                      strokeWidth="1.8"
+                      markerEnd="url(#dag-arrow)"
+                    />
+                    {r.lagMin > 0 && (
+                      <text x={midX} y={(y1 + y2) / 2 - 5} textAnchor="middle" className="svg-lag-label">
+                        +{r.lagMin}m lag
+                      </text>
+                    )}
+                  </g>
+                );
+              });
+            })}
+
+            {/* Task rows */}
+            {rows.map((r, idx) => {
+              const yTop = topHeader + idx * rowHeight;
+              const barY = yTop + 14;
+              const barH = 26;
+              const slackStartX = xOf(r.earliestStartMin);
+              const slackEndX = Math.max(slackStartX + 4, xOf(Math.max(r.earliestFinishMin, r.latestFinishMin)));
+
+              const execStart = r.assignment ? r.assignment.startMin : r.earliestStartMin;
+              const execEnd = r.assignment ? r.assignment.endMin : r.earliestFinishMin;
+              const execX = xOf(execStart);
+              const execW = Math.max(12, xOf(execEnd) - execX);
+
+              const isCritical = r.slackMin <= 0;
+              const isGuarded = r.assignment?.evidence === 'unknown';
+              const isAssigned = Boolean(r.assignment);
+              const planRan = Boolean(plan);
+
+              let fillVar = 'var(--dag-bar-preview)';
+              let strokeVar = 'var(--accent-primary)';
+              if (planRan) {
+                if (isAssigned && !isGuarded) {
+                  fillVar = 'var(--dag-bar-ok)';
+                  strokeVar = 'var(--tone-ok-ink)';
+                } else if (isAssigned && isGuarded) {
+                  fillVar = 'var(--dag-bar-warn)';
+                  strokeVar = 'var(--tone-warn-ink)';
+                } else {
+                  fillVar = 'var(--dag-bar-err)';
+                  strokeVar = 'var(--tone-err-ink)';
+                }
+              }
+
+              return (
+                <g key={r.taskId}>
+                  {/* Row divider */}
+                  <rect
+                    x="4"
+                    y={yTop + 3}
+                    width={svgWidth - 8}
+                    height={rowHeight - 6}
+                    rx="7"
+                    fill="var(--dag-row-bg)"
+                  />
+
+                  {/* Left task label */}
+                  <text x="14" y={yTop + 23} className="svg-task-title">
+                    {r.taskId}
+                  </text>
+                  <text x="14" y={yTop + 41} className="svg-task-sub">
+                    {r.skill} · {r.durationMin}m
+                  </text>
+
+                  {/* Slack whisker ES..LF */}
+                  <rect
+                    x={slackStartX}
+                    y={barY + 5}
+                    width={Math.max(6, slackEndX - slackStartX)}
+                    height={barH - 10}
+                    rx="4"
+                    fill="none"
+                    stroke="var(--text-muted)"
+                    strokeDasharray="4 3"
+                  />
+
+                  {/* Execution bar */}
+                  <rect
+                    x={execX}
+                    y={barY}
+                    width={execW}
+                    height={barH}
+                    rx="6"
+                    fill={fillVar}
+                    stroke={strokeVar}
+                    strokeWidth="1.75"
+                  />
+
+                  {/* Bar assignment text */}
+                  <text
+                    x={execX + 8}
+                    y={barY + 17}
+                    className="svg-bar-label"
+                  >
+                    {r.assignment
+                      ? `${r.assignment.evidence === 'unknown' ? '? ' : '✓ '}${r.assignment.personId} [${execStart}..${execEnd}m]`
+                      : planRan
+                        ? '! Unassigned'
+                        : `ES ${r.earliestStartMin}..${r.earliestFinishMin}m`}
+                  </text>
+
+                  {/* Right slack badge */}
+                  <text
+                    x={svgWidth - 14}
+                    y={yTop + 31}
+                    textAnchor="end"
+                    className={isCritical ? 'svg-slack-crit' : 'svg-slack-ok'}
+                  >
+                    {isCritical ? `CRITICAL (${r.slackMin}m)` : `+${r.slackMin}m slack`}
+                  </text>
+                </g>
+              );
+            })}
+          </svg>
+        </div>
+      )}
+
+      {(viewMode === 'dual' || viewMode === 'table') && (
+        <div className="table-wrap">
+          <table className="accessible-table">
+            <caption className="sr-only">
+              Critical-path task schedule, backward slack windows, and contributor assignments
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Task ID</th>
+                <th scope="col">Required Skill</th>
+                <th scope="col">Duration</th>
+                <th scope="col">Depends On</th>
+                <th scope="col">Earliest (ES..EF)</th>
+                <th scope="col">Latest (LS..LF)</th>
+                <th scope="col">Slack</th>
+                <th scope="col">Assigned Builder</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => (
+                <tr key={r.taskId}>
+                  <th scope="row" className="mono-cell">{r.taskId}</th>
+                  <td><span className="skill-badge">{r.skill}</span></td>
+                  <td>{r.durationMin}m</td>
+                  <td>
+                    {r.after.length > 0
+                      ? `${r.after.join(', ')}${r.lagMin > 0 ? ` (+${r.lagMin}m)` : ''}`
+                      : 'None (Root)'}
+                  </td>
+                  <td className="mono-cell">{r.earliestStartMin}m .. {r.earliestFinishMin}m</td>
+                  <td className="mono-cell">{r.latestStartMin}m .. {r.latestFinishMin}m</td>
+                  <td>
+                    <span className={`status-chip ${r.slackMin <= 0 ? 'chip-warn' : 'chip-ok'}`}>
+                      {r.slackMin <= 0 ? `0m Critical` : `+${r.slackMin}m`}
+                    </span>
+                  </td>
+                  <td>
+                    {r.assignment ? (
+                      <span className={`status-chip ${r.assignment.evidence === 'unknown' ? 'chip-warn' : 'chip-ok'}`}>
+                        {r.assignment.evidence === 'unknown' ? '? ' : '✓ '}
+                        {r.assignment.personId} ({r.assignment.startMin}..{r.assignment.endMin}m)
+                      </span>
+                    ) : plan ? (
+                      <span className="status-chip chip-err">Unassigned / Blocked</span>
+                    ) : (
+                      <span className="muted-copy">Pending solve</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}

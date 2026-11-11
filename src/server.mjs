@@ -132,7 +132,16 @@ export function startServer({ dbPath = ':memory:', secret, host = '127.0.0.1', p
       if (req.method === 'GET' && boardMatch) {
         const limit = Number(parsedUrl.searchParams.get('limit') || 100);
         const offset = Number(parsedUrl.searchParams.get('offset') || 0);
-        respond(200, { teams: authority.board(boardMatch[1], limit, offset) });
+        const teams = authority.board(boardMatch[1], limit, offset);
+        if (parsedUrl.searchParams.get('meta') === '1') {
+          const evId = boardMatch[1];
+          const totalTeams = authority.db.prepare('SELECT COUNT(*) AS n FROM teams WHERE event_id=?').get(evId)?.n || 0;
+          const totalMembers = authority.db.prepare('SELECT COUNT(*) AS n FROM membership WHERE event_id=?').get(evId)?.n || 0;
+          const evRow = authority.db.prepare('SELECT max_size FROM events WHERE id=?').get(evId);
+          respond(200, { teams, totalTeams, totalMembers, maxSize: evRow?.max_size ?? null });
+          return;
+        }
+        respond(200, { teams });
         return;
       }
 
@@ -176,7 +185,7 @@ export function startServer({ dbPath = ':memory:', secret, host = '127.0.0.1', p
       // Static React UI serving for non-/api GET routes when web/dist is built
       if (req.method === 'GET' && !route.startsWith('/api/')) {
         if (existsSync(resolve(DIST_DIR, 'index.html'))) {
-          const cleanRel = route === '/' ? 'index.html' : normalize(route).replace(/^(\.\.(\/|\\|$))+/, '').replace(/^\/+/, '');
+          const cleanRel = route === '/' ? 'index.html' : normalize(route).replace(/^(\.\.(\/|\\|$))+/, '').replace(/^[\/\\]+/, '');
           const candidate = resolve(DIST_DIR, cleanRel);
           const target = (candidate.startsWith(DIST_DIR) && existsSync(candidate) && extname(candidate))
             ? candidate

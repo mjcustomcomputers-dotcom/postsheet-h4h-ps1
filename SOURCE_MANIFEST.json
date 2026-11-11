@@ -1,7 +1,7 @@
 {
   "project": "Post Sheet | Ability & Purpose Crew Network (H4H-PS1)",
-  "generatedAt": "2026-11-11T00:14:13.060Z",
-  "fileCount": 55,
+  "generatedAt": "2026-11-11T01:16:45.544Z",
+  "fileCount": 65,
   "files": [
     {
       "path": ".github/workflows/ci.yml",
@@ -175,8 +175,8 @@
     },
     {
       "path": "src/server.mjs",
-      "bytes": 15672,
-      "sha256": "788d2ae1c2799b7e8e91b1515e1d95afb93ab222d0bca22a6f5b452f7f5b25fe"
+      "bytes": 16264,
+      "sha256": "6c656259bf20f4efd7b872eb89e67e659e987d25aef330f2afc94f4cb69cec03"
     },
     {
       "path": "src/synchronicity-ext.mjs",
@@ -240,8 +240,8 @@
     },
     {
       "path": "web/index.html",
-      "bytes": 343,
-      "sha256": "0f2415fe8a5112c85966280e343558adf585972fcf7d37cfe9850c4910b46008"
+      "bytes": 672,
+      "sha256": "086343b9bce85e5b1ff519d8286c86aff7d59adb23d10d6ead7dd984cbe97e3d"
     },
     {
       "path": "web/package-lock.json",
@@ -255,8 +255,8 @@
     },
     {
       "path": "web/src/App.jsx",
-      "bytes": 25933,
-      "sha256": "a1be79841ad458b7b6fc629eed13bb4acdb5f014ead57439fa0439748b04f36a"
+      "bytes": 54383,
+      "sha256": "8455635de4fb71158716b81b9b0cd507b3f6e5781fb158fe109efc8db5c6ee73"
     },
     {
       "path": "web/src/claim-operation.js",
@@ -264,14 +264,64 @@
       "sha256": "d6cd0ccad591d10e3a635ece673c9785c9664aed4fc9e765d3c7cc93e429b21e"
     },
     {
+      "path": "web/src/components/ModalDialog.jsx",
+      "bytes": 3111,
+      "sha256": "8817f5d86cad8e1f9731107f9bddf2dc9cf76e6c300a998ac193c0921fb111f2"
+    },
+    {
+      "path": "web/src/components/Overlays.jsx",
+      "bytes": 19003,
+      "sha256": "9a259c840ffb05515d8cb377291acbe783116d696b348b620c11970e4d8f7ada"
+    },
+    {
+      "path": "web/src/components/TaskDagTimeline.jsx",
+      "bytes": 15280,
+      "sha256": "d752831deffd2b2e4874c677f58bfa9ecc402893e567de79406f52dfdaf8da88"
+    },
+    {
+      "path": "web/src/ergonomics.js",
+      "bytes": 5036,
+      "sha256": "3030b8c5447bbd40a27b5cc15d67ebb1803484101fc90554666b784a0042a073"
+    },
+    {
+      "path": "web/src/icons.jsx",
+      "bytes": 8347,
+      "sha256": "0f21f24828bcaa1b3d10064764c774590e5a0be7e6bf412a31f04e80f91585b1"
+    },
+    {
       "path": "web/src/main.jsx",
       "bytes": 221,
       "sha256": "7b2e843a6c066ab204125e985a509af1cb77959eac7d8130cdf7fe6f4a1d4c7f"
     },
     {
+      "path": "web/src/presets-and-catalog.js",
+      "bytes": 22402,
+      "sha256": "6a85664f105e9763ceeaa0f1816adb8970ea647ab3e84a78f81cd3299356cf0a"
+    },
+    {
       "path": "web/src/style.css",
-      "bytes": 4351,
-      "sha256": "a3ee202ec1fd8761a383efebc297b1102aa1b576e27b801621958848b2b974a0"
+      "bytes": 43296,
+      "sha256": "683f998a7766e2994cda0eb9145c06e0e0f88c22d892ab26eb907f775a100295"
+    },
+    {
+      "path": "web/src/views/DiscoverView.jsx",
+      "bytes": 27473,
+      "sha256": "5e2338614037e78b34c77f03ebaaed854922a9963a6f2dcc2ecefdc9ba2ed271"
+    },
+    {
+      "path": "web/src/views/MissionArchitectView.jsx",
+      "bytes": 32762,
+      "sha256": "9aab6a087d7cb8d780910fbdec798dea1b496abd37cdbd288c227edb81f8bccf"
+    },
+    {
+      "path": "web/src/views/ProofArenaView.jsx",
+      "bytes": 13487,
+      "sha256": "276ab532134ccd498c038b57e7112aa3c8513e62728d3444c72aebc5153f2e39"
+    },
+    {
+      "path": "web/src/views/SeatAuthorityView.jsx",
+      "bytes": 25216,
+      "sha256": "7c1125073d689fde4e3fef0f2af699a43fbd30083104445cf5a126ecea8c8e12"
     },
     {
       "path": "web/vite.config.mjs",
