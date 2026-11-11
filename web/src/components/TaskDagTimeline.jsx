@@ -50,7 +50,9 @@ function computeClientSchedule(tasks, horizonMin) {
   const ls = new Map();
   for (let i = topo.length - 1; i >= 0; i--) {
     const t = topo[i];
-    let latestFin = horizonMin;
+    let latestFin = Number.isFinite(Number(t.deadlineMin))
+      ? Math.min(horizonMin, Number(t.deadlineMin))
+      : horizonMin;
     for (const chId of children.get(t.id) || []) {
       const ch = byId.get(chId);
       const chLag = Math.max(0, Number(ch?.lagMin) || 0);

@@ -1,4 +1,5 @@
 // Pure-JS Team Plan White-Paper HTML & Self-CSP Exporter (shared by UI + Node security tests)
+import { computePartialTaskPreview } from './presets-and-catalog.js';
 
 const WHITE_PAPER_STYLES = `
   body {
@@ -115,6 +116,7 @@ export function derivePlanExportModel({
   teamId = 'crew-alpha',
   actorId = '',
   selectedTeam = null,
+  allowServerTeamBinding,
   goalDescription = '',
   horizonHours = 8,
   tasks = [],
@@ -125,10 +127,15 @@ export function derivePlanExportModel({
   const horizonMin = Math.max(60, Math.round(Number(horizonHours || 4) * 60));
   const metaMap = new Map((plan?.criticalPath || []).map(m => [m.taskId, m]));
   const assignMap = new Map((plan?.witness?.assignments || []).map(a => [a.taskId, a]));
+  const partialMap =
+    !plan?.witness && Array.isArray(teamPeople) && teamPeople.length > 0
+      ? computePartialTaskPreview(tasks, teamPeople, horizonMin, plan)
+      : new Map();
 
   const scheduleRows = (tasks || []).map(t => {
     const m = metaMap.get(t.id);
     const a = assignMap.get(t.id);
+    const pa = !a ? partialMap.get(t.id) : null;
     return {
       taskId: t.id,
       skill: t.skill,
@@ -137,14 +144,20 @@ export function derivePlanExportModel({
       slackLabel: m ? (m.slackMin <= 0 ? '0m (critical)' : `+${m.slackMin}m`) : 'Pending',
       assignee: a
         ? `${a.evidence === 'unknown' ? 'Unverified: ' : 'Confirmed: '}${a.personId} (${a.startMin}..${a.endMin}m)`
-        : plan
-          ? 'Uncovered'
-          : 'Preview'
+        : pa
+          ? `${pa.evidence === 'unknown' ? 'Unverified preview: ' : 'Preview: '}${pa.personId} (${pa.startMin}..${pa.endMin}m)`
+          : plan
+            ? 'Uncovered'
+            : 'Preview'
     };
   });
 
+  const canBindServerTeam =
+    allowServerTeamBinding !== undefined ? Boolean(allowServerTeamBinding) : true;
   const matchingServerTeam =
-    selectedTeam && (!teamId || selectedTeam.teamId === teamId) ? selectedTeam : null;
+    canBindServerTeam && selectedTeam && (!teamId || selectedTeam.teamId === teamId)
+      ? selectedTeam
+      : null;
 
   const rosterRows = matchingServerTeam?.members?.length
     ? matchingServerTeam.members.map(m => ({
@@ -155,7 +168,7 @@ export function derivePlanExportModel({
     : (teamPeople || []).map((p, idx) => ({
         id: p.id,
         role: idx === 0 ? `Plan Lead (${p.timezone}) - Preview only` : `Plan Member (${p.timezone}) - Preview only`,
-        source: Object.values(p.skills || {}).includes('unknown') ? 'VOI_PROVISIONAL' : 'SQLITE_AUTHORITY'
+        source: Object.values(p.skills || {}).includes('unknown') ? 'VOI_PROVISIONAL' : 'PLAN_PREVIEW'
       }));
 
   const receiptCode = computeReceiptDigest(

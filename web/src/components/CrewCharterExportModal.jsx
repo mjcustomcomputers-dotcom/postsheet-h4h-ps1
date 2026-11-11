@@ -18,6 +18,7 @@ export default function CrewCharterExportModal({
   teamId,
   actorId,
   selectedTeam,
+  allowServerTeamBinding = true,
   goalDescription,
   horizonHours,
   tasks,
@@ -29,28 +30,42 @@ export default function CrewCharterExportModal({
   const docRef = useRef(null);
   const [copyState, setCopyState] = useState('');
 
+  const effectiveTeamId = allowServerTeamBinding ? teamId : 'plan-preview';
   const exportInput = {
     eventId,
-    teamId,
+    teamId: effectiveTeamId,
     actorId,
     selectedTeam,
+    allowServerTeamBinding,
     goalDescription,
     horizonHours,
     tasks,
     teamPeople,
     plan,
-    issuedInvite
+    issuedInvite: allowServerTeamBinding ? issuedInvite : null
   };
 
   const model = useMemo(
     () => derivePlanExportModel(exportInput),
-    [eventId, teamId, actorId, selectedTeam, goalDescription, horizonHours, tasks, teamPeople, plan, issuedInvite]
+    [
+      eventId,
+      effectiveTeamId,
+      actorId,
+      selectedTeam,
+      allowServerTeamBinding,
+      goalDescription,
+      horizonHours,
+      tasks,
+      teamPeople,
+      plan,
+      issuedInvite
+    ]
   );
 
   function buildPlainTextReceipt() {
     const lines = [
       `POST SHEET | TEAM PLAN & SEAT SUMMARY (${model.receiptCode})`,
-      `Event: ${eventId} | Team: ${teamId} | Acting as: ${actorId || 'guest'}`,
+      `Event: ${eventId} | Team: ${effectiveTeamId} | Acting as: ${actorId || 'guest'}`,
       `Goal: ${goalDescription}`,
       `Summary: ${model.plainVerdict}`,
       `Engineering Verdict: ${plan?.status || 'NOT_EVALUATED'} (${plan?.classification || 'PREVIEW'})`,
@@ -151,13 +166,13 @@ export default function CrewCharterExportModal({
           <header className="charter-header">
             <div>
               <div className="charter-eyebrow">POST SHEET · TEAM PLAN &amp; SERVER MEMBERSHIP SUMMARY</div>
-              <h1 className="charter-h1">Team {teamId} · Plan &amp; Schedule</h1>
+              <h1 className="charter-h1">Team {effectiveTeamId} · Plan &amp; Schedule</h1>
               <div className="charter-meta">
                 Receipt ID: {model.receiptCode} · Event: {eventId} · Horizon: {horizonHours}h ({model.horizonMin}m)
               </div>
             </div>
             <div className="pill-row">
-              <EpistemicStencil kind="SQLITE_AUTHORITY" compact />
+              <EpistemicStencil kind={model.selectedTeam ? 'SQLITE_AUTHORITY' : 'PLAN_PREVIEW'} compact />
               {plan?.frontier?.wildcards?.length > 0 && <EpistemicStencil kind="VOI_PROVISIONAL" compact />}
             </div>
           </header>
@@ -237,7 +252,7 @@ export default function CrewCharterExportModal({
             </table>
           </section>
 
-          {issuedInvite?.code && (!teamId || !issuedInvite.teamId || issuedInvite.teamId === teamId) && (
+          {allowServerTeamBinding && issuedInvite?.code && (!teamId || !issuedInvite.teamId || issuedInvite.teamId === teamId) && (
             <section className="charter-section">
               <h3>
                 {issuedInvite.claimedBy ? '4. Single-Use Invite Receipt' : '4. Active Single-Use Invite Reference'}

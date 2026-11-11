@@ -8,6 +8,6 @@ SOURCE_BEFORE=e49ae455207f43252142655c4742efeaa65ce3fe
 # fail 0
 REACT_BUILD_EXIT=0
 PREVIOUS_GATES=REUSED_SOURCE_BOUND_R6
-RECORDS=/home/kernel-beer/kernel-beer-labs/H4H-PS1-SETUP-01/evidence/r7-react-20261110T230831Z-296300
-913e0d5243a0f3cde0c925153a66db54cd1fbc9f2fae3b45dacc5378dca88823  /home/kernel-beer/kernel-beer-labs/H4H-PS1-SETUP-01/evidence/r7-react-20261110T230831Z-296300/ui-tests.tap
-28c90a9b4e77da888442fc2aa54281334e3c23ef97e52490601e5e54b8ecf20e  /home/kernel-beer/kernel-beer-labs/H4H-PS1-SETUP-01/evidence/r7-react-20261110T230831Z-296300/vite-build.stdout
+RECORDS=<local-evidence-root>/H4H-PS1-SETUP-01/evidence/r7-react-20261110T230831Z-296300
+913e0d5243a0f3cde0c925153a66db54cd1fbc9f2fae3b45dacc5378dca88823  <local-evidence-root>/H4H-PS1-SETUP-01/evidence/r7-react-20261110T230831Z-296300/ui-tests.tap
+28c90a9b4e77da888442fc2aa54281334e3c23ef97e52490601e5e54b8ecf20e  <local-evidence-root>/H4H-PS1-SETUP-01/evidence/r7-react-20261110T230831Z-296300/vite-build.stdout

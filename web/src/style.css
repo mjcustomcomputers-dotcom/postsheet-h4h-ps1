@@ -1496,6 +1496,12 @@ kbd {
   color: var(--text-primary);
 }
 
+.stencil-preview {
+  background: var(--well-bg);
+  border-color: var(--border-strong);
+  color: var(--text-secondary);
+}
+
 /* ==========================================================================
    Solar Baton-Pass Horizon Canvas (0 Idle Frames at Rest)
    ========================================================================== */

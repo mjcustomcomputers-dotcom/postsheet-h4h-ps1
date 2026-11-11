@@ -34,17 +34,21 @@ export function formatHumanActorName(actorId, hasToken = true) {
     priya: 'Priya',
     'relay-mateo': 'Mateo',
     mateo: 'Mateo',
+    'sanjay-steward': 'Sanjay',
+    sanjay: 'Sanjay',
     'race-leader': 'Race Lead'
   };
   if (map[raw]) return map[raw];
   const lower = raw.toLowerCase();
-  const knownPrefix = /^(aurora|kai|priya|mateo)-/.exec(lower);
+  if (map[lower]) return map[lower];
+  const knownPrefix = /^(aurora|kai|priya|mateo|sanjay)-/.exec(lower);
   if (knownPrefix) {
     return knownPrefix[1].charAt(0).toUpperCase() + knownPrefix[1].slice(1);
   }
   const memNamed = /^mem-([a-z]{2,14})-/.exec(lower);
   if (memNamed && !/^\d+$/.test(memNamed[1])) {
-    return memNamed[1].charAt(0).toUpperCase() + memNamed[1].slice(1);
+    const slug = memNamed[1] === 'sanjaystew' ? 'sanjay' : memNamed[1];
+    return slug.charAt(0).toUpperCase() + slug.slice(1);
   }
   const leadNamed = /^lead-([a-z]{2,14})-/.exec(lower);
   if (leadNamed) {

@@ -268,7 +268,7 @@ export const MISSION_SCENARIOS = {
       { id: 'sandbox-prereq', title: 'Cloud & A11y Runner Prerequisite', skill: 'devops', durationMin: 45, lagMin: 0, after: [] },
       { id: 'authority-api', title: 'SQLite Serialized Seat API', skill: 'backend', durationMin: 105, lagMin: 0, after: ['sandbox-prereq'] },
       { id: 'client-views', title: 'Calm-FOV Crew Views', skill: 'frontend', durationMin: 120, lagMin: 0, after: ['sandbox-prereq'] },
-      { id: 'gate-suite', title: '97-Check Gate & Race Oracle', skill: 'integrate', durationMin: 60, lagMin: 0, after: ['authority-api', 'client-views'] }
+      { id: 'gate-suite', title: '170-Check Gate & Race Oracle', skill: 'integrate', durationMin: 60, lagMin: 0, after: ['authority-api', 'client-views'] }
     ],
     teamPeople: [
       {
@@ -659,7 +659,7 @@ export const WALKTHROUGH_STEPS = [
   },
   {
     time: '3:45 - 5:00',
-    title: '5. 50-person last-spot test & 102-check verification proof',
+    title: '5. 50-person last-spot test & 170-check verification proof',
     detail:
       'Open "4. Test the last spot" and click "Run 50-person last-spot test" to watch 50 simultaneous requests hit 1 open spot: 1 joined, 49 turned away cleanly at 2/2, with oversize=0, orphanLeader=0, and eventMismatch=0.',
     targetView: 'arena',
@@ -1035,11 +1035,13 @@ export function visualTasksToApi(tasks) {
       id = `${baseId}-${suffix++}`;
     }
     seen.add(id);
+    const hasDeadline = t.deadlineMin !== undefined && t.deadlineMin !== null && t.deadlineMin !== '' && Number.isFinite(Number(t.deadlineMin));
     return {
       id,
       skill: String(t.skill || 'backend').replace(/[^A-Za-z0-9_.:@-]/g, '').trim() || 'backend',
       durationMin: Math.max(1, Math.round(Number(t.durationMin) || 60)),
       ...(Number(t.lagMin) > 0 ? { lagMin: Math.round(Number(t.lagMin)) } : {}),
+      ...(hasDeadline ? { deadlineMin: Math.max(1, Math.round(Number(t.deadlineMin))) } : {}),
       rawAfter: Array.isArray(t.after) ? t.after.filter(Boolean) : []
     };
   });
@@ -1048,6 +1050,7 @@ export function visualTasksToApi(tasks) {
     skill: t.skill,
     durationMin: t.durationMin,
     ...(t.lagMin ? { lagMin: t.lagMin } : {}),
+    ...(t.deadlineMin !== undefined ? { deadlineMin: t.deadlineMin } : {}),
     after: t.rawAfter.filter(dep => dep !== t.id && seen.has(dep))
   }));
 }

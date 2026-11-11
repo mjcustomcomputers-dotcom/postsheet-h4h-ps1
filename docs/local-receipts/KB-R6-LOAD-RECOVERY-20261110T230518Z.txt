@@ -2,8 +2,8 @@ MISSION=H4H-PS1-SETUP-01
 R6_LOAD_RECOVERY=SOURCE_MATCHED_PRIOR_RUN
 MEASURED_SOURCE=e2cc3a8050acbdbdcdba6a7ececc126d7c187883
 PARSER_SOURCE=4934d1c417f8c806f952205170a96e38d9767d8b
-ORIGINAL_LOAD=/home/kernel-beer/kernel-beer-labs/H4H-PS1-SETUP-01/evidence/load-20261110T230121Z-295803/autocannon.json
-dceb8b7ee00209adf18b4fd9f031458bace8dbb5b7046029de7807ec5169fa44  /home/kernel-beer/kernel-beer-labs/H4H-PS1-SETUP-01/evidence/load-20261110T230121Z-295803/autocannon.json
+ORIGINAL_LOAD=<local-evidence-root>/H4H-PS1-SETUP-01/evidence/load-20261110T230121Z-295803/autocannon.json
+dceb8b7ee00209adf18b4fd9f031458bace8dbb5b7046029de7807ec5169fa44  <local-evidence-root>/H4H-PS1-SETUP-01/evidence/load-20261110T230121Z-295803/autocannon.json
 SOURCE | e2cc3a8050acbdbdcdba6a7ececc126d7c187883
 CLIENTS | 100 DURATION_S | 10.02
 REQUESTS | 35034

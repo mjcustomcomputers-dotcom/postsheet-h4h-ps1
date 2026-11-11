@@ -175,29 +175,45 @@ export default function DiscoverView({
   const legacyMode = lensMode === 'legacy';
 
   const pinnedById = useMemo(() => {
+    const boardById = new Map((board || []).map(b => [b.team_id, b]));
     const map = new Map();
     for (const pt of pinnedTeams || []) {
-      if (pt && pt.team_id) map.set(pt.team_id, pt);
+      if (!pt || !pt.team_id) continue;
+      const liveRow = boardById.get(pt.team_id);
+      map.set(pt.team_id, {
+        ...pt,
+        team_id: pt.team_id,
+        leader: liveRow?.leader || pt.leader,
+        max_size: liveRow?.max_size ?? pt.max_size ?? 5,
+        members: liveRow?.members ?? pt.members ?? 1
+      });
     }
     if (selectedTeam && selectedTeam.teamId) {
       const existing = map.get(selectedTeam.teamId);
+      const liveRow = boardById.get(selectedTeam.teamId);
+      const selMembers = Array.isArray(selectedTeam.members) ? selectedTeam.members.length : 1;
       map.set(selectedTeam.teamId, {
         team_id: selectedTeam.teamId,
-        leader: selectedTeam.leader,
-        max_size: selectedTeam.maxSize || 5,
-        members: Array.isArray(selectedTeam.members) ? selectedTeam.members.length : 1,
+        leader: liveRow?.leader || selectedTeam.leader,
+        max_size: liveRow?.max_size ?? selectedTeam.maxSize ?? 5,
+        members: liveRow?.members ?? selMembers,
         touchedAt: existing?.touchedAt || Date.now()
       });
     }
     return map;
-  }, [pinnedTeams, selectedTeam]);
+  }, [pinnedTeams, selectedTeam, board]);
 
   const enrichedCrews = useMemo(
     () =>
       board.map(t => {
-        const live = pinnedById.get(t.team_id);
-        const merged = live
-          ? { ...t, leader: live.leader, max_size: live.max_size, members: live.members }
+        const pt = pinnedById.get(t.team_id);
+        const merged = pt
+          ? {
+              ...t,
+              leader: t.leader || pt.leader,
+              max_size: t.max_size ?? pt.max_size ?? 5,
+              members: t.members ?? pt.members ?? 1
+            }
           : t;
         return deriveCrewProfile(merged, verifiedCrewMap, customCrewMap, eventId);
       }),

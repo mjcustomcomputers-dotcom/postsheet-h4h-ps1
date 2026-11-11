@@ -3,7 +3,7 @@
 - **Document ID:** `PSS-H4H-CRR-01.R1`
 - **Date:** `2026-11-11`
 - **Owner:** Melvin Jackson, Post Sheet
-- **Target Repository:** `C:\Users\BugLab\Desktop\H4H-PS1-SUBMISSION`
+- **Target Repository:** `postsheet-h4h-ps1`
 - **Pre-Stage-C/D Baseline Commit:** `main @ 13fd030`
 - **Authorization Scope:** Bounded presentation/ergonomics supplement to `PSS-H4H-CARBON-REACTIVE-MOONLIGHT-R1` and approved Stages C & D. Zero backend, solver, crypto, schema, test, script, or `web/src/claim-operation.js` modifications (`0 bytes` diff).
 
@@ -12,7 +12,7 @@
 ## 1. Visual-Source Provenance & Direct Composition Transfer Map
 
 ### 1.1 Reference Artifact Provenance
-- **Inspected historical image:** `PostSomeSheet_PSS-MAP-07_Desktop.png` (`1600 x 960`), recovered from Google Drive file ID `1RQJN_8LlPysjHLiZVczjHONeZicahHtf` (`https://drive.google.com/file/d/1RQJN_8LlPysjHLiZVczjHONeZicahHtf/view`).
+- **Inspected historical image:** `PostSomeSheet_PSS-MAP-07_Desktop.png` (`1600 x 960`), historical Post Sheet design archive.
 - **Epistemic boundary:** This PNG is a historical art-directed concept screenshot, **not** a live browser capture of `https://postsheet.org/explore`. An interactive TinyFish run returned insufficient wallet funds (no charge authorized), and public fetch did not yield an independently verified live screenshot. No files in the separate public PostSheet site were altered.
 
 ### 1.2 Screenshot-to-Workspace Composition Map

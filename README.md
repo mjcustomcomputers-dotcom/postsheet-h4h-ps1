@@ -81,7 +81,7 @@ flowchart TD
 ### Three Separated Execution Paths
 1. **Hot Board Read Path (`GET /api/events/:id/board`):** Executes a pure indexed SQLite projection (`LIMIT` / `OFFSET`) and streams live revision notifications over Server-Sent Events (`/stream`). It never invokes the constraint solver and sustains `p95 = 36.68 ms` across 100 concurrent clients on a 10,000-user, 2,000-team database.
 2. **Bounded Planning and Recommendation Path (`POST /api/plan`, `POST /api/recommendations`):** Evaluates directed task DAGs, four-valued skill evidence, Hall contention repairs, and UTC baton-pass candidates under explicit node and witness caps (`maxNodes`, `maxWitnesses`). It proposes plans and explanations but can never grant a seat on its own.
-3. **Serialized Authority Commit Path (`POST /api/events/:id/teams`, `/invites`, `/claims`, `/leave`, `/transfer-leader`):** Runs short, deterministic `BEGIN IMMEDIATE` transactions in SQLite WAL. Every commit re-verifies server time, bearer identity, single-use invite hash validity, event-wide person uniqueness, team capacity, and `(event_id, actor_id, op_id, request_hash)` idempotency before writing the membership row and attributable audit entry atomically.
+3. **Serialized Authority Commit Path (`POST /api/teams`, `POST /api/invitations`, `POST /api/invitations/claim`, `POST /api/peer/relay-claim`, `POST /api/teams/leave`, `POST /api/teams/transfer`):** Runs short, deterministic `BEGIN IMMEDIATE` transactions in SQLite WAL. Every commit re-verifies server time, bearer identity, single-use invite hash validity, event-wide person uniqueness, team capacity, and `(event_id, actor_id, op_id, request_hash)` idempotency before writing the membership row and attributable audit entry atomically.
 
 ---
 
@@ -216,8 +216,8 @@ bash scripts/start-local.sh
 
 Open `http://127.0.0.1:8788` in your browser.
 - Use **Acting as: Aurora** in the top bar to switch between demo personas (`leader-aurora`, `builder-kai`, `builder-priya`, `relay-mateo`) or register/sign in with a `scrypt`-backed account.
-- Use **Display & A11y** in the top bar to switch color themes (`Moonlight Dark`, `High Contrast`, `Moonlit Pearl`), text scale (`60%` through `115%`), or motion mode.
-- Click **5-Minute Walkthrough** in the top bar for a step-by-step interactive guide across all four views.
+- Use **Display** in the top bar to switch color themes (`Moonlight Dark`, `High Contrast`, `Moonlit Pearl`), text scale (`60%` Panorama through `100%` Standard), or motion mode.
+- Click **Guide [`?` or `F1`]** on the upper shortcut bar for the purpose-first overview and keyboard map, or open **4. Test the last spot** -> **5-Minute Walkthrough** for an interactive tour across all four steps.
 
 ### Option B: Hardened Non-Root Docker Container
 
@@ -271,23 +271,23 @@ kill "$SRV_PID"
 | `POST /api/auth/register` / `POST /api/auth/login` | Public | Async `scrypt` account registration and login (`Bearer` token issuance) |
 | `POST /api/auth/logout` | Bearer | Revokes active token in durable `ps1_revoked_tokens` table |
 | `POST /api/auth/demo` | Public (when `PS1_DEMO_AUTH=1`) | Issues isolated demo persona token (`DEMO_PERSONA_RE` enforced; blocks impersonation of registered accounts) |
-| `POST /api/auth/relay-warrant` | Public (demo) or Bearer | Mints narrow 10-minute `h4h-ps1-relay-warrant` bound to `{sub, eventId, teamId, opId, codeHash}` |
+| `POST /api/auth/relay-warrant` | Bearer | Mints narrow 10-minute `h4h-ps1-relay-warrant` bound to `{sub, eventId, teamId, opId, codeHash}` |
 | `GET /api/events/:ev/board` | Public | Paginated indexed team projection (`?limit=100&offset=0&meta=1`) |
-| `GET /api/events/:ev/stream` | Public | Live SSE stream emitting `ROSTER_REVISION` frames after committed mutations |
-| `GET /api/events/:ev/teams/:team` | Public | Full roster and leader state for a specific team |
+| `GET /api/events/:ev/stream` | Public | Live SSE stream emitting `ROSTER_REVISION` frames after committed mutations (`25s` keepalive) |
+| `GET /api/events/:ev/teams/:tid` | Public | Full roster and leader state for a specific team |
 | `GET /api/events/:ev/audit` | Bearer | Chronological tail (`LIMIT 100`) of attributable event audit records |
-| `POST /api/events` | Bearer | Creates or configures an event capacity boundary (`maxTeamSize`) |
-| `POST /api/events/:ev/teams` | Bearer | Creates a team with the caller as initial leader (`409 ONE_TEAM_PER_EVENT` / `TEAM_EXISTS`) |
-| `POST /api/events/:ev/teams/:team/invites` | Bearer (Leader) | Issues a single-use invite; stores only `SHA-256(code)` with `expiresAt` |
-| `POST /api/invitations/claim` | Bearer | Atomically claims an open seat with `(opId, code)` idempotency (`409 TEAM_FULL` / `INVITE_INVALID_OR_USED`, `410 INVITE_EXPIRED`) |
-| `POST /api/events/:ev/teams/:team/leave` | Bearer (Member) | Withdraws caller, promotes earliest teammate on leader exit, or auto-deletes empty team |
-| `POST /api/events/:ev/teams/:team/transfer-leader` | Bearer (Leader) | Atomically transfers leadership to an existing team member |
-| `POST /api/plan` | Public | Runs `planGoal`, `evaluateWildcardFrontier`, and `diagnoseAndRepair` on a goal DAG and candidate pool |
-| `POST /api/recommendations` | Public | Ranks complementary builders across missing skills, interval-union overlap, and directed UTC baton passes |
-| `POST /api/peer/notes` & `GET /api/events/:ev/teams/:team/notes` | Bearer (Member) | Seals (`AES-256-GCM` with `P-256` signature) and verifies team collaboration notes (`0` plaintext stored in SQLite) |
+| `POST /api/events` | Bearer | Creates or configures an event capacity boundary (`{ eventId, maxSize }`) |
+| `POST /api/teams` | Bearer | Creates a team with the caller as initial leader (`{ eventId, teamId }`; `409 ONE_TEAM_PER_EVENT` / `TEAM_EXISTS`) |
+| `POST /api/invitations` | Bearer (Leader) | Issues a single-use invite (`{ eventId, teamId, expiresAt }`); stores only `SHA-256(code)` |
+| `POST /api/invitations/claim` | Bearer | Atomically claims an open seat (`{ eventId, teamId, code, opId }`) with idempotent replay (`409 TEAM_FULL` / `INVITE_INVALID_OR_USED`, `410 INVITE_EXPIRED`) |
+| `POST /api/teams/leave` | Bearer (Member) | Withdraws caller (`{ eventId, teamId }`), promotes earliest teammate on leader exit, or auto-deletes empty team |
+| `POST /api/teams/transfer` | Bearer (Leader) | Atomically transfers leadership (`{ eventId, teamId, newLeaderId }`) to an existing team member |
+| `POST /api/plan` | Bearer | Runs `planGoal`, `evaluateWildcardFrontier`, and `diagnoseAndRepair` on a goal DAG and candidate pool (`{ goal, people, maxNodes }`) |
+| `POST /api/recommendations` | Bearer | Ranks complementary builders across missing skills, interval-union overlap, and directed UTC baton passes (`{ goal, teamPeople, candidates }`) |
+| `POST /api/peer/notes` & `GET /api/peer/notes?eventId=:ev` | Bearer | Seals (`AES-256-GCM` with `P-256` signature) and verifies event collaboration notes (`0` plaintext stored in SQLite) |
 | `POST /api/peer/glue` | Bearer | Checks concurrent peer schedule drafts via `contextGlueOrExplain` (`<= 128` records) |
-| `POST /api/peer/relay-claim` | Bearer (Peer Relay) | Submits a disconnected claimant's warrant-bound seat claim through an uplinked peer |
-| `POST /api/demo/race-50` | Public (when `PS1_DEMO_AUTH=1`) | Runs an isolated 50-claimant final-seat burst on the live SQLite database and returns invariant telemetry |
+| `POST /api/peer/relay-claim` | Bearer (Peer Relay) | Submits a disconnected claimant's warrant-bound seat claim through a distinct uplinked peer (`403 SELF_RELAY_FORBIDDEN` on self-relay) |
+| `POST /api/demo/race-50` | Bearer (when `PS1_DEMO_AUTH=1`) | Runs an isolated 50-claimant final-seat burst on the live SQLite database (`10/min` rate bucket) and returns invariant telemetry |
 
 ### Environment Variables
 
@@ -310,7 +310,7 @@ kill "$SRV_PID"
 - [`PREEXISTING_WORK.md`](./PREEXISTING_WORK.md): Attribution of prior Post Sheet / Synchronicity concepts vs. clean-room Hack4Hack PS1 implementation, ownership notice, and AI collaboration disclosure.
 - [`docs/ENGINE_SOLVER_ADVERSARIAL_REVIEW.md`](./docs/ENGINE_SOLVER_ADVERSARIAL_REVIEW.md): Formal adversarial verification of scheduler completeness, Wildcard Omega frontiers, and parallel Hall contention (`R6_EXP01..14`).
 - [`docs/PSS-H4H-CRR-01.R1-SUPPLEMENT.md`](./docs/PSS-H4H-CRR-01.R1-SUPPLEMENT.md): Visual perception, contrast tokens, and cognitive ergonomics engineering packet.
-- [`docs/DECISION_AND_EXPERIMENT_LEDGER.md`](./docs/DECISION_AND_EXPERIMENT_LEDGER.md): Chronological engineering ledger preserving accepted, rejected-by-test, and superseded design experiments (`LED-01..LED-19`).
+- [`docs/DECISION_AND_EXPERIMENT_LEDGER.md`](./docs/DECISION_AND_EXPERIMENT_LEDGER.md): Chronological engineering ledger preserving accepted, rejected-by-test, and superseded design experiments (`LED-01..LED-20`).
 - [`SOURCE_MANIFEST.json`](./SOURCE_MANIFEST.json): SHA-256 integrity manifest covering every tracked file in the submission repository.
 
 ---

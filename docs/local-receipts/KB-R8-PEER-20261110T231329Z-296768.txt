@@ -8,4 +8,4 @@ PARENT_SOURCE=2f8d2c25821132b0443a41bc4f7ee92ed8760b39
 # fail 0
 CASE_SCOPE=authenticated-AES-GCM,P256,scope,receipt-key,sqlite-unique,restart,replay,expiry
 PRIOR_APP_GATES=R6_SOURCE_BOUND
-d28fef6ca8ba35ce34a98364fc74ca21c168ccf4a97a35dc16777783b31dbee6  /home/kernel-beer/kernel-beer-labs/H4H-PS1-SETUP-01/evidence/r8-peer-20261110T231329Z-296768/peer.tap
+d28fef6ca8ba35ce34a98364fc74ca21c168ccf4a97a35dc16777783b31dbee6  <local-evidence-root>/H4H-PS1-SETUP-01/evidence/r8-peer-20261110T231329Z-296768/peer.tap

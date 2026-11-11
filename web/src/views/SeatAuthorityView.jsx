@@ -167,6 +167,10 @@ export default function SeatAuthorityView({
     issuedInvite?.code && (!issuedInvite.teamId || issuedInvite.teamId === teamId)
   );
   const isSelectedTeamCurrent = Boolean(selectedTeam && selectedTeam.teamId === teamId);
+  const isSelectedTeamFull = Boolean(
+    isSelectedTeamCurrent && (selectedTeam.members?.length || 0) >= (selectedTeam.maxSize || 5)
+  );
+  const actorIsDemo = !actorId || DEMO_LEAD_CLIENT_RE.test(actorId);
   const actorOnSelectedTeam = Boolean(
     actorId &&
       isSelectedTeamCurrent &&
@@ -191,13 +195,19 @@ export default function SeatAuthorityView({
   );
   const hasOpenSpotWithoutInvite = Boolean(
     isSelectedTeamCurrent &&
-      (selectedTeam.members?.length || 0) < (selectedTeam.maxSize || 5) &&
+      !isSelectedTeamFull &&
       !hasMatchingInviteForSelected
   );
   const canDemoActAsLeader = Boolean(
     isSelectedTeamCurrent &&
-      (selectedTeam.leader === actorId || DEMO_LEAD_CLIENT_RE.test(selectedTeam.leader || ''))
+      (selectedTeam.leader === actorId || (actorIsDemo && DEMO_LEAD_CLIENT_RE.test(selectedTeam.leader || '')))
   );
+
+  function handleStartFreshNewTeam() {
+    const freshTid = `crew-${String(Date.now()).slice(-4)}`;
+    onChangeTeamId(freshTid);
+    onCreateTeam({ teamIdOverride: freshTid, mission: customMissionDraft, skills: customSkillsDraft });
+  }
   const pickerTeams = (() => {
     const seen = new Set();
     const list = [];
@@ -561,11 +571,28 @@ export default function SeatAuthorityView({
               <button
                 type="button"
                 className="btn btn-secondary btn-compact"
-                disabled={joining || forwardingPeer}
+                disabled={joining || forwardingPeer || isSelectedTeamFull}
                 onClick={onCreateInvite}
+                title={
+                  isSelectedTeamFull
+                    ? `Team ${selectedTeam.teamId} has all ${selectedTeam.members.length}/${selectedTeam.maxSize} spots confirmed`
+                    : 'Create a single-use invite code for this team'
+                }
               >
-                Create single-use invite
+                {isSelectedTeamFull
+                  ? `Team full (${selectedTeam.members.length}/${selectedTeam.maxSize} spots confirmed)`
+                  : 'Create single-use invite'}
               </button>
+              {isSelectedTeamFull && (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-compact"
+                  disabled={joining || forwardingPeer}
+                  onClick={handleStartFreshNewTeam}
+                >
+                  Create new team
+                </button>
+              )}
               <button
                 type="button"
                 className="btn btn-danger-outline btn-compact"
@@ -615,8 +642,25 @@ export default function SeatAuthorityView({
                         : ''}
                       . Single-use codes work once.
                     </p>
-                    {(!isSelectedTeamCurrent ||
-                      (selectedTeam.members?.length || 0) < (selectedTeam.maxSize || 5)) && (
+                    {isSelectedTeamFull ? (
+                      <div className="pill-row">
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-compact"
+                          disabled
+                        >
+                          Team full ({selectedTeam.members.length}/{selectedTeam.maxSize} spots confirmed)
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-compact"
+                          disabled={joining || forwardingPeer}
+                          onClick={handleStartFreshNewTeam}
+                        >
+                          Create new team
+                        </button>
+                      </div>
+                    ) : (
                       <button
                         type="button"
                         className="btn btn-secondary btn-compact"
@@ -664,7 +708,7 @@ export default function SeatAuthorityView({
                 />
               </label>
 
-              {inviteCode && actorAlreadyInTargetTeam && onClaimAsFreshCandidate && (
+              {inviteCode && actorAlreadyInTargetTeam && actorIsDemo && onClaimAsFreshCandidate && (
                 <div className="self-claim-guard subcard tone-ok top-gap-xs" role="region" aria-label="Switch to invited teammate helper">
                   <div className="small-copy">
                     <strong>{humanActor} (<code>{actorId}</code>) is already on <code>{teamId}</code>.</strong>{' '}
@@ -706,7 +750,7 @@ export default function SeatAuthorityView({
                 </div>
               )}
 
-              {!(inviteCode && actorAlreadyInTargetTeam && onClaimAsFreshCandidate) && (
+              {!(inviteCode && actorAlreadyInTargetTeam && actorIsDemo && onClaimAsFreshCandidate) && (
                 <div className="pill-row top-gap-xs">
                   <button
                     type="button"

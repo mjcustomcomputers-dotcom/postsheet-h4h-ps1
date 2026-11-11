@@ -64,16 +64,31 @@ import {
 const DEMO_PERSONA_CLIENT_RE =
   /^(leader-aurora|builder-kai|builder-priya|relay-mateo|race-leader|(aurora|priya|kai|mateo|lead|mem|claimant)-[A-Za-z0-9_-]{1,28})$/;
 
-function extractMemberBaseName(userId) {
-  const raw = String(userId || '').trim().toLowerCase();
+function isLoopbackHostname() {
+  if (typeof window === 'undefined' || !window.location) return false;
+  const h = String(window.location.hostname || '').toLowerCase();
+  return h === '127.0.0.1' || h === 'localhost' || h === '[::1]';
+}
+
+function extractFirstHandleSegment(rawInput) {
+  const raw = String(rawInput || '').trim().toLowerCase();
   if (!raw) return '';
   if (raw === 'leader-aurora' || raw.startsWith('aurora-')) return 'aurora';
   if (raw === 'builder-kai' || raw.startsWith('kai-')) return 'kai';
   if (raw === 'builder-priya' || raw.startsWith('priya-')) return 'priya';
   if (raw === 'relay-mateo' || raw.startsWith('mateo-')) return 'mateo';
   const memMatch = /^mem-([a-z]{2,14})-/.exec(raw);
-  if (memMatch && !/^\d+$/.test(memMatch[1])) return memMatch[1];
-  return normalizeBuilderId(raw);
+  if (memMatch && !/^\d+$/.test(memMatch[1])) {
+    return memMatch[1] === 'sanjaystew' ? 'sanjay' : memMatch[1];
+  }
+  const normalized = normalizeBuilderId(raw);
+  const stripped = normalized.replace(/^(leader|builder|relay|lead|mem|claimant)-/, '');
+  const seg = stripped.split(/[^a-z0-9]+/).find(part => part && !/^\d+$/.test(part));
+  return seg || normalized.replace(/[^a-z0-9]/g, '');
+}
+
+function extractMemberBaseName(userId) {
+  return extractFirstHandleSegment(userId);
 }
 
 function buildValidDemoActorId(personHint, roleTag, uniqueSuffix) {
@@ -81,7 +96,7 @@ function buildValidDemoActorId(personHint, roleTag, uniqueSuffix) {
   const cleanTag = String(uniqueSuffix || Date.now().toString(36).slice(-5))
     .replace(/[^A-Za-z0-9]/g, '')
     .slice(0, 10) || '1';
-  const base = normalizeBuilderId(personHint).replace(/[^a-z0-9]/g, '');
+  const base = extractFirstHandleSegment(personHint);
   if (base === 'aurora' || base === 'priya' || base === 'kai' || base === 'mateo') {
     return `${base}-${cleanRole}-${cleanTag}`;
   }
@@ -101,13 +116,14 @@ function pickNextUnseatedTeammateHint(teamDetail, planPeople, issuedInv) {
     'priya',
     'kai',
     'mateo',
+    'sanjay',
     'sana',
     'devon',
     'elena',
     'tariq'
   ];
   for (const cand of candidatesOrder) {
-    const norm = normalizeBuilderId(cand).replace(/[^a-z0-9]/g, '');
+    const norm = extractFirstHandleSegment(cand);
     if (norm && !seated.has(norm)) return norm;
   }
   return 'priya';
@@ -256,6 +272,11 @@ export default function App() {
     actorRef.current = actorId;
   }, [actorId]);
 
+  const isDemoSession = useCallback(
+    () => !tokenRef.current || !actorRef.current || DEMO_PERSONA_CLIENT_RE.test(actorRef.current),
+    []
+  );
+
   // Live Board & Pagination State
   const [board, setBoard] = useState([]);
   const [totalTeams, setTotalTeams] = useState(null);
@@ -266,11 +287,16 @@ export default function App() {
   const [pageIndex, setPageIndex] = useState(0);
   const [pageSize, setPageSize] = useState(24);
   const [selectedTeam, setSelectedTeam] = useState(null);
+  const selectedTeamRef = useRef(null);
   const [pinnedTeamsMap, setPinnedTeamsMap] = useState({});
   const autoInspectedEventRef = useRef('');
   const [spawningDemo, setSpawningDemo] = useState(false);
   const [verifiedCrewMap, setVerifiedCrewMap] = useState({});
   const [customCrewMap, setCustomCrewMap] = useState(() => loadCustomCrewOverlay());
+
+  useEffect(() => {
+    selectedTeamRef.current = selectedTeam;
+  }, [selectedTeam]);
 
   // Step 2: Plan the work state (Instant <2ms Client Solver Initialized)
   const [activeScenarioKey, setActiveScenarioKey] = useState('baton');
@@ -293,6 +319,7 @@ export default function App() {
   const solveSeqRef = useRef(0);
   const [lockingPlan, setLockingPlan] = useState(false);
   const [evaluatingCrewId, setEvaluatingCrewId] = useState(null);
+  const [lockedPlanTeamId, setLockedPlanTeamId] = useState(null);
 
   // Step 3: Manage your team & offline forwarding state
   const [teamId, setTeamId] = useState('crew-alpha');
@@ -545,6 +572,7 @@ export default function App() {
       if (!detail || !detail.teamId) return;
       const memberCount = Array.isArray(detail.members) ? detail.members.length : 1;
       const maxSz = Number(detail.maxSize || eventMaxSize || 5);
+      selectedTeamRef.current = detail;
       setSelectedTeam(detail);
       setPinnedTeamsMap(prev => ({
         ...prev,
@@ -572,6 +600,9 @@ export default function App() {
 
   const removeDeletedTeamRecord = useCallback(
     (deletedTid, targetEv = eventId) => {
+      if (selectedTeamRef.current?.teamId === deletedTid) {
+        selectedTeamRef.current = null;
+      }
       setSelectedTeam(prev => (prev?.teamId === deletedTid ? null : prev));
       setPinnedTeamsMap(prev => {
         const next = { ...prev };
@@ -613,9 +644,9 @@ export default function App() {
     [issuedInvite]
   );
 
-  // Board refresh with live latency measurement
+  // Board refresh with live latency measurement + multi-tab SSE active-team sync
   const refreshBoard = useCallback(
-    async (manual = false, forceOnline = false) => {
+    async (manual = false, forceOnline = false, fromSse = false) => {
       if (wanOffline && !forceOnline) {
         setAuthorityHealth('wan-dropped');
         if (manual === true) {
@@ -644,6 +675,35 @@ export default function App() {
         setBoardLatencyMs(dt);
         setAuthorityHealth('online');
 
+        // Keep active selectedTeam 100% synchronized across multiple browser tabs via SSE & board diffs
+        const cur = selectedTeamRef.current;
+        if (cur?.teamId) {
+          const liveBoardRow = rows.find(r => r.team_id === cur.teamId);
+          const curMemberLen = Array.isArray(cur.members) ? cur.members.length : 1;
+          const boardDiffers = Boolean(
+            liveBoardRow && (liveBoardRow.members !== curMemberLen || liveBoardRow.leader !== cur.leader)
+          );
+          if (fromSse === true || manual === true || boardDiffers) {
+            fetch(
+              `/api/events/${encodeURIComponent(eventId)}/teams/${encodeURIComponent(cur.teamId)}`,
+              { cache: 'no-store' }
+            )
+              .then(async r => {
+                if (r.status === 404) {
+                  removeDeletedTeamRecord(cur.teamId, eventId);
+                  return null;
+                }
+                return readApiJson(r);
+              })
+              .then(detail => {
+                if (detail && selectedTeamRef.current?.teamId === detail.teamId) {
+                  recordConfirmedTeamDetail(detail, eventId);
+                }
+              })
+              .catch(() => {});
+          }
+        }
+
         // On first load of an event, inspect a real open multi-member team so active team spots match server truth
         if (autoInspectedEventRef.current !== eventId && rows.length > 0) {
           autoInspectedEventRef.current = eventId;
@@ -660,6 +720,7 @@ export default function App() {
               .then(detail => {
                 setSelectedTeam(prev => {
                   if (prev) return prev;
+                  selectedTeamRef.current = detail;
                   setTeamId(detail.teamId);
                   setPinnedTeamsMap(pm => ({
                     ...pm,
@@ -687,12 +748,17 @@ export default function App() {
         setAuthorityHealth('unreachable');
         setStatusMessage(`Server connection: ${e.message}`);
         if (manual === true) {
-          notifyToast('Local server (:8788) offline - plan preview still works locally.', 'err');
+          notifyToast(
+            isLoopbackHostname()
+              ? 'Local server (:8788) unreachable - local <2ms plan preview remains active.'
+              : 'Server reconnecting - local <2ms plan preview remains active.',
+            'err'
+          );
         }
         return false;
       }
     },
-    [eventId, pageIndex, pageSize, wanOffline, notifyToast]
+    [eventId, pageIndex, pageSize, wanOffline, notifyToast, recordConfirmedTeamDetail, removeDeletedTeamRecord]
   );
 
   async function retryServerConnection() {
@@ -703,9 +769,17 @@ export default function App() {
       }
       const ok = await refreshBoard(false);
       if (ok) {
-        notifyToast('Connected to local server (:8788).', 'ok');
+        notifyToast(
+          isLoopbackHostname() ? 'Connected to local server (:8788).' : 'Reconnected to server.',
+          'ok'
+        );
       } else {
-        notifyToast('Server (:8788) still offline - run LAUNCH_H4H_PS1.cmd on Desktop.', 'err');
+        notifyToast(
+          isLoopbackHostname()
+            ? 'Local server (:8788) still unreachable - start node src/server.mjs on port 8788.'
+            : 'Server reconnecting - local <2ms plan preview remains active.',
+          'err'
+        );
       }
     } finally {
       setRetryingServer(false);
@@ -714,7 +788,7 @@ export default function App() {
 
   useEffect(() => {
     refreshBoard();
-    const timer = setInterval(refreshBoard, 6000);
+    const timer = setInterval(() => refreshBoard(), 6000);
     return () => clearInterval(timer);
   }, [refreshBoard]);
 
@@ -728,7 +802,7 @@ export default function App() {
     stream.onopen = () => setSseConnected(true);
     stream.onerror = () => setSseConnected(false);
     stream.addEventListener('board', () => {
-      refreshBoard();
+      refreshBoard(false, false, true);
     });
     return () => {
       setSseConnected(false);
@@ -1005,16 +1079,33 @@ export default function App() {
       notifyToast('Invalid event ID.', 'err');
       return;
     }
+    const resetEventTransientState = () => {
+      if (nextEv !== eventId) {
+        autoInspectedEventRef.current = '';
+        selectedTeamRef.current = null;
+        setSelectedTeam(null);
+        setLockedPlanTeamId(null);
+        setEvaluatingCrewId(null);
+        setTeamId('crew-alpha');
+        setIssuedInvite(null);
+        setInviteCode('');
+        setPeerNotes([]);
+        setAuditRows([]);
+        setRelayedReceipt(null);
+        setReplayReceipt(null);
+      }
+    };
     try {
       await runProtectedAction(`Switch Event (${nextEv})`, async freshTok => {
         await sendPost('/api/events', { eventId: nextEv, maxSize: 5 }, freshTok);
+        resetEventTransientState();
         setEventId(nextEv);
         setPageIndex(0);
-        setSelectedTeam(null);
         setStatusMessage(`Switched active event to '${nextEv}'.`);
         notifyToast(`Switched event to '${nextEv}'.`, 'ok');
       });
     } catch {
+      resetEventTransientState();
       setEventId(nextEv);
       setPageIndex(0);
       setStatusMessage(`Switched event to '${nextEv}'.`);
@@ -1313,6 +1404,7 @@ export default function App() {
       setActiveScenarioKey(key);
       setOmegaMode('contingent');
       setEvaluatingCrewId(null);
+      setLockedPlanTeamId(null);
       setBeforeSnapshot(null);
       setGoalDescription(sc.goalDescription);
       setHorizonHours(sc.horizonHours);
@@ -1489,9 +1581,11 @@ export default function App() {
           await sendPost('/api/teams', { eventId, teamId: targetTid }, activeTok);
         } catch (teamErr) {
           if (
-            teamErr.code === 'ONE_TEAM_PER_EVENT' ||
-            String(teamErr.message).includes('ONE_TEAM_PER_EVENT') ||
-            teamErr.code === 'TEAM_EXISTS'
+            (teamErr.code === 'ONE_TEAM_PER_EVENT' ||
+              String(teamErr.message).includes('ONE_TEAM_PER_EVENT') ||
+              teamErr.code === 'TEAM_EXISTS') &&
+            isDemoSession() &&
+            !signedOutManuallyRef.current
           ) {
             const leadPersonaId = buildValidDemoActorId(leadPersonHint, 'plan', tag);
             const freshPersona = await readApiJson(
@@ -1576,12 +1670,13 @@ export default function App() {
           activeTok
         );
         setTeamId(targetTid);
+        setLockedPlanTeamId(targetTid);
         setIssuedInvite({
           ...inv,
           teamId: targetTid,
           eventId,
           issuedBy: activeLead,
-          suggestedInvitee: unseatedNextPerson || null,
+          suggestedInvitee: unseatedNextPerson ? extractFirstHandleSegment(unseatedNextPerson) : null,
           claimedBy: null,
           claimedAt: null
         });
@@ -1637,6 +1732,7 @@ export default function App() {
 
   function handleRequestSeatForTeam(tid) {
     handleChangeActiveTeamId(tid);
+    setLockedPlanTeamId(tid);
     inspectTeam(tid, true);
     setActiveView('authority');
     notifyToast(`Opened '${tid}' in Step 3: Manage your team.`, 'info');
@@ -1798,6 +1894,7 @@ export default function App() {
     let activeTok = await ensureToken(initialTok);
     let activeLead = initialActor || actorRef.current || 'leader-aurora';
     let targetTid = baseTid;
+    const canSwapDemoLead = isDemoSession() && !signedOutManuallyRef.current;
 
     try {
       await sendPost('/api/events', { eventId, maxSize: eventMaxSize || 5 }, activeTok);
@@ -1836,9 +1933,12 @@ export default function App() {
     } catch (err1) {
       const msg1 = String(err1?.code || err1?.message || '');
       if (msg1.includes('ONE_TEAM_PER_EVENT')) {
+        if (!canSwapDemoLead) {
+          throw err1;
+        }
         try {
           createdRes = await switchLeadAndRetry(targetTid);
-        } catch (err2) {
+        } catch {
           // Global SQLite PK collision across events on teams.id -> suffix teamId
           targetTid = `${baseTid}-${tag}`;
           createdRes = await sendPost('/api/teams', { eventId, teamId: targetTid }, activeTok);
@@ -1848,7 +1948,7 @@ export default function App() {
         try {
           createdRes = await sendPost('/api/teams', { eventId, teamId: targetTid }, activeTok);
         } catch (err3) {
-          if (String(err3?.code || err3?.message || '').includes('ONE_TEAM_PER_EVENT')) {
+          if (String(err3?.code || err3?.message || '').includes('ONE_TEAM_PER_EVENT') && canSwapDemoLead) {
             createdRes = await switchLeadAndRetry(targetTid);
           } else {
             throw err3;
@@ -1861,18 +1961,20 @@ export default function App() {
 
     const finalTid = createdRes?.teamId || targetTid;
     setTeamId(finalTid);
+    setLockedPlanTeamId(finalTid);
     return { createdTeamId: finalTid, activeTok, activeLead };
   }
 
   async function handleCreateTeam(customMeta = {}) {
+    const requestedTid = customMeta?.teamIdOverride || teamId;
     try {
-      await runProtectedAction(`Create Team (${teamId})`, async (freshTok, freshActor) => {
+      await runProtectedAction(`Create Team (${requestedTid})`, async (freshTok, freshActor) => {
         if (wanOffline && !queuedClaim) {
           setWanOffline(false);
           setAuthorityHealth('online');
         }
         const { createdTeamId, activeTok, activeLead } = await createCleanTeamWithLead(
-          teamId,
+          requestedTid,
           freshTok,
           freshActor
         );
@@ -1911,14 +2013,53 @@ export default function App() {
           String(teamId || 'crew-alpha')
             .replace(/[^A-Za-z0-9_.:@-]/g, '')
             .trim() || 'crew-alpha';
+
+        // Never silently jump a full 5/5 team back to a new 1/5 team when creating an invite
+        if (
+          selectedTeam?.teamId === targetTid &&
+          (selectedTeam.members?.length || 0) >= (selectedTeam.maxSize || 5)
+        ) {
+          const fullMsg = `Team '${targetTid}' is already full (${selectedTeam.members.length}/${selectedTeam.maxSize} spots). Leave a spot or create a new team.`;
+          setStatusMessage(fullMsg);
+          notifyToast(fullMsg, 'warn');
+          return;
+        }
+
+        let existingDetail = null;
+        try {
+          const preRes = await fetch(
+            `/api/events/${encodeURIComponent(eventId)}/teams/${encodeURIComponent(targetTid)}`,
+            { cache: 'no-store' }
+          );
+          if (preRes.ok) {
+            existingDetail = await preRes.json();
+            if ((existingDetail.members?.length || 0) >= (existingDetail.maxSize || 5)) {
+              recordConfirmedTeamDetail(existingDetail, eventId);
+              const fullMsg = `Team '${targetTid}' is already full (${existingDetail.members.length}/${existingDetail.maxSize} spots). Leave a spot or create a new team.`;
+              setStatusMessage(fullMsg);
+              notifyToast(fullMsg, 'warn');
+              return;
+            }
+          }
+        } catch {
+          existingDetail = null;
+        }
+
         let activeTok = await ensureToken(freshTok);
         let activeLead = freshActor || actorRef.current || actorId || 'leader';
+        const canSwapDemoLead = isDemoSession() && !signedOutManuallyRef.current;
         let res;
 
         try {
           res = await sendPost('/api/invitations', { eventId, teamId: targetTid, expiresAt }, activeTok);
         } catch (invErr) {
           const codeStr = String(invErr?.code || invErr?.message || '');
+          if (codeStr.includes('TEAM_FULL')) {
+            const fullMsg = `Team '${targetTid}' is already full (${existingDetail?.maxSize || eventMaxSize || 5}/${existingDetail?.maxSize || eventMaxSize || 5} spots). Leave a spot or create a new team.`;
+            setStatusMessage(fullMsg);
+            notifyToast(fullMsg, 'warn');
+            return;
+          }
           if (invErr?.status === 404 || codeStr.includes('NO_TEAM')) {
             const created = await createCleanTeamWithLead(targetTid, activeTok, activeLead);
             targetTid = created.createdTeamId;
@@ -1926,17 +2067,23 @@ export default function App() {
             activeLead = created.activeLead;
             res = await sendPost('/api/invitations', { eventId, teamId: targetTid, expiresAt }, activeTok);
           } else if (invErr?.status === 403 || codeStr.includes('LEADER_REQUIRED')) {
-            const detail = await readApiJson(
-              await fetch(
-                `/api/events/${encodeURIComponent(eventId)}/teams/${encodeURIComponent(targetTid)}`,
-                { cache: 'no-store' }
-              )
-            );
-            if (!signedOutManuallyRef.current && detail?.leader) {
-              if (
-                DEMO_PERSONA_CLIENT_RE.test(detail.leader) &&
-                (detail.members?.length || 0) < (detail.maxSize || 5)
-              ) {
+            const detail =
+              existingDetail ||
+              (await readApiJson(
+                await fetch(
+                  `/api/events/${encodeURIComponent(eventId)}/teams/${encodeURIComponent(targetTid)}`,
+                  { cache: 'no-store' }
+                )
+              ));
+            if ((detail.members?.length || 0) >= (detail.maxSize || 5)) {
+              recordConfirmedTeamDetail(detail, eventId);
+              const fullMsg = `Team '${targetTid}' is already full (${detail.members.length}/${detail.maxSize} spots). Leave a spot or create a new team.`;
+              setStatusMessage(fullMsg);
+              notifyToast(fullMsg, 'warn');
+              return;
+            }
+            if (canSwapDemoLead && detail?.leader) {
+              if (DEMO_PERSONA_CLIENT_RE.test(detail.leader)) {
                 try {
                   const leadSession = await mintDemoSession(detail.leader, eventId, detail.maxSize || 5);
                   activeTok = leadSession.token;
@@ -1954,11 +2101,11 @@ export default function App() {
                   throw invErr;
                 }
               } else {
-                const created = await createCleanTeamWithLead(targetTid, activeTok, activeLead);
-                targetTid = created.createdTeamId;
-                activeTok = created.activeTok;
-                activeLead = created.activeLead;
-                res = await sendPost('/api/invitations', { eventId, teamId: targetTid, expiresAt }, activeTok);
+                setAuthPromptMessage(
+                  `Team '${targetTid}' is led by registered account '${detail.leader}'. Sign in as '${detail.leader}' or create a new team.`
+                );
+                setAuthModalOpen(true);
+                throw invErr;
               }
             } else {
               throw invErr;
@@ -1975,6 +2122,7 @@ export default function App() {
           null
         );
         setTeamId(targetTid);
+        setLockedPlanTeamId(targetTid);
         setIssuedInvite({
           ...res,
           teamId: targetTid,
@@ -2048,20 +2196,23 @@ export default function App() {
 
         let claimantTok = await ensureToken(freshTok);
         let claimantActor = freshActor || actorRef.current || '';
+        const canSwapDemoClaimant = isDemoSession() && !signedOutManuallyRef.current;
         const alreadyInSelected =
           !claimantActor ||
           claimantActor === detail.leader ||
           (detail.members || []).some(m => m.userId === claimantActor);
 
-        if (alreadyInSelected) {
+        if (alreadyInSelected && canSwapDemoClaimant) {
           const candSession = await mintDemoSession(nextPersonaId, eventId, detail.maxSize || 5);
           signedOutManuallyRef.current = false;
           claimantTok = candSession.token;
           claimantActor = candSession.actorId;
-          tokenRef.current = claimantTok;
-          actorRef.current = claimantActor;
-          setToken(claimantTok);
-          setActorId(claimantActor);
+          if (!tokenRef.current || !actorRef.current) {
+            tokenRef.current = claimantTok;
+            actorRef.current = claimantActor;
+            setToken(claimantTok);
+            setActorId(claimantActor);
+          }
         }
 
         const operation = await getOrCreateClaimOperation({
@@ -2072,7 +2223,7 @@ export default function App() {
         });
 
         if (wanOffline) {
-          if (claimantActor === 'relay-mateo') {
+          if (claimantActor === 'relay-mateo' && canSwapDemoClaimant) {
             try {
               const candSession = await mintDemoSession(nextPersonaId, eventId, detail.maxSize || 5);
               signedOutManuallyRef.current = false;
@@ -2118,16 +2269,21 @@ export default function App() {
             claimantTok
           );
         } catch (claimErr) {
-          if (String(claimErr?.code || claimErr?.message || '').includes('ONE_TEAM_PER_EVENT')) {
+          if (
+            String(claimErr?.code || claimErr?.message || '').includes('ONE_TEAM_PER_EVENT') &&
+            canSwapDemoClaimant
+          ) {
             const retryPersonaId = buildValidDemoActorId(nextHint, 'join', `${tag}r`);
             const candSession = await mintDemoSession(retryPersonaId, eventId, detail.maxSize || 5);
             signedOutManuallyRef.current = false;
             claimantTok = candSession.token;
             claimantActor = candSession.actorId;
-            tokenRef.current = claimantTok;
-            actorRef.current = claimantActor;
-            setToken(claimantTok);
-            setActorId(claimantActor);
+            if (!tokenRef.current || !actorRef.current) {
+              tokenRef.current = claimantTok;
+              actorRef.current = claimantActor;
+              setToken(claimantTok);
+              setActorId(claimantActor);
+            }
             result = await sendPost(
               '/api/invitations/claim',
               { eventId, teamId: targetTid, code: inv.code, opId: operation.opId },
@@ -2208,6 +2364,7 @@ export default function App() {
       const nextHint = pickNextUnseatedTeammateHint(teamDetail, teamPeople, issuedInvite);
       const freshCandidateId = buildValidDemoActorId(nextHint, 'claim', suffix);
       const maxSpots = teamDetail?.maxSize || eventMaxSize || 5;
+      const callerHadSession = Boolean(tokenRef.current && actorRef.current);
       let claimantTok = '';
       let claimantActor = freshCandidateId;
 
@@ -2216,10 +2373,13 @@ export default function App() {
         claimantTok = candSession.token;
         claimantActor = candSession.actorId;
         signedOutManuallyRef.current = false;
-        tokenRef.current = claimantTok;
-        actorRef.current = claimantActor;
-        setToken(claimantTok);
-        setActorId(claimantActor);
+        // Keep the caller's active 'Acting as' leader session intact if already signed in!
+        if (!callerHadSession) {
+          tokenRef.current = claimantTok;
+          actorRef.current = claimantActor;
+          setToken(claimantTok);
+          setActorId(claimantActor);
+        }
       } catch {
         await runProtectedAction(`Join ${effectiveTid} as Invited Teammate`, async (replayedTok, replayedActor) => {
           const op = await getOrCreateClaimOperation({
@@ -2314,7 +2474,7 @@ export default function App() {
         'ok'
       );
       await refreshBoard(false, true);
-      await loadAudit(claimantTok);
+      await loadAudit(tokenRef.current || claimantTok);
     } catch (e) {
       setStatusMessage(`Join request: ${e.message}`);
       notifyToast(`Join request turned away: ${e.message}`, 'err');
@@ -2505,12 +2665,24 @@ export default function App() {
           }
         }
 
+        const canSwapDemoClaimant = isDemoSession() && !signedOutManuallyRef.current;
+
         const isIdempotentReplayBySameClaimant = Boolean(
           lastClaimRef.current &&
             lastClaimRef.current.code === activeCode &&
             lastClaimRef.current.teamId === targetTid &&
-            lastClaimRef.current.actorId === useActor
+            (lastClaimRef.current.actorId === useActor || Boolean(lastClaimRef.current.claimantToken))
         );
+
+        if (
+          isIdempotentReplayBySameClaimant &&
+          lastClaimRef.current.actorId !== useActor &&
+          lastClaimRef.current.claimantToken &&
+          canSwapDemoClaimant
+        ) {
+          useTok = lastClaimRef.current.claimantToken;
+          useActor = lastClaimRef.current.actorId;
+        }
 
         const actorAlreadyInTargetTeam = Boolean(
           useActor &&
@@ -2526,7 +2698,7 @@ export default function App() {
 
         if (
           !isIdempotentReplayBySameClaimant &&
-          !signedOutManuallyRef.current &&
+          canSwapDemoClaimant &&
           (actorAlreadyInTargetTeam || (wanOffline && useActor === 'relay-mateo'))
         ) {
           try {
@@ -2541,10 +2713,12 @@ export default function App() {
             signedOutManuallyRef.current = false;
             useTok = candSession.token;
             useActor = candSession.actorId;
-            tokenRef.current = useTok;
-            actorRef.current = useActor;
-            setToken(useTok);
-            setActorId(useActor);
+            if (!tokenRef.current || !actorRef.current || (wanOffline && actorRef.current === 'relay-mateo')) {
+              tokenRef.current = useTok;
+              actorRef.current = useActor;
+              setToken(useTok);
+              setActorId(useActor);
+            }
           } catch {
             // Keep current token when demo auth is disabled
           }
@@ -2601,7 +2775,7 @@ export default function App() {
           );
         } catch (claimErr) {
           if (
-            !signedOutManuallyRef.current &&
+            canSwapDemoClaimant &&
             (fromStep1 || String(claimErr?.code || claimErr?.message || '').includes('ONE_TEAM_PER_EVENT')) &&
             String(claimErr?.code || claimErr?.message || '').includes('ONE_TEAM_PER_EVENT')
           ) {
@@ -2616,10 +2790,12 @@ export default function App() {
             signedOutManuallyRef.current = false;
             useTok = candSession.token;
             useActor = candSession.actorId;
-            tokenRef.current = useTok;
-            actorRef.current = useActor;
-            setToken(useTok);
-            setActorId(useActor);
+            if (!tokenRef.current || !actorRef.current) {
+              tokenRef.current = useTok;
+              actorRef.current = useActor;
+              setToken(useTok);
+              setActorId(useActor);
+            }
             result = await sendPost(
               '/api/invitations/claim',
               {
@@ -2929,6 +3105,7 @@ export default function App() {
         } catch (trErr) {
           if (
             (trErr?.status === 403 || String(trErr?.code || trErr?.message || '').includes('LEADER_REQUIRED')) &&
+            isDemoSession() &&
             !signedOutManuallyRef.current &&
             selectedTeam?.teamId === teamId &&
             selectedTeam?.leader &&
@@ -2990,6 +3167,7 @@ export default function App() {
           const codeStr = String(lvErr?.code || lvErr?.message || '');
           if (
             codeStr.includes('NOT_MEMBER') &&
+            isDemoSession() &&
             !signedOutManuallyRef.current &&
             selectedTeam?.teamId === teamId &&
             Array.isArray(selectedTeam.members)
@@ -3291,19 +3469,27 @@ export default function App() {
     setActiveView(step.targetView);
   }
 
+  const shouldBindServerTeamToExport =
+    activeView === 'authority' ||
+    Boolean(
+      selectedTeam?.teamId &&
+        (evaluatingCrewId === selectedTeam.teamId || lockedPlanTeamId === selectedTeam.teamId)
+    );
+
   // Immediate 1-click white-paper HTML download
   function handleDirectPlanDownload() {
     const res = triggerTeamPlanDownload({
       eventId,
-      teamId,
+      teamId: shouldBindServerTeamToExport ? (selectedTeam?.teamId || teamId) : 'plan-preview',
       actorId,
       selectedTeam,
+      allowServerTeamBinding: shouldBindServerTeamToExport,
       goalDescription,
       horizonHours,
       tasks,
       teamPeople,
       plan,
-      issuedInvite
+      issuedInvite: shouldBindServerTeamToExport ? issuedInvite : null
     });
     if (res) {
       setStatusMessage(`Downloaded ${res.filename} (#FFFFFF white-paper HTML summary).`);
@@ -3447,6 +3633,7 @@ export default function App() {
     teamId,
     actorId,
     selectedTeam,
+    shouldBindServerTeamToExport,
     goalDescription,
     horizonHours,
     tasks,
@@ -3513,7 +3700,7 @@ export default function App() {
       { id: 'open-studio', group: 'Display & Scale', label: 'Open Extended Display & Shortcut Studio', shortcut: 'Ctrl+Shift+A', keywords: 'display accessibility studio', run: () => setStudioOpen(true) },
       { id: 'open-why', group: 'Help', label: 'Purpose-First Guide & Keyboard Shortcuts', shortcut: '? / F1', keywords: 'help guide shortcuts', run: () => setWhyOpen(true) }
     ],
-    [selectScenario, switchPersona, requestDiscoverFilter, handleToggleBuilderInCrew, refreshBoard, eventId, teamId, actorId, selectedTeam, goalDescription, horizonHours, tasks, teamPeople, plan, issuedInvite]
+    [selectScenario, switchPersona, requestDiscoverFilter, handleToggleBuilderInCrew, refreshBoard, eventId, teamId, actorId, selectedTeam, shouldBindServerTeamToExport, goalDescription, horizonHours, tasks, teamPeople, plan, issuedInvite]
   );
 
   const horizonMin = Math.max(60, Math.round(Number(horizonHours || 4) * 60));
@@ -3590,20 +3777,23 @@ export default function App() {
       merged.push(row);
     };
     if (selectedTeam?.teamId) {
+      const liveSelRow = board.find(b => b.team_id === selectedTeam.teamId);
       pushRow({
         team_id: selectedTeam.teamId,
-        leader: selectedTeam.leader,
-        members: Array.isArray(selectedTeam.members) ? selectedTeam.members.length : 1,
-        max_size: selectedTeam.maxSize || eventMaxSize || 5
+        leader: liveSelRow?.leader || selectedTeam.leader,
+        members:
+          liveSelRow?.members ??
+          (Array.isArray(selectedTeam.members) ? selectedTeam.members.length : 1),
+        max_size: liveSelRow?.max_size ?? selectedTeam.maxSize ?? eventMaxSize ?? 5
       });
     }
     for (const pt of pinnedTeamsForEvent) {
       const liveRow = board.find(b => b.team_id === pt.team_id);
       pushRow({
         team_id: pt.team_id,
-        leader: pt.leader || liveRow?.leader,
-        members: pt.members ?? liveRow?.members ?? 1,
-        max_size: pt.max_size ?? liveRow?.max_size ?? eventMaxSize ?? 5
+        leader: liveRow?.leader || pt.leader,
+        members: liveRow?.members ?? pt.members ?? 1,
+        max_size: liveRow?.max_size ?? pt.max_size ?? eventMaxSize ?? 5
       });
     }
     for (const b of board) {
@@ -3904,9 +4094,15 @@ export default function App() {
         <div role="alert" className="offline-server-banner no-print">
           <div className="offline-server-copy">
             <AlertTriangleIcon size={18} />
-            <div>
-              <strong>Local Server (:8788) Offline:</strong> Plan schedule checks and teammate previews continue to run locally in <code>&lt;2ms</code>, while server team spots wait for connection.
-            </div>
+            {isLoopbackHostname() ? (
+              <div>
+                <strong>Local Server (:8788) Unreachable:</strong> Plan schedule checks and teammate previews continue to run locally in <code>&lt;2ms</code>, while server team spots wait for connection.
+              </div>
+            ) : (
+              <div>
+                <strong>Server reconnecting:</strong> Local <code>&lt;2ms</code> plan preview remains active while live team spots reconnect.
+              </div>
+            )}
           </div>
           <button
             type="button"
@@ -3914,7 +4110,12 @@ export default function App() {
             disabled={retryingServer}
             onClick={retryServerConnection}
           >
-            <RefreshIcon size={14} /> {retryingServer ? 'Reconnecting...' : 'Retry Server (:8788)'}
+            <RefreshIcon size={14} />{' '}
+            {retryingServer
+              ? 'Reconnecting...'
+              : isLoopbackHostname()
+                ? 'Retry Server (:8788)'
+                : 'Reconnect'}
           </button>
         </div>
       )}
@@ -4710,15 +4911,16 @@ export default function App() {
         open={charterOpen}
         onClose={() => setCharterOpen(false)}
         eventId={eventId}
-        teamId={teamId}
+        teamId={shouldBindServerTeamToExport ? (selectedTeam?.teamId || teamId) : 'plan-preview'}
         actorId={actorId}
         selectedTeam={selectedTeam}
+        allowServerTeamBinding={shouldBindServerTeamToExport}
         goalDescription={goalDescription}
         horizonHours={horizonHours}
         tasks={tasks}
         teamPeople={teamPeople}
         plan={plan}
-        issuedInvite={issuedInvite}
+        issuedInvite={shouldBindServerTeamToExport ? issuedInvite : null}
         onNotify={notifyToast}
       />
     </div>

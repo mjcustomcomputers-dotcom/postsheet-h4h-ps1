@@ -1,5 +1,5 @@
 import React from 'react';
-import { DatabaseIcon, SparklesIcon, LockIcon } from '../icons.jsx';
+import { DatabaseIcon, SparklesIcon, LockIcon, EyeIcon } from '../icons.jsx';
 
 const STENCIL_META = {
   SQLITE_AUTHORITY: {
@@ -7,6 +7,12 @@ const STENCIL_META = {
     cls: 'stencil-sqlite',
     title: 'Authoritative Layer-A SQLite BEGIN IMMEDIATE state or verified witness',
     Icon: DatabaseIcon
+  },
+  PLAN_PREVIEW: {
+    label: 'PLAN_PREVIEW',
+    cls: 'stencil-preview',
+    title: 'Local <2ms schedule preview; not yet joined or confirmed on server',
+    Icon: EyeIcon
   },
   VOI_PROVISIONAL: {
     label: 'VOI_PROVISIONAL',

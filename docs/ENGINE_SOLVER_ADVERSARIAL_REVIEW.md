@@ -4,7 +4,7 @@
 > **R12 Resolution Status (`PSS-H4H-FINAL-SEAL-R12`):** All approved P0 + P1 + P2 repairs documented below have been applied to `src/goal-planner.mjs`, `src/synchronicity-solvers.mjs`, and `src/authority.mjs`, and permanently locked by `tests/solver-adversarial-r6.test.mjs` (`14/14` PASS across `R6_EXP01..EXP14`).
 
 > [!IMPORTANT]
-> **Diagnostic Non-Mutation Guarantee:** All engine, solver, authority, test, and gate files in `C:/Users/BugLab/Desktop/H4H-PS1-SUBMISSION` (`src/*`, `tests/*`, `scripts/*`, `web/src/claim-operation.js`) remain at **`0` bytes modified**. All 15 adversarial & control experiments and the clean-room mathematical oracles were executed in an isolated harness under [engine-solver-adversarial-audit.mjs](file:///C:/Users/BugLab/.gemini/antigravity/brain/4b7556a7-599a-400e-bcf4-24c1a7982032/scratch/engine-solver-adversarial-audit.mjs) with raw JSON outputs archived at [engine-adversarial-results.json](file:///C:/Users/BugLab/.gemini/antigravity/brain/4b7556a7-599a-400e-bcf4-24c1a7982032/scratch/engine-adversarial-results.json).
+> **Diagnostic Non-Mutation Guarantee:** At the time this adversarial review was conducted, all engine, solver, authority, test, and gate files in `postsheet-h4h-ps1` (`src/*`, `tests/*`, `scripts/*`, `web/src/claim-operation.js`) remained at **`0` bytes modified**. All 15 adversarial & control experiments and the clean-room mathematical oracles were executed in an isolated clean-room audit harness (`engine-solver-adversarial-audit.mjs`) and subsequently codified permanently in [`tests/solver-adversarial-r6.test.mjs`](../tests/solver-adversarial-r6.test.mjs).
 
 ---
 
@@ -12,13 +12,13 @@
 
 | Attribute | Recorded Value |
 | --- | --- |
-| **Repository & Branch** | `C:/Users/BugLab/Desktop/H4H-PS1-SUBMISSION` (`main @ 2e3dd3a`, UI micro-polish atop `11148a5`; `src/*` byte-identical to `11148a5`) |
+| **Repository & Branch** | `postsheet-h4h-ps1` (`main @ 2e3dd3a`, UI micro-polish atop `11148a5`; `src/*` byte-identical to `11148a5`) |
 | **Runtime & OS** | Node.js `v24.19.0`, Python `3.12`, `win32 10.0.26300 (x64)` |
-| **[goal-planner.mjs](file:///C:/Users/BugLab/Desktop/H4H-PS1-SUBMISSION/src/goal-planner.mjs)** | `6,813` bytes · SHA-256 `ac32e88504fcfd90beafa20ef4974b03bc2f3ab2eb0832e664678434ce9e0643` |
-| **[synchronicity-solvers.mjs](file:///C:/Users/BugLab/Desktop/H4H-PS1-SUBMISSION/src/synchronicity-solvers.mjs)** | `18,615` bytes · SHA-256 `fb7614d538f4cd38cd437cc16562ea6b2a5777f410eb16d026c2c766612c8a7d` |
-| **[authority.mjs](file:///C:/Users/BugLab/Desktop/H4H-PS1-SUBMISSION/src/authority.mjs)** | `8,788` bytes · SHA-256 `8e5a089e8f824d208cb8a5f95528213680284e6f5a1c0771b7d833a003dd470f` |
+| **[goal-planner.mjs](../src/goal-planner.mjs)** | `6,813` bytes · SHA-256 `ac32e88504fcfd90beafa20ef4974b03bc2f3ab2eb0832e664678434ce9e0643` |
+| **[synchronicity-solvers.mjs](../src/synchronicity-solvers.mjs)** | `18,615` bytes · SHA-256 `fb7614d538f4cd38cd437cc16562ea6b2a5777f410eb16d026c2c766612c8a7d` |
+| **[authority.mjs](../src/authority.mjs)** | `8,788` bytes · SHA-256 `8e5a089e8f824d208cb8a5f95528213680284e6f5a1c0771b7d833a003dd470f` |
 | **Pre-Audit Baseline Suites** | **`97 / 97` PASS** (`43` baseline API/planner/SSE + `4` 50-way HTTP race + `12` Python SQLite oracle + `38` crypto/receipt/relay/UI/R5 tests) |
-| **Isolated Repro Command** | `node C:/Users/BugLab/.gemini/antigravity/brain/4b7556a7-599a-400e-bcf4-24c1a7982032/scratch/engine-solver-adversarial-audit.mjs` |
+| **Regression Repro Command** | `node --test tests/solver-adversarial-r6.test.mjs` |
 
 ### Clean-Room Independent Oracles Used
 1. **Exact Event-Point Backtracking Schedule Oracle (`exactScheduleOracle`):** Branches across *all* ready unscheduled tasks and *all* canonical non-dominated start points $\{\max(w_{\text{start}}, \text{ready})\} \cup \{b_{\text{end}} : b \in \text{busy}(p)\}$ over merged availability intervals. By non-preemptive scheduling theory with release dates and deadlines, if any real/integer schedule exists, an event-point schedule exists.
@@ -42,28 +42,28 @@ flowchart TD
 
 ### 2.1 Confirmed Mathematical & Algorithmic Defects
 1. **False Hall Contention on Sequential / Already-Feasible Tasks (`EXP-01`, `EXP-02`, `EXP-03`):**
-   - [`recommendComplementary`](file:///C:/Users/BugLab/Desktop/H4H-PS1-SUBMISSION/src/synchronicity-solvers.mjs#L429) invokes [`diagnoseAndRepair`](file:///C:/Users/BugLab/Desktop/H4H-PS1-SUBMISSION/src/synchronicity-solvers.mjs#L273-L353) unconditionally even when `baseline.status === 'FEASIBLE_WITNESS'`, and [`diagnoseAndRepair`](file:///C:/Users/BugLab/Desktop/H4H-PS1-SUBMISSION/src/synchronicity-solvers.mjs#L331-L350) checks only `allSoloSupported && unionSup.size < orderedTasks.length` without testing whether tasks are parallel or sequential, or whether a valid joint schedule already exists.
+   - [`recommendComplementary`](../src/synchronicity-solvers.mjs#L429) invokes [`diagnoseAndRepair`](../src/synchronicity-solvers.mjs#L273-L353) unconditionally even when `baseline.status === 'FEASIBLE_WITNESS'`, and [`diagnoseAndRepair`](../src/synchronicity-solvers.mjs#L331-L350) checks only `allSoloSupported && unionSup.size < orderedTasks.length` without testing whether tasks are parallel or sequential, or whether a valid joint schedule already exists.
 2. **Silent 8-Wildcard Truncation Yielding False `FORALL_EXISTS_CONTINGENT` & `null` VOI (`EXP-05`, `EXP-06`):**
-   - [`evaluateWildcardFrontier`](file:///C:/Users/BugLab/Desktop/H4H-PS1-SUBMISSION/src/synchronicity-solvers.mjs#L139-L141) silently drops unknown pairs beyond index `7`. Any witness guarded solely by a 9th unknown `u9::skill` satisfies the inner bitmask loop at lines `207-212` for **all** `256` masks (including `mask = 0`), falsely reporting `worldsCovered = 256/256`, `quantifierStatus = 'FORALL_EXISTS_CONTINGENT'`, and `voiQuestion = null`.
+   - [`evaluateWildcardFrontier`](../src/synchronicity-solvers.mjs#L139-L141) silently drops unknown pairs beyond index `7`. Any witness guarded solely by a 9th unknown `u9::skill` satisfies the inner bitmask loop at lines `207-212` for **all** `256` masks (including `mask = 0`), falsely reporting `worldsCovered = 256/256`, `quantifierStatus = 'FORALL_EXISTS_CONTINGENT'`, and `voiQuestion = null`.
    - Furthermore, by monotonicity of positive conjunctions over $\{0,1\}^K$, `mask = 0` is satisfied iff an unconditional witness exists (`EXISTS_FORALL_ROBUST`). Thus for $\le 8$ wildcards, `'FORALL_EXISTS_CONTINGENT'` is **mathematically unreachable dead code** - it can *only* fire via the $>8$-wildcard truncation bug.
 3. **False `INFEASIBLE_WITHIN_SCOPE` from `ls`-Sorting & Greedy `earliestSlot` (`EXP-08`, `EXP-09`):**
-   - [`computeTaskScheduleMeta`](file:///C:/Users/BugLab/Desktop/H4H-PS1-SUBMISSION/src/synchronicity-solvers.mjs#L71-L75) comments `"Earliest Due Date"` but sorts primarily by `ls` (Minimum Slack) instead of `lf` (Jackson/Lawler Earliest Due Date), causing 1-person 2-task feasible schedules (`t-long` `ls=35, lf=95` vs `t-short` `ls=38, lf=58`) to fail and falsely certify `INFEASIBLE_WITHIN_SCOPE` (`EXP-08`).
-   - Even when both `ls` and `lf` agree on task order, [`earliestSlot`](file:///C:/Users/BugLab/Desktop/H4H-PS1-SUBMISSION/src/goal-planner.mjs#L46-L63) greedily pins the first task at $t=0$ without branching over alternative ready tasks or delayed event-point starts when a downstream specialist has a narrow availability window (`EXP-09`), again falsely certifying `INFEASIBLE_WITHIN_SCOPE` with `exhausted: false`.
+   - [`computeTaskScheduleMeta`](../src/synchronicity-solvers.mjs#L71-L75) comments `"Earliest Due Date"` but sorts primarily by `ls` (Minimum Slack) instead of `lf` (Jackson/Lawler Earliest Due Date), causing 1-person 2-task feasible schedules (`t-long` `ls=35, lf=95` vs `t-short` `ls=38, lf=58`) to fail and falsely certify `INFEASIBLE_WITHIN_SCOPE` (`EXP-08`).
+   - Even when both `ls` and `lf` agree on task order, [`earliestSlot`](../src/goal-planner.mjs#L46-L63) greedily pins the first task at $t=0$ without branching over alternative ready tasks or delayed event-point starts when a downstream specialist has a narrow availability window (`EXP-09`), again falsely certifying `INFEASIBLE_WITHIN_SCOPE` with `exhausted: false`.
 4. **Pairwise Unmerged Sum Double-Counting in Synchronous Team Overlap (`EXP-11`):**
-   - [`recommendComplementary`](file:///C:/Users/BugLab/Desktop/H4H-PS1-SUBMISSION/src/synchronicity-solvers.mjs#L363-L374) sums raw pairwise intersections across all `teamPeople` windows without interval union, reporting `180m`-`720m` overlap inside a `60m`-`240m` window and inverting candidate tie-break order at line `423`.
+   - [`recommendComplementary`](../src/synchronicity-solvers.mjs#L363-L374) sums raw pairwise intersections across all `teamPeople` windows without interval union, reporting `180m`-`720m` overlap inside a `60m`-`240m` window and inverting candidate tie-break order at line `423`.
 5. **Witness Truncation (`maxWitnesses = 16`) Self-Contradiction & Guard Duplication (`EXP-07`, `EXP-12`, `EXP-13`):**
-   - [`evaluateWildcardFrontier`](file:///C:/Users/BugLab/Desktop/H4H-PS1-SUBMISSION/src/synchronicity-solvers.mjs#L153-L195) omits `versatility` sorting and collects up to `16` raw schedule permutations without deduplicating identical `guardKeys`. Sixteen downstream `qa` permutations sharing `{m-unknown::frontend}` exhaust `maxWitnesses = 16` before reaching a zero-guard robust schedule, causing [`planGoal`](file:///C:/Users/BugLab/Desktop/H4H-PS1-SUBMISSION/src/goal-planner.mjs#L135-L146) to return `status: 'FEASIBLE_WITNESS'` (`ROBUST_FEASIBLE`) while its own `frontier` reports `actionStable: false` and `voiQuestion != null` (`EXP-12`), or hiding a second unknown candidate `u2` and distorting VOI from `0.3113` bits to `1.0` bit (`EXP-13`).
-   - When `maxNodes` exhausts *after* finding a conditional witness (`EXP-07`), [`planGoal`](file:///C:/Users/BugLab/Desktop/H4H-PS1-SUBMISSION/src/goal-planner.mjs#L148-L160) returns `classification: 'CONDITIONAL_GUARDED'` even when a zero-guard `ROBUST_FEASIBLE` witness exists just beyond the node budget.
+   - [`evaluateWildcardFrontier`](../src/synchronicity-solvers.mjs#L153-L195) omits `versatility` sorting and collects up to `16` raw schedule permutations without deduplicating identical `guardKeys`. Sixteen downstream `qa` permutations sharing `{m-unknown::frontend}` exhaust `maxWitnesses = 16` before reaching a zero-guard robust schedule, causing [`planGoal`](../src/goal-planner.mjs#L135-L146) to return `status: 'FEASIBLE_WITNESS'` (`ROBUST_FEASIBLE`) while its own `frontier` reports `actionStable: false` and `voiQuestion != null` (`EXP-12`), or hiding a second unknown candidate `u2` and distorting VOI from `0.3113` bits to `1.0` bit (`EXP-13`).
+   - When `maxNodes` exhausts *after* finding a conditional witness (`EXP-07`), [`planGoal`](../src/goal-planner.mjs#L148-L160) returns `classification: 'CONDITIONAL_GUARDED'` even when a zero-guard `ROBUST_FEASIBLE` witness exists just beyond the node budget.
 
 ### 2.2 Legitimate Implementation Limits (By Design - Not Defects)
-- **Bounded Problem Scope ([`validate`](file:///C:/Users/BugLab/Desktop/H4H-PS1-SUBMISSION/src/goal-planner.mjs#L16-L44)):** `1..8` tasks, `1..24` contributors, `maxNodes` in `1..100,000`, `lagMin <= 10,080` (`1` week), integer minutes, and non-preemptive single-assignee task execution.
+- **Bounded Problem Scope ([`validate`](../src/goal-planner.mjs#L16-L44)):** `1..8` tasks, `1..24` contributors, `maxNodes` in `1..100,000`, `lagMin <= 10,080` (`1` week), integer minutes, and non-preemptive single-assignee task execution.
 - **Explicit Low-Budget Incompleteness (`PLAN13`):** Returning `status: 'SEARCH_INCOMPLETE'`, `classification: 'BUDGET_EXHAUSTED'` when `maxNodes = 1` is an intentional, tested contract.
-- **Enrichment Gate (`maxNodes >= 50` at [`planGoal`](file:///C:/Users/BugLab/Desktop/H4H-PS1-SUBMISSION/src/goal-planner.mjs#L131)):** Skipping secondary `frontier`/`repairs` passes on micro-budgets (`maxNodes < 50`) preserves tiny-budget bounds, though `frontier` should expose `truncated: true` whenever capped.
+- **Enrichment Gate (`maxNodes >= 50` at [`planGoal`](../src/goal-planner.mjs#L131)):** Skipping secondary `frontier`/`repairs` passes on micro-budgets (`maxNodes < 50`) preserves tiny-budget bounds, though `frontier` should expose `truncated: true` whenever capped.
 
 ### 2.3 Hypotheses Not Supported by Testing (Verified Sound)
 - **Returned Witness Soundness (`EXP-10A` + `EXP-10B`, `700` seeded random instances):** Across `200` loose-slack (`seed=20261111`) and `500` tight-slack (`seed=42424242`) random instances, `planGoal` produced **`0` invalid/unsound witnesses** (every returned witness satisfied all precedence lags, skill evidence rules, windows, non-overlap, and deadlines) and achieved `100/100` recall on those uniform random draws - demonstrating why targeted formal counterexamples (`EXP-08`, `EXP-09`) are essential beyond random fuzzing.
-- **DAG Forward/Backward Critical-Path Bounds (`EXP-14A`, `50` random DAGs):** [`computeTaskScheduleMeta`](file:///C:/Users/BugLab/Desktop/H4H-PS1-SUBMISSION/src/synchronicity-solvers.mjs#L15-L105) matched independent dynamic-programming `es`, `ef`, `ls`, `lf`, and cycle rejection `50 / 50` (`0` mismatches).
-- **Single-Event `MembershipAuthority` Serialization (`EXP-14B` + `ADV01..04`):** [`MembershipAuthority`](file:///C:/Users/BugLab/Desktop/H4H-PS1-SUBMISSION/src/authority.mjs#L7-L106) `BEGIN IMMEDIATE` transactions preserve `oversize = 0, orphanLeader = 0, eventMismatch = 0`. *(Ancillary boundary note: `teams(id TEXT PRIMARY KEY)` is global across events rather than `(event_id, id)`, so creating the same `teamId` in two different events throws raw SQLite `UNIQUE constraint failed: teams.id` -> HTTP `500 INTERNAL_ERROR` rather than `409`.)*
+- **DAG Forward/Backward Critical-Path Bounds (`EXP-14A`, `50` random DAGs):** [`computeTaskScheduleMeta`](../src/synchronicity-solvers.mjs#L15-L105) matched independent dynamic-programming `es`, `ef`, `ls`, `lf`, and cycle rejection `50 / 50` (`0` mismatches).
+- **Single-Event `MembershipAuthority` Serialization (`EXP-14B` + `ADV01..04`):** [`MembershipAuthority`](../src/authority.mjs#L7-L106) `BEGIN IMMEDIATE` transactions preserve `oversize = 0, orphanLeader = 0, eventMismatch = 0`. *(Ancillary boundary note: `teams(id TEXT PRIMARY KEY)` is global across events rather than `(event_id, id)`, so creating the same `teamId` in two different events throws raw SQLite `UNIQUE constraint failed: teams.id` -> HTTP `500 INTERNAL_ERROR` rather than `409`.)*
 
 ---
 
@@ -200,34 +200,34 @@ flowchart TD
 ## 4. Prioritized Minimal Repair Proposal (Verified in Isolated Scratch Prototype)
 
 > [!TIP]
-> Every proposed change below was prototyped and verified in isolation in [verify-repair-proposal.mjs](file:///C:/Users/BugLab/.gemini/antigravity/brain/4b7556a7-599a-400e-bcf4-24c1a7982032/scratch/verify-repair-proposal.mjs) - resolving **11 / 11** confirmed defects while keeping all existing exported function signatures, response contracts, and `PLAN13` budget-exhaustion behavior intact.
+> Every proposed change below was prototyped and verified in an isolated clean-room prototype (`verify-repair-proposal.mjs`) before landing in `R12` ([`tests/solver-adversarial-r6.test.mjs`](../tests/solver-adversarial-r6.test.mjs)) - resolving **11 / 11** confirmed defects while keeping all existing exported function signatures, response contracts, and `PLAN13` budget-exhaustion behavior intact.
 
 ### Priority P0-A: Complete Event-Point + Ready-Task Search & EDD Primary Sort
-- **Files:** [synchronicity-solvers.mjs](file:///C:/Users/BugLab/Desktop/H4H-PS1-SUBMISSION/src/synchronicity-solvers.mjs#L67-L76) and [goal-planner.mjs](file:///C:/Users/BugLab/Desktop/H4H-PS1-SUBMISSION/src/goal-planner.mjs#L46-L161)
+- **Files:** [synchronicity-solvers.mjs](../src/synchronicity-solvers.mjs#L67-L76) and [goal-planner.mjs](../src/goal-planner.mjs#L46-L161)
 - **Minimal Changes:**
   1. In `computeTaskScheduleMeta`, sort `readyQueue` by **Lawler/Jackson Earliest Due Date (`lf`) first**, then `ls`, then `id` (`lf.get(a.id) - lf.get(b.id) || ls.get(a.id) - ls.get(b.id) || a.id.localeCompare(b.id)`), and return `ancestors` reachability sets.
   2. Replace single-point `earliestSlot` with `candidateEventStarts(person, ready, duration, latest, assignments)` returning sorted non-overlapping starts in $\{\max(w_{\text{start}}, \text{ready})\} \cup \{b_{\text{end}}\}$ over `mergeIntervals(person.windows)`.
   3. In `planGoal`, branch over ready unscheduled tasks (trying primary EDD task + earliest start *first*, so node counts on greedy-solvable goals and `maxNodes = 1` in `PLAN13` remain identical!) with canonical partial-assignment state memoization (`visitedStates`), and report `classification: exhausted ? 'CONDITIONAL_BUDGET_LIMITED' : 'CONDITIONAL_GUARDED'` when `best` is conditional under `exhausted === true`.
 
 ### Priority P0-B: Frontier/Planner Consistency, Guard-Set Deduplication & Sound Wildcard Indexing
-- **File:** [synchronicity-solvers.mjs](file:///C:/Users/BugLab/Desktop/H4H-PS1-SUBMISSION/src/synchronicity-solvers.mjs#L129-L271) and [goal-planner.mjs](file:///C:/Users/BugLab/Desktop/H4H-PS1-SUBMISSION/src/goal-planner.mjs#L131-L133)
+- **File:** [synchronicity-solvers.mjs](../src/synchronicity-solvers.mjs#L129-L271) and [goal-planner.mjs](../src/goal-planner.mjs#L131-L133)
 - **Minimal Changes:**
   1. Accept optional `knownRobustWitness = null` in `evaluateWildcardFrontier` (passed from `planGoal` when `foundSupported === true`) and apply `versatility` sorting to `eligible` so `frontier` can never contradict `planGoal`.
   2. Deduplicate collected witnesses by canonical `guardKeySignature` (`[...guardKeys].sort().join('|')`) with default `maxWitnesses = 64` distinct guard sets so downstream supported task permutations never crowd out distinct conditional candidates (`EXP-12`, `EXP-13`).
   3. Prioritize window-viable unknown `(personId, skill)` pairs up to `MAX_OMEGA_BITS = 12` (`omegaSize <= 4096`), **exclude any witness containing an unindexed guard key from unconditional mask satisfaction** (`EXP-05`), and add `truncated: Boolean(...)` (reporting `'SEARCH_TRUNCATED'` instead of false `'EMPTY_UNSAT'` when budget-capped with `0` witnesses).
 
 ### Priority P1-A: True Parallel Hall Contention Filter & Feasible Short-Circuit
-- **File:** [synchronicity-solvers.mjs](file:///C:/Users/BugLab/Desktop/H4H-PS1-SUBMISSION/src/synchronicity-solvers.mjs#L273-L353)
+- **File:** [synchronicity-solvers.mjs](../src/synchronicity-solvers.mjs#L273-L353)
 - **Minimal Changes:**
   1. In `recommendComplementary` (line `429`), skip `diagnoseAndRepair` when `baselineFeasible` is `true`; in `diagnoseAndRepair`, short-circuit to `[]` if a supported-only schedule is already feasible (`EXP-01`).
   2. Test incomparable (non-ancestor) task pairs `{ta, tb}`; emit `HALL_CAPACITY_CONTENTION_REPAIR` **only** for tasks/contributors that fail pairwise parallel scheduling (`contendedList.length - overloaded.length`), and emit `SCHEDULE_HANDOFF_REPAIR` when failure is caused by a sequential dependency window shift (`EXP-02`, `EXP-03`).
 
 ### Priority P1-B: Interval-Union Synchronous Overlap
-- **File:** [synchronicity-solvers.mjs](file:///C:/Users/BugLab/Desktop/H4H-PS1-SUBMISSION/src/synchronicity-solvers.mjs#L363-L374)
+- **File:** [synchronicity-solvers.mjs](../src/synchronicity-solvers.mjs#L363-L374)
 - **Minimal Change:** Intersect `mergeIntervals(candWindows)` against `mergeIntervals(teamPeople.flatMap(p => p.windows || []))` so `syncOverlapMin` measures true roster overlap minutes (`EXP-11`).
 
 ### Priority P2 (Optional Ancillary): Explicit `TEAM_ALREADY_EXISTS` (`409`) Across Events
-- **Files:** [authority.mjs](file:///C:/Users/BugLab/Desktop/H4H-PS1-SUBMISSION/src/authority.mjs#L38-L40) and [server.mjs](file:///C:/Users/BugLab/Desktop/H4H-PS1-SUBMISSION/src/server.mjs#L117-L125)
+- **Files:** [authority.mjs](../src/authority.mjs#L38-L40) and [server.mjs](../src/server.mjs#L117-L125)
 - **Minimal Change:** Check `SELECT 1 FROM teams WHERE id=?` before `INSERT INTO teams` and throw `TEAM_ALREADY_EXISTS` mapped to HTTP `409` (preventing unmapped `500 INTERNAL_ERROR` on cross-event `teamId` reuse while preserving the SQLite schema).
 
 ---

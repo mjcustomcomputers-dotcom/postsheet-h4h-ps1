@@ -21,7 +21,7 @@ These are recovered historical execution receipts.
 ## Canonical evidence
 
 Repository:
-mjcustomcomputers-dotcom/antigravity
+<prior-postsheet-lab-archive>
 
 Branch:
 evidence/mit-ipfs-r124-r126-20261109-235844
@@ -30,10 +30,10 @@ Document:
 docs/evidence/PSS-CAREER-LAB-EVIDENCE-01.R2.md
 
 Original installation history:
-~/antigravity/services/kernel-root/INSTALL-HISTORY.md
+<local-lab-root>/services/kernel-root/INSTALL-HISTORY.md
 
 Recovery:
-~/POSTSHEET-MIT-IPFS-RECOVERY
+<local-lab-root>/POSTSHEET-MIT-IPFS-RECOVERY
 
 ## Hack4Hack reuse
 
