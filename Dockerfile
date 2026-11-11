@@ -23,6 +23,7 @@ ENV NODE_ENV=production \
     PS1_BIND=0.0.0.0 \
     PS1_PORT=8788 \
     PS1_SQLITE_PATH=/data/seed-event.sqlite \
+    PS1_DEMO_AUTH=1 \
     PS1_TRUST_PROXY=1
 
 EXPOSE 8788

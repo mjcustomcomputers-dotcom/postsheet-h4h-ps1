@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
-import { startServer, issueToken } from '../src/server.mjs';
+import { startServer, issueToken, DEMO_PERSONA_RE } from '../src/server.mjs';
 import { escapeHtml, buildTeamPlanWhitePaperHtml } from '../web/src/charter-whitepaper.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -645,20 +645,55 @@ test('SEC10 | Defensive SQLite pragmas, bounded 512-key LRU, revoked-token pruni
     assert.equal(app.ext.actorKeys.has('synthetic-actor-0'), false);
     assert.equal(app.ext.actorKeys.has('synthetic-actor-529'), true);
 
-    // 5. Verify hardened container & security docs exist and enforce non-root + read-only lockdown
+    // 5. Verify hardened container, Render config, DEMO_PERSONA_RE UI parity & security docs
     const dockerfile = readFileSync(join(REPO_ROOT, 'Dockerfile'), 'utf8');
     assert.ok(dockerfile.includes('USER node'));
     assert.ok(dockerfile.includes('chmod -R a-w /app'));
     assert.ok(dockerfile.includes('HEALTHCHECK'));
+    assert.ok(dockerfile.includes('PS1_DEMO_AUTH=1'));
+    assert.equal((dockerfile.match(/^FROM\s+/gm) || []).length, 2, 'Dockerfile must have exact 2-stage builder -> runtime');
+    assert.equal((dockerfile.match(/^CMD\s+/gm) || []).length, 1, 'Dockerfile must have a single CMD block');
+
+    const renderYaml = readFileSync(join(REPO_ROOT, 'render.yaml'), 'utf8');
+    assert.ok(renderYaml.includes('key: PS1_DEMO_AUTH') && renderYaml.includes('value: "1"'));
 
     const compose = readFileSync(join(REPO_ROOT, 'docker-compose.hardened.yml'), 'utf8');
     assert.ok(compose.includes('read_only: true'));
     assert.ok(compose.includes('no-new-privileges:true'));
     assert.ok(compose.includes('127.0.0.1:8788:8788'));
+    assert.ok(compose.includes('PS1_DEMO_AUTH: "1"'));
 
     const secDoc = readFileSync(join(REPO_ROOT, 'SECURITY.md'), 'utf8');
+    assert.ok(secDoc.includes('## 1. Threat Model & Trust Boundaries'));
+    assert.ok(secDoc.includes('PS1_DEMO_AUTH=0'));
     assert.ok(secDoc.includes('hkdfSync'));
     assert.ok(secDoc.includes('relay-warrant'));
+
+    // Verify 100% UI-minted demo persona parity against DEMO_PERSONA_RE while blocking seeded builder-00000..09999
+    const uiDemoSamples = [
+      'leader-aurora',
+      'builder-kai',
+      'builder-priya',
+      'relay-mateo',
+      'race-leader',
+      'lead-baton-1234',
+      'lead-hall-1234',
+      'lead-scarce-1234',
+      'mem-1234-00-0',
+      'aurora-plan-1234',
+      'aurora-lead-1234ab',
+      'priya-open-1234ab',
+      'priya-claim-1234ab',
+      'priya-wan-1234ab',
+      'claimant-0',
+      'claimant-49'
+    ];
+    for (const sample of uiDemoSamples) {
+      assert.equal(DEMO_PERSONA_RE.test(sample), true, `UI persona '${sample}' must pass DEMO_PERSONA_RE`);
+    }
+    for (const forbidden of ['builder-00000', 'builder-04999', 'builder-09999', 'admin', 'root']) {
+      assert.equal(DEMO_PERSONA_RE.test(forbidden), false, `Non-demo actor '${forbidden}' must fail DEMO_PERSONA_RE`);
+    }
   } finally {
     app.authority.close();
     tmp.cleanup();

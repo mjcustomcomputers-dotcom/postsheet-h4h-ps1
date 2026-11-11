@@ -783,7 +783,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       secret,
       dbPath: process.env.PS1_SQLITE_PATH || './h4h-ps1.sqlite',
       host: process.env.PS1_BIND || '127.0.0.1',
-      port: Number(process.env.PS1_PORT || 8788)
+      port: Number(process.env.PS1_PORT || 8788),
+      enableDemo: process.env.PS1_DEMO_AUTH !== '0'
     });
     if (process.env.PS1_AUTO_EVENT !== '0') {
       try {

@@ -1,0 +1,34 @@
+================================================================================
+H4H-PS1 R12 FINAL SEAL RECEIPT (PSS-H4H-FINAL-SEAL-R12)
+Timestamp: 2026-11-11T11:31:30Z
+Runtime:   Node.js v24.19.0 | Python 3.12 | win32 10.0.26300 (x64)
+================================================================================
+
+1. PRESERVATION & NON-REGRESSION INVARIANTS
+   - src/authority.mjs: 0 bytes changed vs R11 (be440b3); all 6 core SQLite schemas untouched
+   - web/src/claim-operation.js: 0 bytes changed
+   - tests/sql-independent.py & tests/react-operation.test.mjs: 0 bytes changed
+   - Visual presentation, 60% Panorama 44fr/28fr/28fr layout, CRR shadows, and --rx/--ry flashlight: 100% preserved
+   - Built web/dist assets: 0 U+2013/U+2014 dashes, 0 external CDNs, 0 Blob workers
+
+2. P0 + P1 ENGINE & SOLVER REPAIRS APPLIED (src/goal-planner.mjs, src/synchronicity-solvers.mjs)
+   - P0-A: Lawler/Jackson Earliest Due Date (lf, then ls, then id) ready-queue sort + complete event-point (candidateEventStarts) and ready-task branching with canonical visitedStates memoization; budget-capped conditional runs report classification = 'CONDITIONAL_BUDGET_LIMITED'
+   - P0-B: Unconditional-first (0-guard, specialist versatility-ordered) witness discovery in evaluateWildcardFrontier so maxWitnesses cap (even maxWitnesses = 1) never misses EXISTS_FORALL_ROBUST; canonical guardKeySignature deduplication; viable-first unknown indexing up to MAX_OMEGA_BITS = 12 (|Omega| <= 4096) with unindexed-guard exclusion + explicit truncation metadata
+   - P1-A: Parallel-only Hall capacity contention filter (incomparable non-ancestor task pairs) + alreadyFeasible / findSupportedWitness short-circuit so sequential chains or single-task window misses never emit HALL_CAPACITY_CONTENTION_REPAIR
+   - P1-B: Merged interval-union wall-clock overlap in recommendComplementary (syncOverlapMin <= horizonMin, preserving asyncBatonPass === (candTasks.length > 0 && syncOverlapMin === 0))
+
+3. JUDGE-READY CONTAINER / RENDER DEFAULTS & DEMO_PERSONA_RE PARITY
+   - Dockerfile, render.yaml, and docker-compose.hardened.yml default PS1_DEMO_AUTH=1 (protected by DEMO_PERSONA_RE blocking builder-00000..09999 and registered scrypt accounts, per-IP token buckets, and 10m race-* cleanup); PS1_DEMO_AUTH=0 documented in SECURITY.md as strict account-only production switch
+   - 100% parity verified between DEMO_PERSONA_RE (src/server.mjs) and DEMO_PERSONA_CLIENT_RE (web/src/App.jsx) across all UI-minted demo personas
+
+4. FULL AUTOMATED VERIFICATION RESULTS
+   - Solver Adversarial Suite (tests/solver-adversarial-r6.test.mjs): 14/14 PASS (R6_EXP01..EXP14)
+   - Security Pentest Suite (tests/security-hardening.test.mjs):     10/10 PASS (SEC01..SEC10)
+   - Full Node Test Suite (node --test tests/*.test.mjs):            109/109 PASS (0 failures, 1.78s)
+   - Independent Gates (scripts/run-gates.sh):                       59/59 PASS (43 baseline + 4 adversarial + 12 Python SQLite oracle, RC=0/0/0)
+   - 100-Client /board Benchmark (scripts/exact-p95-bench.mjs):      11,684 reqs, 0 errors, p50=43.59ms, p95=58.65ms (< 200ms), p99=66.87ms
+   - Live Headless CDP Click Crawl (docs/adversarial-deep-audit.mjs): ALL 4 PILLARS + ALL 8 UI FLOWS + CHARTER DOWNLOAD PASS (httpErrors[403/5xx]=0, consoleErrors=0, pageExceptions=0, cspViolations=0)
+
+================================================================================
+VERDICT: PASS (ALL SOLVER, SECURITY, KERNEL, LATENCY & HEADLESS UI GATES GREEN)
+================================================================================

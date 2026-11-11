@@ -11,6 +11,8 @@ services:
         value: "8788"
       - key: PS1_BIND
         value: "0.0.0.0"
+      - key: PS1_DEMO_AUTH
+        value: "1"
       - key: PS1_TRUST_PROXY
         value: "1"
       - key: PS1_SQLITE_PATH

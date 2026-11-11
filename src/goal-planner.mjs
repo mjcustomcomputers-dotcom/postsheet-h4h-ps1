@@ -1,6 +1,7 @@
-// H4H-PS1 | R5 Goal-Conditioned Planning Engine (100% backwards-compatible with R4 tests).
+// H4H-PS1 | R5/R12 Goal-Conditioned Planning Engine (100% backwards-compatible with R4/R5 tests).
 import {
   stateOfEvidence,
+  candidateEventStarts,
   computeTaskScheduleMeta,
   evaluateWildcardFrontier,
   diagnoseAndRepair
@@ -43,25 +44,6 @@ function validate(goal, people, maxNodes) {
   }
 }
 
-function earliestSlot(person, ready, duration, latest, assignments) {
-  const busy = assignments.filter(a => a.personId === person.id).sort((a, b) => a.startMin - b.startMin);
-  for (const w of [...person.windows].sort((a, b) => a.start - b.start)) {
-    let start = Math.max(w.start, ready);
-    let shifted = true;
-    while (shifted) {
-      shifted = false;
-      for (const b of busy) {
-        if (start < b.endMin && start + duration > b.startMin) {
-          start = b.endMin;
-          shifted = true;
-        }
-      }
-    }
-    if (start + duration <= w.end && start + duration <= latest) return start;
-  }
-  return null;
-}
-
 export function planGoal({ goal, people, maxNodes = 5000 }) {
   validate(goal, people, maxNodes);
   const sched = computeTaskScheduleMeta(goal);
@@ -70,6 +52,7 @@ export function planGoal({ goal, people, maxNodes = 5000 }) {
   const assignments = [];
   const unknown = [];
   const residuals = [];
+  const visitedStates = new Set();
   let nodes = 0, exhausted = false, best = null, foundSupported = false;
 
   // Count how many goal skills each person holds so specialists leave versatile contributors free
@@ -89,48 +72,81 @@ export function planGoal({ goal, people, maxNodes = 5000 }) {
       a.p.id.localeCompare(b.p.id)
     );
 
-  function dfs(depth) {
+  function stateSignature() {
+    return assignments
+      .map(a => `${a.taskId}@${a.personId}:${a.startMin}-${a.endMin}:${a.evidence[0]}`)
+      .sort()
+      .join(';');
+  }
+
+  function dfs() {
     if (nodes++ >= maxNodes) { exhausted = true; return false; }
-    if (depth === tasks.length) {
+    if (completed.size === tasks.length) {
       const witness = { assignments: [...assignments], guards: [...unknown] };
       if (unknown.length === 0) { best = witness; foundSupported = true; return true; }
       if (!best || witness.guards.length < best.guards.length) best = witness;
       return false;
     }
-    const task = tasks[depth], after = task.after || [];
-    let ready = goal.startMin;
-    for (const dep of after) {
-      const end = completed.get(dep);
-      ready = Math.max(ready, end + Math.max(0, task.lagMin || 0));
-    }
-    const deadline = Math.min(goal.deadlineMin, minute(task.deadlineMin) ? task.deadlineMin : goal.deadlineMin);
-    const possible = candidates(task);
-    if (possible.length === 0) {
-      residuals.push({ taskId: task.id, reason: 'NO_CONSENTING_CANDIDATE_WITH_SUPPORTED_OR_UNKNOWN_ABILITY' });
-      return false;
-    }
-    let placed = false;
-    for (const { p, state } of possible) {
-      const start = earliestSlot(p, ready, task.durationMin, deadline, assignments);
-      if (start === null) continue;
-      placed = true;
-      const end = start + task.durationMin;
-      const a = { taskId: task.id, personId: p.id, skill: task.skill, startMin: start, endMin: end, evidence: state };
-      assignments.push(a); completed.set(task.id, end);
-      if (state === 'unknown') unknown.push({ taskId: task.id, personId: p.id, required: 'TASK_ABILITY_CONFIRMATION' });
-      if (dfs(depth + 1)) return true;
-      if (state === 'unknown') unknown.pop();
-      completed.delete(task.id); assignments.pop();
+
+    const sig = stateSignature();
+    if (visitedStates.has(sig)) return false;
+    visitedStates.add(sig);
+
+    // Ready tasks ordered by Lawler/Jackson EDD (lf, ls, id); tries primary ready task + earliest start first,
+    // then branches to feasible delayed event-point starts or alternative ready tasks within maxNodes
+    const readyTasks = tasks.filter(
+      t => !completed.has(t.id) && (t.after || []).every(dep => completed.has(dep))
+    );
+
+    for (let rIdx = 0; rIdx < readyTasks.length; rIdx++) {
+      const task = readyTasks[rIdx], after = task.after || [];
+      let ready = goal.startMin;
+      for (const dep of after) {
+        const end = completed.get(dep);
+        ready = Math.max(ready, end + Math.max(0, task.lagMin || 0));
+      }
+      const deadline = Math.min(goal.deadlineMin, minute(task.deadlineMin) ? task.deadlineMin : goal.deadlineMin);
+      const possible = candidates(task);
+      if (possible.length === 0) {
+        residuals.push({ taskId: task.id, reason: 'NO_CONSENTING_CANDIDATE_WITH_SUPPORTED_OR_UNKNOWN_ABILITY' });
+        return false;
+      }
+
+      let placed = false;
+      for (const { p, state } of possible) {
+        const starts = candidateEventStarts(p, ready, task.durationMin, deadline, assignments);
+        for (const start of starts) {
+          placed = true;
+          const end = start + task.durationMin;
+          const a = { taskId: task.id, personId: p.id, skill: task.skill, startMin: start, endMin: end, evidence: state };
+          assignments.push(a); completed.set(task.id, end);
+          if (state === 'unknown') unknown.push({ taskId: task.id, personId: p.id, required: 'TASK_ABILITY_CONFIRMATION' });
+          if (dfs()) return true;
+          if (state === 'unknown') unknown.pop();
+          completed.delete(task.id); assignments.pop();
+          if (exhausted) break;
+        }
+        if (exhausted) break;
+      }
+      if (!placed && rIdx === 0) {
+        residuals.push({ taskId: task.id, reason: 'NO_SCHEDULE_SLOT_BEFORE_DEADLINE' });
+      }
       if (exhausted) break;
     }
-    if (!placed) residuals.push({ taskId: task.id, reason: 'NO_SCHEDULE_SLOT_BEFORE_DEADLINE' });
     return false;
   }
 
-  dfs(0);
+  dfs();
   const enrich = maxNodes >= 50;
-  const frontier = enrich ? evaluateWildcardFrontier({ goal, people, maxNodes: Math.min(1500, maxNodes) }) : null;
-  const repairs = (!foundSupported && enrich) ? diagnoseAndRepair({ goal, people }) : [];
+  const frontier = enrich
+    ? evaluateWildcardFrontier({
+        goal,
+        people,
+        maxNodes: Math.min(1500, maxNodes),
+        knownRobustWitness: foundSupported ? best : null
+      })
+    : null;
+  const repairs = (!foundSupported && enrich) ? diagnoseAndRepair({ goal, people, alreadyFeasible: false }) : [];
 
   if (foundSupported) {
     return {
@@ -148,7 +164,7 @@ export function planGoal({ goal, people, maxNodes = 5000 }) {
   if (best) {
     return {
       status: 'CONDITIONAL_WITNESS',
-      classification: 'CONDITIONAL_GUARDED',
+      classification: exhausted ? 'CONDITIONAL_BUDGET_LIMITED' : 'CONDITIONAL_GUARDED',
       goal: goal.id || null,
       witness: best,
       criticalPath: sched.meta,

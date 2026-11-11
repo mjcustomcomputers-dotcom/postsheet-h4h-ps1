@@ -1,4 +1,4 @@
-# Security Architecture Brief (PSS-H4H-SEC-HARDENING-R11)
+# Security Architecture Brief (PSS-H4H-SEC-HARDENING-R11 / R12)
 
 ## 1. Threat Model & Trust Boundaries
 Post Sheet x Synchronicity separates **authoritative seat mutation** (Layer A) from **peer-forwarded collaboration and offline transport** (Layer B):
@@ -18,7 +18,7 @@ Post Sheet x Synchronicity separates **authoritative seat mutation** (Layer A) f
 
 ## 4. Least-Privilege Relay Warrants & Demo Namespace Isolation (`src/server.mjs`)
 - **Scoped Relay Warrants (`POST /api/auth/relay-warrant`):** Disconnected claimants mint a narrow 10-minute warrant (`aud: 'h4h-ps1-relay-warrant'`) cryptographically bound to `{ sub, eventId, teamId, opId, codeHash }`. Standard `verifyToken` (`aud: 'h4h-ps1-local'`) rejects relay warrants (`401`) on all other routes, and `/api/peer/relay-claim` blocks self-relay (`actorId === claimantSub` -> `403 SELF_RELAY_FORBIDDEN`).
-- **Demo Persona Isolation (`/api/auth/demo`):** Restricted to `DEMO_PERSONA_RE` (`403 DEMO_PERSONA_FORBIDDEN` for seeded `builder-00000` leaders or arbitrary IDs) and strictly blocked whenever `ps1_accounts` holds a registered account of the same username (`403`). Disable completely in production via `PS1_DEMO_AUTH=0`.
+- **Judge-Ready Demo Isolation (`PS1_DEMO_AUTH=1` Default, `PS1_DEMO_AUTH=0` Strict Switch):** Container and Render deployments default to `PS1_DEMO_AUTH=1` so judges can test 1-click profile switching, Mateo offline relay, and the 50-person race out of the box. `/api/auth/demo` enforces `DEMO_PERSONA_RE` (`403 DEMO_PERSONA_FORBIDDEN` for seeded `builder-00000`..`builder-09999` leaders or arbitrary IDs), blocks impersonation of any `scrypt`-registered `ps1_accounts` user (`403`), clamps `maxSize <= 10`, and prunes stale `race-*` events older than 10 minutes. For strict account-only production deployments, set `PS1_DEMO_AUTH=0` to disable `/api/auth/demo` and `/api/demo/race-50` completely.
 
 ## 5. Non-Blocking `scrypt` Semaphore & Anti-Enumeration
 - `/api/auth/register` and `/api/auth/login` run async `crypto.scrypt` (`N=16384, r=8, p=1, maxmem=32 MiB`) on libuv worker threads behind a `maxConcurrentKdf = 4` semaphore (`>16` queued -> `429 AUTH_BUSY`), keeping `GET /health` and `/board` responsive (`<50 ms`) under login floods.

@@ -58,6 +58,9 @@ import {
   AlertTriangleIcon
 } from './icons.jsx';
 
+const DEMO_PERSONA_CLIENT_RE =
+  /^(leader-aurora|builder-kai|builder-priya|relay-mateo|race-leader|(aurora|priya|kai|mateo|lead|mem|claimant)-[A-Za-z0-9_-]{1,28})$/;
+
 const PRIMARY_TABS = [
   { id: 'discover', num: '1', label: 'Find teammates', short: 'Find teammates', hotkey: 'Alt+1', Icon: CompassIcon },
   { id: 'architect', num: '2', label: 'Plan the work', short: 'Plan the work', hotkey: 'Alt+2', Icon: GitBranchIcon },
@@ -421,9 +424,11 @@ export default function App() {
           tokenRef.current = '';
           setToken('');
 
-          if (!signedOutManuallyRef.current) {
+          if (!signedOutManuallyRef.current && (!actorRef.current || DEMO_PERSONA_CLIENT_RE.test(actorRef.current))) {
             try {
-              const refreshActor = actorRef.current || 'leader-aurora';
+              const refreshActor = DEMO_PERSONA_CLIENT_RE.test(actorRef.current)
+                ? actorRef.current
+                : 'leader-aurora';
               const refreshed = await readApiJson(
                 await fetch('/api/auth/demo', {
                   method: 'POST',
@@ -1026,11 +1031,14 @@ export default function App() {
         let activeTok = await ensureToken('');
         if (!activeTok && !signedOutManuallyRef.current) {
           try {
+            const refreshActor = DEMO_PERSONA_CLIENT_RE.test(actorRef.current)
+              ? actorRef.current
+              : 'leader-aurora';
             const refreshed = await readApiJson(
               await fetch('/api/auth/demo', {
                 method: 'POST',
                 headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({ actorId: actorRef.current || 'leader-aurora', eventId, maxSize: 5 })
+                body: JSON.stringify({ actorId: refreshActor, eventId, maxSize: 5 })
               })
             );
             activeTok = refreshed.token;
@@ -1076,11 +1084,14 @@ export default function App() {
         } catch (firstErr) {
           if ((firstErr?.status === 401 || firstErr?.message === 'UNAUTHORIZED') && !signedOutManuallyRef.current) {
             tokenRef.current = '';
+            const refreshActor = DEMO_PERSONA_CLIENT_RE.test(actorRef.current)
+              ? actorRef.current
+              : 'leader-aurora';
             const refreshed = await readApiJson(
               await fetch('/api/auth/demo', {
                 method: 'POST',
                 headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({ actorId: actorRef.current || 'leader-aurora', eventId, maxSize: 5 })
+                body: JSON.stringify({ actorId: refreshActor, eventId, maxSize: 5 })
               })
             );
             tokenRef.current = refreshed.token;
@@ -1667,21 +1678,32 @@ export default function App() {
               )
             );
             if (!signedOutManuallyRef.current && detail?.leader) {
-              try {
-                const leadSession = await mintDemoSession(detail.leader, eventId, detail.maxSize || 5);
-                activeTok = leadSession.token;
-                activeLead = leadSession.actorId;
-                tokenRef.current = activeTok;
-                actorRef.current = activeLead;
-                setToken(activeTok);
-                setActorId(activeLead);
+              if (
+                DEMO_PERSONA_CLIENT_RE.test(detail.leader) &&
+                (detail.members?.length || 0) < (detail.maxSize || 5)
+              ) {
+                try {
+                  const leadSession = await mintDemoSession(detail.leader, eventId, detail.maxSize || 5);
+                  activeTok = leadSession.token;
+                  activeLead = leadSession.actorId;
+                  tokenRef.current = activeTok;
+                  actorRef.current = activeLead;
+                  setToken(activeTok);
+                  setActorId(activeLead);
+                  res = await sendPost('/api/invitations', { eventId, teamId: targetTid, expiresAt }, activeTok);
+                } catch {
+                  setAuthPromptMessage(
+                    `Sign in as team lead '${detail.leader}' to create a single-use invite for '${targetTid}'.`
+                  );
+                  setAuthModalOpen(true);
+                  throw invErr;
+                }
+              } else {
+                const created = await createCleanTeamWithLead(targetTid, activeTok, activeLead);
+                targetTid = created.createdTeamId;
+                activeTok = created.activeTok;
+                activeLead = created.activeLead;
                 res = await sendPost('/api/invitations', { eventId, teamId: targetTid, expiresAt }, activeTok);
-              } catch {
-                setAuthPromptMessage(
-                  `Sign in as team lead '${detail.leader}' to create a single-use invite for '${targetTid}'.`
-                );
-                setAuthModalOpen(true);
-                throw invErr;
               }
             } else {
               throw invErr;
@@ -1725,7 +1747,11 @@ export default function App() {
 
         const tag = makeUniqueTag();
         let leadTok = await ensureToken(freshTok);
-        if (detail.leader && detail.leader !== (freshActor || actorRef.current)) {
+        if (
+          detail.leader &&
+          detail.leader !== (freshActor || actorRef.current) &&
+          DEMO_PERSONA_CLIENT_RE.test(detail.leader)
+        ) {
           try {
             const leadSession = await mintDemoSession(detail.leader, eventId, detail.maxSize || 5);
             leadTok = leadSession.token;
@@ -2079,7 +2105,8 @@ export default function App() {
           if (
             selectedTeam &&
             selectedTeam.teamId === targetTid &&
-            (selectedTeam.members?.length || 0) < (selectedTeam.maxSize || 5)
+            (selectedTeam.members?.length || 0) < (selectedTeam.maxSize || 5) &&
+            DEMO_PERSONA_CLIENT_RE.test(selectedTeam.leader || '')
           ) {
             try {
               const leadSession = await mintDemoSession(selectedTeam.leader, eventId, selectedTeam.maxSize || 5);
@@ -2498,7 +2525,8 @@ export default function App() {
             (trErr?.status === 403 || String(trErr?.code || trErr?.message || '').includes('LEADER_REQUIRED')) &&
             !signedOutManuallyRef.current &&
             selectedTeam?.teamId === teamId &&
-            selectedTeam?.leader
+            selectedTeam?.leader &&
+            DEMO_PERSONA_CLIENT_RE.test(selectedTeam.leader)
           ) {
             try {
               const leadSession = await mintDemoSession(selectedTeam.leader, eventId, selectedTeam.maxSize || 5);

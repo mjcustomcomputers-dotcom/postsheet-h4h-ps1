@@ -1,8 +1,8 @@
-// H4H-PS1 | Synchronicity R5 Coupled Solvers:
-// 1. Directed DAG Critical-Path & Backward Slack (EDD ordering)
+// H4H-PS1 | Synchronicity R5/R12 Coupled Solvers:
+// 1. Directed DAG Critical-Path & Backward Slack (Lawler/Jackson EDD ordering)
 // 2. Wildcard Omega Frontier (Sat_g(a) subseteq Omega) + P9R MINIMUM_SUFFICIENT + VOI
-// 3. Hall Capacity Contention Witness & Lexicographic Minimum Repair
-// 4. Complementary Skill & Directed Asynchronous UTC Baton-Pass Recommender
+// 3. Hall Capacity Contention Witness (Parallel-Only) & Lexicographic Minimum Repair
+// 4. Complementary Skill & Directed Asynchronous UTC Baton-Pass Recommender (Interval-Union Overlap)
 // 5. Context Glue-or-Explain Overlap Obstruction Verifier
 
 export function stateOfEvidence(pair) {
@@ -12,10 +12,55 @@ export function stateOfEvidence(pair) {
   return s ? (r ? 'conflicting' : 'supported') : (r ? 'refuted' : 'unknown');
 }
 
+export function mergeIntervals(intervals) {
+  if (!Array.isArray(intervals) || intervals.length === 0) return [];
+  const sorted = intervals
+    .filter(w => Number.isFinite(w.start) && Number.isFinite(w.end) && w.end > w.start)
+    .map(w => ({ start: w.start, end: w.end }))
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+  if (sorted.length === 0) return [];
+  const out = [sorted[0]];
+  for (let i = 1; i < sorted.length; i++) {
+    const last = out[out.length - 1];
+    if (sorted[i].start <= last.end) last.end = Math.max(last.end, sorted[i].end);
+    else out.push({ ...sorted[i] });
+  }
+  return out;
+}
+
+export function candidateEventStarts(person, ready, duration, latest, assignments) {
+  const windows = mergeIntervals(person.windows || []);
+  const busy = assignments
+    .filter(a => a.personId === person.id)
+    .sort((a, b) => a.startMin - b.startMin);
+
+  const rawPoints = new Set();
+  for (const w of windows) {
+    if (w.end - w.start < duration) continue;
+    const base = Math.max(w.start, ready);
+    if (base + duration <= w.end && base + duration <= latest) rawPoints.add(base);
+    for (const b of busy) {
+      const s = Math.max(w.start, ready, b.endMin);
+      if (s + duration <= w.end && s + duration <= latest) rawPoints.add(s);
+    }
+  }
+
+  const valid = [];
+  for (const s of [...rawPoints].sort((a, b) => a - b)) {
+    const e = s + duration;
+    if (e > latest) continue;
+    if (!windows.some(w => s >= w.start && e <= w.end)) continue;
+    if (busy.some(b => s < b.endMin && e > b.startMin)) continue;
+    valid.push(s);
+  }
+  return valid;
+}
+
 export function computeTaskScheduleMeta(goal) {
   const tasks = goal.tasks;
   const byId = new Map(tasks.map(t => [t.id, t]));
   const children = new Map(tasks.map(t => [t.id, []]));
+  const ancestors = new Map(tasks.map(t => [t.id, new Set()]));
   const visited = new Set();
   const active = new Set();
   const topo = [];
@@ -28,6 +73,8 @@ export function computeTaskScheduleMeta(goal) {
     for (const dep of t.after || []) {
       children.get(dep).push(id);
       visit(dep);
+      ancestors.get(id).add(dep);
+      for (const anc of ancestors.get(dep)) ancestors.get(id).add(anc);
     }
     active.delete(id);
     visited.add(id);
@@ -64,13 +111,13 @@ export function computeTaskScheduleMeta(goal) {
     ls.set(t.id, latestFin - t.durationMin);
   }
 
-  // Kahn topological queue prioritized by smallest latestStart (Earliest Due Date / tightest slack)
+  // Kahn topological queue prioritized by Lawler/Jackson Earliest Due Date (lf), then latestStart (ls)
   const inDeg = new Map(tasks.map(t => [t.id, (t.after || []).length]));
   const readyQueue = tasks.filter(t => inDeg.get(t.id) === 0);
   const orderedTasks = [];
   const sortQueue = () => readyQueue.sort((a, b) =>
-    ls.get(a.id) - ls.get(b.id) ||
     lf.get(a.id) - lf.get(b.id) ||
+    ls.get(a.id) - ls.get(b.id) ||
     a.id.localeCompare(b.id)
   );
 
@@ -95,114 +142,284 @@ export function computeTaskScheduleMeta(goal) {
     slackMin: ls.get(t.id) - es.get(t.id)
   }));
 
-  const minFinish = Math.max(... orderedTasks.map(t => ef.get(t.id)));
+  const minFinish = Math.max(...orderedTasks.map(t => ef.get(t.id)));
   return {
     orderedTasks,
+    ancestors,
     meta,
     metaById: new Map(meta.map(m => [m.taskId, m])),
     criticalSpanMin: minFinish - goal.startMin
   };
 }
 
-function findEarliestSlot(person, ready, duration, latest, assignments) {
-  const busy = assignments
-    .filter(a => a.personId === person.id)
-    .sort((a, b) => a.startMin - b.startMin);
-  const sortedWindows = [...person.windows].sort((a, b) => a.start - b.start);
-  for (const w of sortedWindows) {
-    let start = Math.max(w.start, ready);
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (const b of busy) {
-        if (start < b.endMin && start + duration > b.startMin) {
-          start = b.endMin;
-          changed = true;
+function findSupportedWitness(goal, people, maxNodes = 1500) {
+  const { orderedTasks } = computeTaskScheduleMeta(goal);
+  const goalSkillSet = new Set(orderedTasks.map(t => t.skill));
+  const versatility = new Map(
+    people.map(p => [
+      p.id,
+      Object.keys(p.abilities || {}).filter(
+        sk => goalSkillSet.has(sk) && stateOfEvidence(p.abilities[sk]) === 'supported'
+      ).length
+    ])
+  );
+
+  const completed = new Map();
+  const assignments = [];
+  const visitedStates = new Set();
+  let nodes = 0;
+
+  function stateSig() {
+    return assignments
+      .map(a => `${a.taskId}@${a.personId}:${a.startMin}-${a.endMin}`)
+      .sort()
+      .join(';');
+  }
+
+  function dfs() {
+    if (nodes++ >= maxNodes) return null;
+    if (completed.size === orderedTasks.length) {
+      return { assignments: [...assignments], guards: [] };
+    }
+    const sig = stateSig();
+    if (visitedStates.has(sig)) return null;
+    visitedStates.add(sig);
+
+    const readyTasks = orderedTasks.filter(
+      t => !completed.has(t.id) && (t.after || []).every(dep => completed.has(dep))
+    );
+
+    for (const task of readyTasks) {
+      let ready = goal.startMin;
+      for (const dep of task.after || []) {
+        ready = Math.max(ready, completed.get(dep) + Math.max(0, task.lagMin || 0));
+      }
+      const deadline = Math.min(
+        goal.deadlineMin,
+        Number.isSafeInteger(task.deadlineMin) && task.deadlineMin >= 0 ? task.deadlineMin : goal.deadlineMin
+      );
+      const supportedCandidates = people
+        .filter(
+          p =>
+            p.consent === true &&
+            Object.hasOwn(p.abilities || {}, task.skill) &&
+            stateOfEvidence(p.abilities[task.skill]) === 'supported'
+        )
+        .sort(
+          (a, b) =>
+            (versatility.get(a.id) || 0) - (versatility.get(b.id) || 0) ||
+            a.id.localeCompare(b.id)
+        );
+      if (supportedCandidates.length === 0) return null;
+
+      for (const p of supportedCandidates) {
+        const starts = candidateEventStarts(p, ready, task.durationMin, deadline, assignments);
+        for (const start of starts) {
+          const end = start + task.durationMin;
+          assignments.push({
+            taskId: task.id,
+            personId: p.id,
+            skill: task.skill,
+            startMin: start,
+            endMin: end,
+            evidence: 'supported'
+          });
+          completed.set(task.id, end);
+          const hit = dfs();
+          if (hit) return hit;
+          completed.delete(task.id);
+          assignments.pop();
+          if (nodes >= maxNodes) return null;
         }
       }
     }
-    if (start + duration <= w.end && start + duration <= latest) return start;
+    return null;
   }
-  return null;
+
+  return dfs();
 }
 
-export function evaluateWildcardFrontier({ goal, people, maxWitnesses = 16, maxNodes = 2500 }) {
-  const { orderedTasks } = computeTaskScheduleMeta(goal);
+export function evaluateWildcardFrontier({
+  goal,
+  people,
+  maxWitnesses = 64,
+  maxNodes = 2500,
+  knownRobustWitness = null
+}) {
+  const { orderedTasks, metaById } = computeTaskScheduleMeta(goal);
   const neededSkills = new Set(orderedTasks.map(t => t.skill));
 
-  // Collect up to 8 relevant unknown ability wildcards -> |Omega| <= 256 (<= 4096 R4 cap)
-  const wildcards = [];
+  const versatility = new Map(
+    people.map(p => [
+      p.id,
+      Object.keys(p.abilities || {}).filter(
+        sk => neededSkills.has(sk) && stateOfEvidence(p.abilities[sk]) === 'supported'
+      ).length
+    ])
+  );
+
+  // Collect all consenting unknown ability pairs on neededSkills, prioritizing window-viable pairs first
+  const allUnknowns = [];
   for (const p of people) {
     if (p.consent !== true) continue;
     for (const sk of Object.keys(p.abilities || {})) {
       if (!neededSkills.has(sk)) continue;
-      if (stateOfEvidence(p.abilities[sk]) === 'unknown' && wildcards.length < 8) {
-        wildcards.push({ key: `${p.id}::${sk}`, personId: p.id, skill: sk });
+      if (stateOfEvidence(p.abilities[sk]) === 'unknown') {
+        const viable = orderedTasks.some(t => {
+          if (t.skill !== sk) return false;
+          const m = metaById.get(t.id);
+          return candidateEventStarts(p, m.earliestStartMin, t.durationMin, m.latestFinishMin, []).length > 0;
+        });
+        allUnknowns.push({ key: `${p.id}::${sk}`, personId: p.id, skill: sk, viable });
       }
     }
   }
+  allUnknowns.sort((a, b) => Number(b.viable) - Number(a.viable) || a.key.localeCompare(b.key));
+  const MAX_OMEGA_BITS = 12; // |Omega| <= 4096 R4/R12 bound
+  const wildcards = allUnknowns.slice(0, MAX_OMEGA_BITS);
+  const wildcardKeySet = new Set(wildcards.map(w => w.key));
+  const wildcardsTruncated = allUnknowns.length > MAX_OMEGA_BITS;
+  const exceededEightWildcards = allUnknowns.length > 8;
 
-  // Collect distinct candidate arrangements (both supported and conditional)
   const witnesses = [];
+  const seenGuardSigs = new Set();
+
+  // Unconditional-first (0-guard, specialist versatility-ordered) witness discovery so maxWitnesses cap never misses EXISTS_FORALL_ROBUST
+  const robustSeed =
+    knownRobustWitness || findSupportedWitness(goal, people, Math.min(800, Math.max(16, maxNodes)));
+  if (robustSeed && Array.isArray(robustSeed.assignments) && robustSeed.assignments.length === orderedTasks.length) {
+    const finishMin = Math.max(...robustSeed.assignments.map(a => a.endMin));
+    witnesses.push({
+      assignments: [...robustSeed.assignments],
+      guards: [],
+      guardKeys: new Set(),
+      slackMin: goal.deadlineMin - finishMin,
+      finishMin
+    });
+    seenGuardSigs.add('');
+  }
+
   const completed = new Map();
   const assignments = [];
   const guards = [];
   let nodes = 0;
+  let nodesExhausted = false;
+  let maxWitnessesHit = false;
 
-  function dfsCollect(depth) {
-    if (nodes++ >= maxNodes || witnesses.length >= maxWitnesses) return;
-    if (depth === orderedTasks.length) {
-      const finishMin = Math.max(...assignments.map(a => a.endMin));
-      witnesses.push({
-        assignments: [...assignments],
-        guards: [...guards],
-        guardKeys: new Set(guards.map(g => `${g.personId}::${g.skill}`)),
-        slackMin: goal.deadlineMin - finishMin,
-        finishMin
-      });
-      return;
+  function dfsCollect() {
+    if (witnesses.length >= maxWitnesses) {
+      maxWitnessesHit = true;
+      return false;
     }
-    const task = orderedTasks[depth];
-    let ready = goal.startMin;
-    for (const dep of task.after || []) {
-      ready = Math.max(ready, completed.get(dep) + Math.max(0, task.lagMin || 0));
+    if (nodes++ >= maxNodes) {
+      nodesExhausted = true;
+      return false;
     }
-    const deadline = Math.min(
-      goal.deadlineMin,
-      Number.isSafeInteger(task.deadlineMin) ? task.deadlineMin : goal.deadlineMin
+    if (completed.size === orderedTasks.length) {
+      const guardKeys = new Set(guards.map(g => `${g.personId}::${g.skill}`));
+      const sig = [...guardKeys].sort().join('|');
+      if (!seenGuardSigs.has(sig)) {
+        if (witnesses.length >= maxWitnesses) {
+          maxWitnessesHit = true;
+          return true;
+        }
+        seenGuardSigs.add(sig);
+        const finishMin = Math.max(...assignments.map(a => a.endMin));
+        witnesses.push({
+          assignments: [...assignments],
+          guards: [...guards],
+          guardKeys,
+          slackMin: goal.deadlineMin - finishMin,
+          finishMin
+        });
+      }
+      return true;
+    }
+
+    const readyTasks = orderedTasks.filter(
+      t => !completed.has(t.id) && (t.after || []).every(dep => completed.has(dep))
     );
 
-    const eligible = people
-      .filter(p => p.consent === true && Object.hasOwn(p.abilities, task.skill))
-      .map(p => ({ p, state: stateOfEvidence(p.abilities[task.skill]) }))
-      .filter(x => x.state === 'supported' || x.state === 'unknown')
-      .sort((a, b) => (a.state === 'supported' ? 0 : 1) - (b.state === 'supported' ? 0 : 1) || a.p.id.localeCompare(b.p.id));
+    let anyCompleteUnderReady = false;
+    for (let rIdx = 0; rIdx < readyTasks.length; rIdx++) {
+      if (rIdx > 0 && anyCompleteUnderReady) break;
+      const task = readyTasks[rIdx];
+      let ready = goal.startMin;
+      for (const dep of task.after || []) {
+        ready = Math.max(ready, completed.get(dep) + Math.max(0, task.lagMin || 0));
+      }
+      const deadline = Math.min(
+        goal.deadlineMin,
+        Number.isSafeInteger(task.deadlineMin) && task.deadlineMin >= 0 ? task.deadlineMin : goal.deadlineMin
+      );
 
-    for (const { p, state } of eligible) {
-      const start = findEarliestSlot(p, ready, task.durationMin, deadline, assignments);
-      if (start === null) continue;
-      const end = start + task.durationMin;
-      assignments.push({ taskId: task.id, personId: p.id, skill: task.skill, startMin: start, endMin: end, evidence: state });
-      completed.set(task.id, end);
-      if (state === 'unknown') guards.push({ taskId: task.id, personId: p.id, skill: task.skill });
-      dfsCollect(depth + 1);
-      if (state === 'unknown') guards.pop();
-      completed.delete(task.id);
-      assignments.pop();
-      if (nodes >= maxNodes || witnesses.length >= maxWitnesses) break;
+      const eligible = people
+        .filter(p => p.consent === true && Object.hasOwn(p.abilities || {}, task.skill))
+        .map(p => ({ p, state: stateOfEvidence(p.abilities[task.skill]) }))
+        .filter(x => x.state === 'supported' || x.state === 'unknown')
+        .sort(
+          (a, b) =>
+            (a.state === 'supported' ? 0 : 1) - (b.state === 'supported' ? 0 : 1) ||
+            (versatility.get(a.p.id) || 0) - (versatility.get(b.p.id) || 0) ||
+            a.p.id.localeCompare(b.p.id)
+        );
+
+      for (const { p, state } of eligible) {
+        const starts = candidateEventStarts(p, ready, task.durationMin, deadline, assignments);
+        let personCompleted = false;
+        for (let sIdx = 0; sIdx < starts.length; sIdx++) {
+          if (sIdx > 0 && personCompleted) break;
+          const start = starts[sIdx];
+          const end = start + task.durationMin;
+          assignments.push({
+            taskId: task.id,
+            personId: p.id,
+            skill: task.skill,
+            startMin: start,
+            endMin: end,
+            evidence: state
+          });
+          completed.set(task.id, end);
+          if (state === 'unknown') guards.push({ taskId: task.id, personId: p.id, skill: task.skill });
+          if (dfsCollect()) {
+            personCompleted = true;
+            anyCompleteUnderReady = true;
+          }
+          if (state === 'unknown') guards.pop();
+          completed.delete(task.id);
+          assignments.pop();
+          if (nodesExhausted || maxWitnessesHit) break;
+        }
+        if (nodesExhausted || maxWitnessesHit) break;
+      }
+      if (nodesExhausted || maxWitnessesHit) break;
     }
+    return anyCompleteUnderReady;
   }
-  dfsCollect(0);
+
+  if (witnesses.length < maxWitnesses) {
+    dfsCollect();
+  }
 
   const omegaSize = 1 << wildcards.length;
   const unconditional = witnesses.filter(w => w.guardKeys.size === 0);
   const conditional = witnesses.filter(w => w.guardKeys.size > 0);
+  const truncated = Boolean(wildcardsTruncated || maxWitnessesHit || nodesExhausted);
 
   let worldsCovered = 0;
   const worldFeasibleByMask = new Uint8Array(omegaSize);
   for (let mask = 0; mask < omegaSize; mask++) {
     let anySat = false;
     for (const w of witnesses) {
+      let hasUnindexedGuard = false;
+      for (const gk of w.guardKeys) {
+        if (!wildcardKeySet.has(gk)) {
+          hasUnindexedGuard = true;
+          break;
+        }
+      }
+      if (hasUnindexedGuard) continue;
+
       let ok = true;
       for (let bit = 0; bit < wildcards.length; bit++) {
         if (w.guardKeys.has(wildcards[bit].key) && ((mask >> bit) & 1) === 0) {
@@ -210,7 +427,10 @@ export function evaluateWildcardFrontier({ goal, people, maxWitnesses = 16, maxN
           break;
         }
       }
-      if (ok) { anySat = true; break; }
+      if (ok) {
+        anySat = true;
+        break;
+      }
     }
     if (anySat) {
       worldFeasibleByMask[mask] = 1;
@@ -221,14 +441,18 @@ export function evaluateWildcardFrontier({ goal, people, maxWitnesses = 16, maxN
   const actionStable = unconditional.length > 0;
   const quantifierStatus = actionStable
     ? 'EXISTS_FORALL_ROBUST'
-    : (worldsCovered === omegaSize && omegaSize > 0
+    : worldsCovered === omegaSize && omegaSize > 0
       ? 'FORALL_EXISTS_CONTINGENT'
-      : (worldsCovered > 0 ? 'CONDITIONAL_PARTIAL' : 'EMPTY_UNSAT'));
+      : worldsCovered > 0
+        ? 'CONDITIONAL_PARTIAL'
+        : truncated
+          ? 'SEARCH_TRUNCATED'
+          : 'EMPTY_UNSAT';
 
-  // P9R MINIMUM_SUFFICIENT: skip questioning completely when an unconditional arrangement exists!
+  // P9R MINIMUM_SUFFICIENT: skip questioning completely when an unconditional arrangement exists
   let voiQuestion = null;
   if (!actionStable && wildcards.length > 0 && worldsCovered > 0) {
-    const entropy = p => (p <= 0 || p >= 1) ? 0 : -(p * Math.log2(p) + (1 - p) * Math.log2(1 - p));
+    const entropy = p => (p <= 0 || p >= 1 ? 0 : -(p * Math.log2(p) + (1 - p) * Math.log2(1 - p)));
     const baseP = worldsCovered / omegaSize;
     const baseH = entropy(baseP);
     let bestGain = -1;
@@ -264,14 +488,28 @@ export function evaluateWildcardFrontier({ goal, people, maxWitnesses = 16, maxN
     unconditionalCount: unconditional.length,
     conditionalCount: conditional.length,
     actionStable,
+    truncated,
+    truncation: {
+      wildcardsTruncated,
+      exceededEightWildcards,
+      totalUnknowns: allUnknowns.length,
+      indexedWildcards: wildcards.length,
+      maxWitnesses,
+      maxWitnessesHit,
+      maxNodes,
+      nodesExhausted
+    },
     minimumSufficientStop: actionStable ? 'ALREADY_SUFFICIENT_ZERO_QUESTIONS' : 'RESOLUTION_REQUIRED',
     quantifierStatus,
     voiQuestion
   };
 }
 
-export function diagnoseAndRepair({ goal, people, committedIds = [] }) {
-  const { orderedTasks, metaById } = computeTaskScheduleMeta(goal);
+export function diagnoseAndRepair({ goal, people, committedIds = [], alreadyFeasible = false }) {
+  if (alreadyFeasible) return [];
+  if (findSupportedWitness(goal, people, 1500)) return [];
+
+  const { orderedTasks, ancestors, metaById } = computeTaskScheduleMeta(goal);
   const committedSet = new Set(committedIds);
   const repairs = [];
 
@@ -286,8 +524,8 @@ export function diagnoseAndRepair({ goal, people, committedIds = [] }) {
       if (p.consent !== true || !Object.hasOwn(p.abilities || {}, t.skill)) continue;
       const st = stateOfEvidence(p.abilities[t.skill]);
       if (st !== 'supported' && st !== 'unknown') continue;
-      const slot = findEarliestSlot(p, m.earliestStartMin, t.durationMin, m.latestFinishMin, []);
-      if (slot !== null) {
+      const starts = candidateEventStarts(p, m.earliestStartMin, t.durationMin, m.latestFinishMin, []);
+      if (starts.length > 0) {
         if (st === 'supported') sup.push(p.id);
         else unk.push(p.id);
       } else {
@@ -327,24 +565,65 @@ export function diagnoseAndRepair({ goal, people, committedIds = [] }) {
     }
   }
 
-  // Detect Hall Capacity Contention: every task has >=1 solo-supported person, yet joint schedule fails
+  // Separate concurrent parallel Hall contention from sequential dependency window shifts
   const allSoloSupported = orderedTasks.every(t => (soloCapable.get(t.id)?.sup.length || 0) > 0);
-  if (allSoloSupported) {
-    const unionSup = new Set();
-    for (const t of orderedTasks) {
-      for (const pid of soloCapable.get(t.id).sup) unionSup.add(pid);
+  if (allSoloSupported && orderedTasks.length > 1) {
+    const contendedTaskIds = new Set();
+    const overloadedIds = new Set();
+
+    for (let i = 0; i < orderedTasks.length; i++) {
+      for (let j = i + 1; j < orderedTasks.length; j++) {
+        const ta = orderedTasks[i];
+        const tb = orderedTasks[j];
+        // Strictly sequential tasks (ta -> tb or tb -> ta) cannot contend simultaneously for parallel roles
+        if (ancestors.get(ta.id).has(tb.id) || ancestors.get(tb.id).has(ta.id)) continue;
+
+        const subGoal = {
+          id: 'pair-check',
+          startMin: goal.startMin,
+          deadlineMin: Math.min(
+            goal.deadlineMin,
+            Math.max(metaById.get(ta.id).latestFinishMin, metaById.get(tb.id).latestFinishMin)
+          ),
+          tasks: [
+            { ...ta, after: [], deadlineMin: metaById.get(ta.id).latestFinishMin },
+            { ...tb, after: [], deadlineMin: metaById.get(tb.id).latestFinishMin }
+          ]
+        };
+        if (!findSupportedWitness(subGoal, people, 200)) {
+          contendedTaskIds.add(ta.id);
+          contendedTaskIds.add(tb.id);
+          for (const pid of soloCapable.get(ta.id).sup) overloadedIds.add(pid);
+          for (const pid of soloCapable.get(tb.id).sup) overloadedIds.add(pid);
+        }
+      }
     }
-    if (unionSup.size < orderedTasks.length) {
-      const overloaded = [...unionSup];
-      const contendedSkills = [...new Set(orderedTasks.map(t => t.skill))];
+
+    if (contendedTaskIds.size > 0 && overloadedIds.size < contendedTaskIds.size) {
+      const contendedList = orderedTasks.filter(t => contendedTaskIds.has(t.id));
+      const contendedSkills = [...new Set(contendedList.map(t => t.skill))];
+      const overloaded = [...overloadedIds];
+      const deficit = contendedList.length - overloaded.length;
       repairs.unshift({
         kind: 'HALL_CAPACITY_CONTENTION_REPAIR',
         overloadedContributors: overloaded,
-        contendedTasks: orderedTasks.map(t => t.id),
+        contendedTasks: contendedList.map(t => t.id),
         contendedSkills,
-        hallDeficitRoles: orderedTasks.length - unionSup.size,
+        hallDeficitRoles: deficit,
         displacedCommittedMembers: [...committedSet].filter(() => false).length,
-        explanation: `Hall capacity deficit: ${overloaded.join(', ')} covers [${contendedSkills.join(', ')}] individually, but overlapping task deadlines prevent one contributor from executing simultaneous roles. Add 1 consenting contributor in [${contendedSkills.join(' or ')}] while keeping current members intact.`
+        explanation: `Hall capacity deficit: ${overloaded.join(', ')} covers [${contendedSkills.join(', ')}] individually, but overlapping task deadlines prevent one contributor from executing simultaneous roles. Add ${deficit} consenting contributor in [${contendedSkills.join(' or ')}] while keeping current members intact.`
+      });
+    } else {
+      const lastTask = orderedTasks[orderedTasks.length - 1];
+      const mLast = metaById.get(lastTask.id);
+      repairs.push({
+        kind: 'SCHEDULE_HANDOFF_REPAIR',
+        taskId: lastTask.id,
+        skill: lastTask.skill,
+        personId: soloCapable.get(lastTask.id).sup[0],
+        neededWindow: [mLast.earliestStartMin, mLast.latestFinishMin],
+        displacedCommittedMembers: 0,
+        explanation: `Sequential dependency chain shifts '${lastTask.id}' past available contributor window; extend availability to [${mLast.earliestStartMin}..${mLast.latestFinishMin}m] or add a late-window '${lastTask.skill}' handoff contributor.`
       });
     }
   }
@@ -360,11 +639,13 @@ export function recommendComplementary({ goal, teamPeople, candidates, planFn })
     : goal.deadlineMin;
   const teamIds = new Set(teamPeople.map(p => p.id));
 
-  const teamWindows = teamPeople.flatMap(p => p.windows || []);
+  // Merged interval-union wall-clock overlap guarantees syncOverlapMin <= horizonMin and preserves asyncBatonPass
+  const mergedTeamWindows = mergeIntervals(teamPeople.flatMap(p => p.windows || []));
   const overlapWithTeam = candWindows => {
+    const mergedCand = mergeIntervals(candWindows || []);
     let total = 0;
-    for (const cw of candWindows || []) {
-      for (const tw of teamWindows) {
+    for (const cw of mergedCand) {
+      for (const tw of mergedTeamWindows) {
         const s = Math.max(cw.start, tw.start);
         const e = Math.min(cw.end, tw.end);
         if (e > s) total += (e - s);
@@ -426,7 +707,9 @@ export function recommendComplementary({ goal, teamPeople, candidates, planFn })
 
   return {
     baselineStatus: baseline.status,
-    baselineRepairs: diagnoseAndRepair({ goal, people: teamPeople, committedIds: [...teamIds] }),
+    baselineRepairs: baselineFeasible
+      ? []
+      : diagnoseAndRepair({ goal, people: teamPeople, committedIds: [...teamIds] }),
     recommendations: results
   };
 }

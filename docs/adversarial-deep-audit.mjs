@@ -223,6 +223,7 @@ class CdpSession {
     this.consoleErrors = [];
     this.pageExceptions = [];
     this.cspViolations = [];
+    this.httpErrors = [];
   }
 
   async connect() {
@@ -240,7 +241,13 @@ class CdpSession {
         else resolve(msg.result);
         return;
       }
-      if (msg.method === 'Runtime.consoleAPICalled' && msg.params?.type === 'error') {
+      if (msg.method === 'Network.responseReceived') {
+        const status = Number(msg.params?.response?.status || 0);
+        const url = String(msg.params?.response?.url || '');
+        if (status === 403 || status >= 500) {
+          this.httpErrors.push({ status, url });
+        }
+      } else if (msg.method === 'Runtime.consoleAPICalled' && msg.params?.type === 'error') {
         const txt = (msg.params.args || []).map(a => a.value ?? a.description ?? '').join(' ');
         this.consoleErrors.push(txt);
         if (/Content Security Policy|CSP/i.test(txt)) this.cspViolations.push(txt);
@@ -261,6 +268,7 @@ class CdpSession {
     });
 
     await this.send('Page.enable');
+    await this.send('Network.enable');
     await this.send('Runtime.enable');
     await this.send('Log.enable');
   }
@@ -1183,6 +1191,26 @@ log('\n[PILLAR 4] Live Headless Browser All-Button Click Crawl on http://127.0.0
     );
     log(`  PASS [Flow 4.7]: \`Create single-use invite\` on fresh ID "${freshTid}" auto-created team & minted invite`);
 
+    // Also verify 1-click `#FFFFFF` White-Paper Charter HTML download in header (`Download Plan`)
+    try {
+      await cdp.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: profileDir });
+    } catch {}
+    await cdp.evaluate(`
+      const dlBtn = Array.from(document.querySelectorAll('header button')).find(b => b.textContent.includes('Download Plan'));
+      if (!dlBtn) throw new Error('Download Plan button missing');
+      dlBtn.click();
+      return true;
+    `);
+    await cdp.waitFor(
+      `
+      const toast = document.querySelector('.center-toast-banner')?.innerText || '';
+      return toast.includes('Downloaded team-plan-');
+      `,
+      6000,
+      '1-click white-paper HTML charter download'
+    );
+    log('  PASS [Flow 4.7B]: 1-click `Download Plan` exported self-CSP `#FFFFFF` white-paper HTML cleanly');
+
     // --- FLOW 4.8: Click `Run 50-person last-spot test` TWICE in a row + verify invariants=0 on BOTH runs ---
     await cdp.evaluate(`
       document.querySelector('#tab-arena').click();
@@ -1241,10 +1269,11 @@ log('\n[PILLAR 4] Live Headless Browser All-Button Click Crawl on http://127.0.0
     log(`  PASS [Flow 4.8 Run #1]: ${runReceipts[0]}`);
     log(`  PASS [Flow 4.8 Run #2]: ${runReceipts[1]}`);
 
+    assert.equal(cdp.httpErrors.length, 0, `HTTP 403/500 errors detected: ${JSON.stringify(cdp.httpErrors)}`);
     assert.equal(cdp.consoleErrors.length, 0, `Console errors detected: ${JSON.stringify(cdp.consoleErrors)}`);
     assert.equal(cdp.pageExceptions.length, 0, `Page exceptions detected: ${JSON.stringify(cdp.pageExceptions)}`);
     assert.equal(cdp.cspViolations.length, 0, `CSP violations detected: ${JSON.stringify(cdp.cspViolations)}`);
-    log('  PASS [Browser Hygiene]: consoleErrors=0 · pageExceptions=0 · cspViolations=0');
+    log('  PASS [Browser Hygiene]: httpErrors(403/5xx)=0 · consoleErrors=0 · pageExceptions=0 · cspViolations=0');
   } finally {
     if (cdp) cdp.close();
     try {
