@@ -1,11 +1,32 @@
-FROM node:24-bookworm-slim
-WORKDIR /app
+FROM node:24-bookworm-slim AS builder
+WORKDIR /build
 COPY web/package.json web/package-lock.json ./web/
-RUN npm ci --prefix web --ignore-scripts --no-fund
-COPY . .
-RUN npm run build --prefix web && mkdir -p /data && node src/seed.mjs /data/seed-event.sqlite
-ENV PS1_BIND=0.0.0.0
-ENV PS1_PORT=8788
-ENV PS1_SQLITE_PATH=/data/seed-event.sqlite
+RUN npm ci --prefix web --ignore-scripts --no-audit --no-fund
+COPY src ./src
+COPY web ./web
+RUN npm run build --prefix web \
+  && mkdir -p /build-seed \
+  && node src/seed.mjs /build-seed/seed-event.sqlite
+
+FROM node:24-bookworm-slim AS runtime
+WORKDIR /app
+COPY --from=builder /build/src ./src
+COPY --from=builder /build/web/dist ./web/dist
+COPY --from=builder /build-seed/seed-event.sqlite /build-seed/seed-event.sqlite
+RUN chmod -R a-w /app /build-seed \
+  && mkdir -p /data \
+  && chown -R node:node /data \
+  && chmod 0700 /data
+
+USER node
+ENV NODE_ENV=production \
+    PS1_BIND=0.0.0.0 \
+    PS1_PORT=8788 \
+    PS1_SQLITE_PATH=/data/seed-event.sqlite \
+    PS1_TRUST_PROXY=1
+
 EXPOSE 8788
-CMD ["sh", "-c", "PS1_AUTH_SECRET=${PS1_AUTH_SECRET:-$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \\n')} node src/server.mjs"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD ["node", "-e", "fetch('http://127.0.0.1:8788/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+
+CMD ["sh", "-c", "DB_TARGET=\"${PS1_SQLITE_PATH:-/data/seed-event.sqlite}\"; DB_DIR=$(dirname \"$DB_TARGET\"); if [ ! -w \"$DB_DIR\" ]; then DB_TARGET=/tmp/seed-event.sqlite; fi; if [ ! -f \"$DB_TARGET\" ]; then cp /build-seed/seed-event.sqlite \"$DB_TARGET\" && chmod 0600 \"$DB_TARGET\"; fi; PS1_SQLITE_PATH=\"$DB_TARGET\" PS1_AUTH_SECRET=\"${PS1_AUTH_SECRET:-$(node -e \"process.stdout.write(require('node:crypto').randomBytes(32).toString('hex'))\")}\" exec node src/server.mjs"]

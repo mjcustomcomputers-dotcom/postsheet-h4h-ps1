@@ -1,6 +1,6 @@
 ================================================================================
 H4H-PS1 R10 DEEP ADVERSARIAL & HEADLESS ALL-BUTTON CLICK CRAWL RECEIPT
-Generated: 2026-11-11T10:39:09.992Z
+Generated: 2026-11-11T11:02:21.335Z
 Node: v24.19.0 | OS: win32 10.0.26300 (x64)
 ================================================================================
 
@@ -23,7 +23,7 @@ Node: v24.19.0 | OS: win32 10.0.26300 (x64)
   PASS [Flow 4.4]: Mateo card `Try in plan` on Step 1 pulsed SolarBatonHorizon & surfaced 1-click Example 2 switch
   PASS [Flow 4.5]: Column 3 `Mateo ready` strip navigated to `#offline-join-walkthrough` & `Acting as: Mateo` switched cleanly
   PASS [Flow 4.6]: `Invite / Join team` -> `Request Invite & Join Open Spot` confirmed server membership in 1 click
-  PASS [Flow 4.7]: `Create single-use invite` on fresh ID "r10-inv-zlahg" auto-created team & minted invite
+  PASS [Flow 4.7]: `Create single-use invite` on fresh ID "r10-inv-0f461" auto-created team & minted invite
   PASS [Flow 4.8 Run #1]: SQLite BEGIN IMMEDIATE Invariant Check (POST /api/demo/race-50) SQLITE_AUTHORITY winner=claimant-0 (HTTP 200) · rejected=49 x HTTP 409 TEAM_FULL · oversize=0 · orphanLeader=0 · eventMismatch=0
   PASS [Flow 4.8 Run #2]: SQLite BEGIN IMMEDIATE Invariant Check (POST /api/demo/race-50) SQLITE_AUTHORITY winner=claimant-0 (HTTP 200) · rejected=49 x HTTP 409 TEAM_FULL · oversize=0 · orphanLeader=0 · eventMismatch=0
   PASS [Browser Hygiene]: consoleErrors=0 · pageExceptions=0 · cspViolations=0

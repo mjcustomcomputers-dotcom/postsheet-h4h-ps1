@@ -233,6 +233,7 @@ export default function App() {
   const [forwardingPeer, setForwardingPeer] = useState(false);
   const joiningLock = useRef(false);
   const lastClaimRef = useRef(null);
+  const claimantDirectTokenRef = useRef('');
   const [hasLastClaim, setHasLastClaim] = useState(false);
   const [highlightRelayWalkthrough, setHighlightRelayWalkthrough] = useState(false);
   const [wanOffline, setWanOffline] = useState(false);
@@ -1505,6 +1506,29 @@ export default function App() {
     );
   }
 
+  async function sha256HexClient(text) {
+    const bytes = new TextEncoder().encode(String(text || ''));
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    return Array.from(new Uint8Array(digest))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+  }
+
+  async function mintClaimantWarrant({ targetEventId, targetTeamId, opId, code }, claimantBearerTok) {
+    if (!claimantBearerTok || !code || !opId) return null;
+    try {
+      const codeHash = await sha256HexClient(code);
+      const res = await sendPost(
+        '/api/auth/relay-warrant',
+        { eventId: targetEventId, teamId: targetTeamId, opId, codeHash },
+        claimantBearerTok
+      );
+      return res?.warrant || null;
+    } catch {
+      return null;
+    }
+  }
+
   function makeUniqueTag() {
     return `${String(Date.now()).slice(-4)}${Math.random().toString(36).slice(2, 4)}`;
   }
@@ -1744,6 +1768,25 @@ export default function App() {
         });
 
         if (wanOffline) {
+          if (claimantActor === 'relay-mateo') {
+            try {
+              const candSession = await mintDemoSession(`priya-open-${tag}`, eventId, detail.maxSize || 5);
+              signedOutManuallyRef.current = false;
+              claimantTok = candSession.token;
+              claimantActor = candSession.actorId;
+              tokenRef.current = claimantTok;
+              actorRef.current = claimantActor;
+              setToken(claimantTok);
+              setActorId(claimantActor);
+            } catch {
+              // Keep current session when demo auth is disabled
+            }
+          }
+          claimantDirectTokenRef.current = claimantTok;
+          const warrant = await mintClaimantWarrant(
+            { targetEventId: eventId, targetTeamId: targetTid, opId: operation.opId, code: inv.code },
+            claimantTok
+          );
           const armed = {
             eventId,
             teamId: targetTid,
@@ -1751,7 +1794,7 @@ export default function App() {
             opId: operation.opId,
             key: operation.key,
             actorId: claimantActor,
-            claimantToken: claimantTok
+            ...(warrant ? { claimantWarrant: warrant } : { claimantToken: claimantTok })
           };
           setQueuedClaim(armed);
           lastClaimRef.current = armed;
@@ -1993,6 +2036,12 @@ export default function App() {
       store: sessionStorage
     });
 
+    claimantDirectTokenRef.current = priyaSession.token;
+    const warrant = await mintClaimantWarrant(
+      { targetEventId: eventId, targetTeamId: prepTeam, opId: op.opId, code: prepCode },
+      priyaSession.token
+    );
+
     const armed = {
       eventId,
       teamId: prepTeam,
@@ -2000,7 +2049,7 @@ export default function App() {
       opId: op.opId,
       key: op.key,
       actorId: priyaSession.actorId,
-      claimantToken: priyaSession.token
+      ...(warrant ? { claimantWarrant: warrant } : { claimantToken: priyaSession.token })
     };
     setQueuedClaim(armed);
     lastClaimRef.current = armed;
@@ -2080,7 +2129,10 @@ export default function App() {
                 issuedInvite.issuedBy === useActor))
         );
 
-        if ((wanOffline && actorAlreadyInTargetTeam) || (!hadInviteInitially && (wanOffline || actorAlreadyInTargetTeam))) {
+        if (
+          (wanOffline && (actorAlreadyInTargetTeam || useActor === 'relay-mateo')) ||
+          (!hadInviteInitially && (wanOffline || actorAlreadyInTargetTeam))
+        ) {
           try {
             const tag = makeUniqueTag();
             const priyaSession = await mintDemoSession(`priya-wan-${tag}`, eventId, 5);
@@ -2109,6 +2161,11 @@ export default function App() {
             unauth.status = 401;
             throw unauth;
           }
+          claimantDirectTokenRef.current = useTok;
+          const warrant = await mintClaimantWarrant(
+            { targetEventId: eventId, targetTeamId: targetTid, opId: operation.opId, code: activeCode },
+            useTok
+          );
           const armed = {
             eventId,
             teamId: targetTid,
@@ -2116,7 +2173,7 @@ export default function App() {
             opId: operation.opId,
             key: operation.key,
             actorId: useActor,
-            claimantToken: useTok
+            ...(warrant ? { claimantWarrant: warrant } : { claimantToken: useTok })
           };
           setQueuedClaim(armed);
           lastClaimRef.current = armed;
@@ -2254,13 +2311,28 @@ export default function App() {
           }
         }
 
-        const claimantTok = activeClaim.claimantToken || (await ensureToken(freshTok));
+        let activeWarrant = activeClaim.claimantWarrant || null;
+        const fallbackClaimantTok = activeClaim.claimantToken || claimantDirectTokenRef.current || '';
+        if (!activeWarrant && fallbackClaimantTok) {
+          activeWarrant = await mintClaimantWarrant(
+            {
+              targetEventId: activeClaim.eventId,
+              targetTeamId: activeClaim.teamId,
+              opId: activeClaim.opId,
+              code: activeClaim.code
+            },
+            fallbackClaimantTok
+          );
+        }
+
         let res;
         try {
           res = await sendPost(
             '/api/peer/relay-claim',
             {
-              claimantToken: claimantTok,
+              ...(activeWarrant
+                ? { claimantWarrant: activeWarrant }
+                : { claimantToken: fallbackClaimantTok || (await ensureToken(freshTok)) }),
               eventId: activeClaim.eventId,
               teamId: activeClaim.teamId,
               code: activeClaim.code,
@@ -2275,7 +2347,8 @@ export default function App() {
             errCode.includes('INVITE_EXPIRED') ||
             errCode.includes('TEAM_FULL') ||
             errCode.includes('NO_TEAM') ||
-            errCode.includes('ONE_TEAM_PER_EVENT')
+            errCode.includes('ONE_TEAM_PER_EVENT') ||
+            errCode.includes('SELF_RELAY_FORBIDDEN')
           ) {
             const freshPrep = await prepareCleanRelayClaim({ allowExistingInvite: false });
             activeClaim = freshPrep.armed;
@@ -2283,7 +2356,9 @@ export default function App() {
             res = await sendPost(
               '/api/peer/relay-claim',
               {
-                claimantToken: activeClaim.claimantToken,
+                ...(activeClaim.claimantWarrant
+                  ? { claimantWarrant: activeClaim.claimantWarrant }
+                  : { claimantToken: activeClaim.claimantToken }),
                 eventId: activeClaim.eventId,
                 teamId: activeClaim.teamId,
                 code: activeClaim.code,
@@ -2328,6 +2403,7 @@ export default function App() {
 
     try {
       await runProtectedAction('Reconnect & Check Original Request', async freshTok => {
+        const directTok = targetClaim.claimantToken || claimantDirectTokenRef.current || freshTok;
         const result = await sendPost(
           '/api/invitations/claim',
           {
@@ -2336,7 +2412,7 @@ export default function App() {
             code: targetClaim.code,
             opId: targetClaim.opId
           },
-          targetClaim.claimantToken || freshTok
+          directTok
         );
         if (result.status === 'COMMITTED') {
           finishClaimOperation(sessionStorage, targetClaim.key);
@@ -2351,7 +2427,7 @@ export default function App() {
         notifyToast('The server returned the original result for this request!', 'ok');
         await refreshBoard();
         await inspectTeam(targetClaim.teamId, true);
-        await loadAudit(targetClaim.claimantToken || freshTok);
+        await loadAudit(directTok);
       });
     } catch (e) {
       setStatusMessage(`Reconnect check: ${e.message}`);
@@ -2382,6 +2458,7 @@ export default function App() {
 
         signedOutManuallyRef.current = false;
         tokenRef.current = priyaSession.token;
+        claimantDirectTokenRef.current = priyaSession.token;
         actorRef.current = priyaSession.actorId;
         setActorId(priyaSession.actorId);
         setToken(priyaSession.token);
@@ -2423,13 +2500,17 @@ export default function App() {
             selectedTeam?.teamId === teamId &&
             selectedTeam?.leader
           ) {
-            const leadSession = await mintDemoSession(selectedTeam.leader, eventId, selectedTeam.maxSize || 5);
-            activeTok = leadSession.token;
-            tokenRef.current = activeTok;
-            actorRef.current = leadSession.actorId;
-            setToken(activeTok);
-            setActorId(leadSession.actorId);
-            res = await sendPost('/api/teams/transfer', { eventId, teamId, newLeaderId }, activeTok);
+            try {
+              const leadSession = await mintDemoSession(selectedTeam.leader, eventId, selectedTeam.maxSize || 5);
+              activeTok = leadSession.token;
+              tokenRef.current = activeTok;
+              actorRef.current = leadSession.actorId;
+              setToken(activeTok);
+              setActorId(leadSession.actorId);
+              res = await sendPost('/api/teams/transfer', { eventId, teamId, newLeaderId }, activeTok);
+            } catch {
+              throw trErr;
+            }
           } else {
             throw trErr;
           }

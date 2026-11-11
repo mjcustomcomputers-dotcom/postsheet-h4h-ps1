@@ -1,7 +1,7 @@
 {
   "project": "Post Sheet | Ability & Purpose Crew Network (H4H-PS1)",
-  "generatedAt": "2026-11-11T10:41:22.599Z",
-  "fileCount": 73,
+  "generatedAt": "2026-11-11T11:04:41.137Z",
+  "fileCount": 78,
   "files": [
     {
       "path": ".github/workflows/ci.yml",
@@ -20,8 +20,8 @@
     },
     {
       "path": "Dockerfile",
-      "bytes": 472,
-      "sha256": "6236cdfd6d4072ac35a6c1244a37134f1b23348eebe358108dc60a8d58f2c443"
+      "bytes": 1478,
+      "sha256": "8dd1f76abc895cf1acc8c6d8a7f705ccaa1e3a8997dac2629d0e1a63d4fca02b"
     },
     {
       "path": "LOAD_REPORT.md",
@@ -39,9 +39,19 @@
       "sha256": "c98281a302ba2420b3024b80b23f65569ea09862fbb2cc0577b71ed1b017181c"
     },
     {
+      "path": "SECURITY.md",
+      "bytes": 4893,
+      "sha256": "186fc2a017b3e90b5919f46c7aedc23c63708d56c817ece094d272650613a4b9"
+    },
+    {
+      "path": "docker-compose.hardened.yml",
+      "bytes": 652,
+      "sha256": "f0609b7e65f05116da75f350180a416ab4d20ee9ddfe310509fe9fd8ed84dcfa"
+    },
+    {
       "path": "docs/DECISION_AND_EXPERIMENT_LEDGER.md",
-      "bytes": 12770,
-      "sha256": "9e2a84347edcc3a358e76f242a64610f63d5fb7594ec6e50a15a850c536f3838"
+      "bytes": 14931,
+      "sha256": "1e64b7873922e6e95963be12cedb9e4ed587eaedd13b007f5c483700dd492326"
     },
     {
       "path": "docs/PSS-H4H-CRR-01.R1-SUPPLEMENT.md",
@@ -56,7 +66,12 @@
     {
       "path": "docs/local-receipts/KB-R10-DEEP-ADVERSARIAL-AUDIT.txt",
       "bytes": 2997,
-      "sha256": "3ecbf7a27aa47132ba7b99a17edf23339d62bf794efb8ebba65c00bbb56b5d57"
+      "sha256": "1a2af9b28c86896ecf4f5d4a66547633c24ec7def5bc56a6aa9563c41932815e"
+    },
+    {
+      "path": "docs/local-receipts/KB-R11-SECURITY-PENTEST.txt",
+      "bytes": 10499,
+      "sha256": "a9edbf643fea98b29b390c36a3b50b5780202130270550063bb4cd3c62a3ea4c"
     },
     {
       "path": "docs/local-receipts/KB-R6-LOAD-RECOVERY-20261110T230518Z.txt",
@@ -95,8 +110,8 @@
     },
     {
       "path": "render.yaml",
-      "bytes": 277,
-      "sha256": "11e4509afe55bddc70a8650f98b14f345b249a09caa085a1c42f887deb7f7e9f"
+      "bytes": 444,
+      "sha256": "9cb86061ca4986b81ccdfb211f55ff989861779935dc048388655e54527e48f1"
     },
     {
       "path": "scripts/adversarial.sh",
@@ -165,8 +180,8 @@
     },
     {
       "path": "src/authority.mjs",
-      "bytes": 8788,
-      "sha256": "8e5a089e8f824d208cb8a5f95528213680284e6f5a1c0771b7d833a003dd470f"
+      "bytes": 9284,
+      "sha256": "14db17850aa1efc5720d6d95f67494957340df709dfe5298ae5e93132b17efe7"
     },
     {
       "path": "src/goal-planner.mjs",
@@ -195,13 +210,13 @@
     },
     {
       "path": "src/server.mjs",
-      "bytes": 16264,
-      "sha256": "6c656259bf20f4efd7b872eb89e67e659e987d25aef330f2afc94f4cb69cec03"
+      "bytes": 27739,
+      "sha256": "a32f4ebf2a04507b8c3f5aac86f21aa4ce21465c722717daa8a8828e872f4bd7"
     },
     {
       "path": "src/synchronicity-ext.mjs",
-      "bytes": 10003,
-      "sha256": "146dd104ed4668afe76a3a15f62494399cd2366efd47c5b8865ca0b58921f02d"
+      "bytes": 18002,
+      "sha256": "1d217dafaef04bbd5e9a4fa1c424bea711267f5190c469355d4cab4072a5d3b4"
     },
     {
       "path": "src/synchronicity-solvers.mjs",
@@ -244,6 +259,11 @@
       "sha256": "8be3766b086015058dd33f125043b8f5f490a9fd69178719ff34e84ae448b428"
     },
     {
+      "path": "tests/security-hardening.test.mjs",
+      "bytes": 27271,
+      "sha256": "966d3e6b677448715c1410900bdce970121e3f7c444529e07164eaf76255408a"
+    },
+    {
       "path": "tests/sql-independent.py",
       "bytes": 2009,
       "sha256": "e6b9815e73e4e47b3e075c444a38aecc301b0e13881cfafbdeaa70b62e041400"
@@ -275,8 +295,13 @@
     },
     {
       "path": "web/src/App.jsx",
-      "bytes": 153044,
-      "sha256": "71c1e219d7171b1d2d70692071563c21babdf64adb58fe3518cdc5edf07de3f0"
+      "bytes": 156355,
+      "sha256": "c0b3373bfc92b1fcfb634d86925fef3b8a676243aaa179a0342417393f112eac"
+    },
+    {
+      "path": "web/src/charter-whitepaper.js",
+      "bytes": 9947,
+      "sha256": "1421e88e2a47182adde1c7ca1c95903582f95c535a53b33323a44812b5d56ba8"
     },
     {
       "path": "web/src/claim-operation.js",
@@ -285,8 +310,8 @@
     },
     {
       "path": "web/src/components/CrewCharterExportModal.jsx",
-      "bytes": 18726,
-      "sha256": "5a0cd09c689480f0cd6a1f40760b9d05dfdacc121b8cee7fad539cf17021e208"
+      "bytes": 9311,
+      "sha256": "8d6c8b5030d9188261f32b38c1574a08bad400d3f50025c28bff025196464fc9"
     },
     {
       "path": "web/src/components/EpistemicStencil.jsx",

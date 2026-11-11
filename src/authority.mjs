@@ -7,8 +7,8 @@ const positive=(n,k)=>{if(!Number.isSafeInteger(n)||n<=0)throw Error('INVALID_'+
 export class MembershipAuthority {
  constructor(path=':memory:'){
   this.db=new DatabaseSync(path);
-  this.db.exec('PRAGMA foreign_keys=ON;PRAGMA busy_timeout=5000;');
-  if(path!==':memory:')this.db.exec('PRAGMA journal_mode=WAL');
+  this.db.exec('PRAGMA foreign_keys=ON;PRAGMA busy_timeout=5000;PRAGMA trusted_schema=OFF;');
+  if(path!==':memory:')this.db.exec('PRAGMA journal_mode=WAL;PRAGMA synchronous=NORMAL;PRAGMA wal_autocheckpoint=1000;PRAGMA max_page_count=131072;');
   this.db.exec([
    'CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY,max_size INTEGER NOT NULL CHECK(max_size BETWEEN 1 AND 100))',
    'CREATE TABLE IF NOT EXISTS teams(id TEXT PRIMARY KEY,event_id TEXT NOT NULL REFERENCES events(id),leader TEXT NOT NULL,created_at INTEGER NOT NULL)',
@@ -36,6 +36,7 @@ export class MembershipAuthority {
   return this.tx(()=>{
    if(!this.db.prepare('SELECT 1 FROM events WHERE id=?').get(eventId))throw Error('NO_EVENT');
    if(this.db.prepare('SELECT 1 FROM membership WHERE event_id=? AND user_id=?').get(eventId,actorId))throw Error('ONE_TEAM_PER_EVENT');
+   if(this.db.prepare('SELECT 1 FROM teams WHERE id=?').get(teamId))throw Error('TEAM_EXISTS');
    this.db.prepare('INSERT INTO teams(id,event_id,leader,created_at) VALUES(?,?,?,?)').run(teamId,eventId,actorId,now);
    this.db.prepare('INSERT INTO membership(event_id,user_id,team_id,joined_at) VALUES(?,?,?,?)').run(eventId,actorId,teamId,now);
    this.log(eventId,teamId,actorId,'create:'+teamId,'TEAM_CREATED',now);
@@ -96,6 +97,11 @@ export class MembershipAuthority {
   return this.db.prepare('SELECT t.id AS team_id,t.leader,e.max_size,COUNT(m.user_id) AS members FROM teams t JOIN events e ON e.id=t.event_id LEFT JOIN membership m ON m.team_id=t.id WHERE t.event_id=? GROUP BY t.id ORDER BY t.id LIMIT ? OFFSET ?').all(eventId,limit,offset);
  }
  audit(eventId){valid(eventId,'EVENT');return this.db.prepare('SELECT id,team_id,actor_id,op_id,action,at,detail FROM audit WHERE event_id=? ORDER BY id').all(eventId);}
+ recentAudit(eventId,limit=100){
+  valid(eventId,'EVENT');
+  const n=Math.min(500,Math.max(1,Math.trunc(Number(limit)||100)));
+  return this.db.prepare('SELECT id,team_id,actor_id,op_id,action,at,detail FROM audit WHERE event_id=? ORDER BY id DESC LIMIT ?').all(eventId,n).reverse();
+ }
  invariants(eventId){
   valid(eventId,'EVENT');
   const oversize=this.db.prepare('SELECT t.id FROM teams t JOIN events e ON e.id=t.event_id JOIN membership m ON m.team_id=t.id WHERE t.event_id=? GROUP BY t.id HAVING COUNT(*)>MAX(e.max_size)').all(eventId);
