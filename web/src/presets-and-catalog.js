@@ -301,10 +301,24 @@ export const MISSION_SCENARIOS = {
   }
 };
 
+export const BUILDER_ID_ALIASES = {
+  'leader-aurora': 'aurora',
+  'builder-kai': 'kai',
+  'builder-priya': 'priya',
+  'relay-mateo': 'mateo'
+};
+
+export function normalizeBuilderId(rawId) {
+  if (!rawId || typeof rawId !== 'string') return '';
+  const cleaned = rawId.trim();
+  return BUILDER_ID_ALIASES[cleaned] || cleaned;
+}
+
 export const BUILDER_DIRECTORY = [
   {
-    id: 'builder-priya',
+    id: 'priya',
     plannerId: 'priya',
+    authPersonaId: 'builder-priya',
     displayName: 'Priya Nair',
     initials: 'PR',
     avatarTone: 'jade',
@@ -323,8 +337,9 @@ export const BUILDER_DIRECTORY = [
     bio: 'Specializes in async UTC baton-pass handoffs, AES-256-GCM envelopes, and E2E gates.'
   },
   {
-    id: 'leader-aurora',
+    id: 'aurora',
     plannerId: 'aurora',
+    authPersonaId: 'leader-aurora',
     displayName: 'Aurora Vance',
     initials: 'AU',
     avatarTone: 'teal',
@@ -343,8 +358,9 @@ export const BUILDER_DIRECTORY = [
     bio: 'Designs serialized SQLite WAL engines and zero-race invite protocols.'
   },
   {
-    id: 'builder-kai',
+    id: 'kai',
     plannerId: 'kai',
+    authPersonaId: 'builder-kai',
     displayName: 'Kai Mercer',
     initials: 'KA',
     avatarTone: 'cyan',
@@ -365,6 +381,7 @@ export const BUILDER_DIRECTORY = [
   {
     id: 'mateo',
     plannerId: 'mateo',
+    authPersonaId: 'relay-mateo',
     displayName: 'Mateo Alvarez',
     initials: 'MA',
     avatarTone: 'violet',
@@ -641,18 +658,233 @@ export const WALKTHROUGH_STEPS = [
   }
 ];
 
+export function findBuilderById(idOrBuilder, extraPools = []) {
+  const rawKey =
+    typeof idOrBuilder === 'string'
+      ? idOrBuilder
+      : idOrBuilder?.plannerId || idOrBuilder?.id || '';
+  const canonId = normalizeBuilderId(rawKey);
+  if (!canonId) return null;
+
+  const dirMatch = BUILDER_DIRECTORY.find(
+    b =>
+      normalizeBuilderId(b.id) === canonId ||
+      normalizeBuilderId(b.plannerId) === canonId ||
+      b.authPersonaId === rawKey
+  );
+
+  for (const pool of extraPools) {
+    if (!Array.isArray(pool)) continue;
+    const found = pool.find(
+      item =>
+        item &&
+        (normalizeBuilderId(item.plannerId || item.id) === canonId || item.id === rawKey)
+    );
+    if (found) {
+      return {
+        ...(dirMatch || {}),
+        ...found,
+        id: canonId,
+        plannerId: canonId,
+        displayName: found.displayName || dirMatch?.displayName || canonId,
+        timezone: found.timezone || dirMatch?.timezone || 'UTC-6 · Hot Springs',
+        startMin: found.startMin ?? dirMatch?.startMin ?? 0,
+        endMin: found.endMin ?? dirMatch?.endMin ?? 240,
+        skills: { ...(dirMatch?.skills || {}), ...(found.skills || {}) }
+      };
+    }
+  }
+
+  if (typeof idOrBuilder === 'object' && idOrBuilder !== null && idOrBuilder.skills) {
+    return {
+      ...(dirMatch || {}),
+      ...idOrBuilder,
+      id: canonId,
+      plannerId: canonId,
+      displayName: idOrBuilder.displayName || dirMatch?.displayName || canonId,
+      timezone: idOrBuilder.timezone || dirMatch?.timezone || 'UTC-6 · Hot Springs',
+      startMin: idOrBuilder.startMin ?? dirMatch?.startMin ?? 0,
+      endMin: idOrBuilder.endMin ?? dirMatch?.endMin ?? 240,
+      skills: { ...(idOrBuilder.skills || {}) }
+    };
+  }
+
+  if (dirMatch) {
+    return {
+      ...dirMatch,
+      id: canonId,
+      plannerId: canonId,
+      skills: { ...(dirMatch.skills || {}) }
+    };
+  }
+
+  for (const sc of Object.values(MISSION_SCENARIOS)) {
+    const scPools = [sc.teamPeople, sc.robustTeamPeople, sc.candidates];
+    for (const pool of scPools) {
+      if (!Array.isArray(pool)) continue;
+      const found = pool.find(p => normalizeBuilderId(p.id) === canonId);
+      if (found) {
+        return {
+          ...found,
+          id: canonId,
+          plannerId: canonId,
+          displayName: found.displayName || canonId,
+          skills: { ...(found.skills || {}) }
+        };
+      }
+    }
+  }
+
+  return {
+    id: canonId,
+    plannerId: canonId,
+    displayName: canonId,
+    timezone: 'UTC-6 · Hot Springs',
+    startMin: 0,
+    endMin: 240,
+    skills: { backend: 'supported' }
+  };
+}
+
+export function computePartialTaskPreview(tasks = [], teamPeople = [], horizonMin = 480, plan = null) {
+  const map = new Map();
+  if (plan?.witness?.assignments?.length) {
+    for (const asg of plan.witness.assignments) {
+      map.set(asg.taskId, { ...asg, readyOnly: false });
+    }
+    return map;
+  }
+  if (!Array.isArray(tasks) || tasks.length === 0 || !Array.isArray(teamPeople) || teamPeople.length === 0) {
+    return map;
+  }
+
+  const cpById = new Map((plan?.criticalPath || []).map(m => [m.taskId, m]));
+  const normalizedPeople = teamPeople
+    .filter(p => p && p.consent !== false)
+    .map(p => ({
+      id: normalizeBuilderId(p.plannerId || p.id) || String(p.id || 'builder'),
+      startMin: Math.max(0, Math.round(Number(p.startMin) || 0)),
+      endMin: Math.max(15, Math.round(Number(p.endMin) || horizonMin)),
+      skills: p.skills || {}
+    }));
+
+  // Topological order of tasks so upstream tasks claim earliest slots cleanly
+  const byId = new Map(tasks.map(t => [t.id, t]));
+  const visited = new Set();
+  const active = new Set();
+  const topo = [];
+  function visit(id) {
+    if (active.has(id) || visited.has(id) || !byId.has(id)) return;
+    active.add(id);
+    const t = byId.get(id);
+    for (const dep of t.after || []) visit(dep);
+    active.delete(id);
+    visited.add(id);
+    topo.push(t);
+  }
+  for (const t of tasks) visit(t.id);
+
+  const busyByPerson = new Map();
+  const completedEnd = new Map();
+
+  for (const t of topo) {
+    const deps = (t.after || []).filter(d => byId.has(d));
+    let depsReady = true;
+    let readyMin = 0;
+    const lag = Math.max(0, Math.round(Number(t.lagMin) || 0));
+    for (const dep of deps) {
+      if (!completedEnd.has(dep)) {
+        depsReady = false;
+        break;
+      }
+      readyMin = Math.max(readyMin, completedEnd.get(dep) + lag);
+    }
+    if (!depsReady) continue;
+
+    const cp = cpById.get(t.id);
+    const latestFin = cp ? Math.min(horizonMin, cp.latestFinishMin) : horizonMin;
+    const dur = Math.max(1, Math.round(Number(t.durationMin) || 60));
+
+    const eligible = normalizedPeople
+      .filter(p => p.skills[t.skill] === 'supported' || p.skills[t.skill] === 'unknown')
+      .sort((a, b) => {
+        const aSup = a.skills[t.skill] === 'supported' ? 0 : 1;
+        const bSup = b.skills[t.skill] === 'supported' ? 0 : 1;
+        if (aSup !== bSup) return aSup - bSup;
+        return a.id.localeCompare(b.id);
+      });
+
+    for (const p of eligible) {
+      const busy = (busyByPerson.get(p.id) || []).sort((x, y) => x.startMin - y.startMin);
+      let start = Math.max(p.startMin, readyMin);
+      let shifted = true;
+      while (shifted) {
+        shifted = false;
+        for (const b of busy) {
+          if (start < b.endMin && start + dur > b.startMin) {
+            start = b.endMin;
+            shifted = true;
+          }
+        }
+      }
+      if (start + dur <= p.endMin && start + dur <= latestFin) {
+        const end = start + dur;
+        const entry = {
+          taskId: t.id,
+          personId: p.id,
+          skill: t.skill,
+          startMin: start,
+          endMin: end,
+          evidence: p.skills[t.skill],
+          readyOnly: true
+        };
+        map.set(t.id, entry);
+        completedEnd.set(t.id, end);
+        busyByPerson.set(p.id, [...busy, entry]);
+        break;
+      }
+    }
+  }
+
+  return map;
+}
+
 export function visualTasksToApi(tasks) {
-  return tasks.map(t => ({
-    id: String(t.id || '').trim(),
-    skill: String(t.skill || 'backend').trim(),
-    durationMin: Math.max(1, Math.round(Number(t.durationMin) || 60)),
-    ...(Number(t.lagMin) > 0 ? { lagMin: Math.round(Number(t.lagMin)) } : {}),
-    after: Array.isArray(t.after) ? t.after.filter(Boolean) : []
+  const seen = new Set();
+  const normalized = (tasks || []).map((t, idx) => {
+    let baseId = String(t.id || '').replace(/[^A-Za-z0-9_.:@-]/g, '').trim() || `task-${idx + 1}`;
+    let id = baseId;
+    let suffix = 2;
+    while (seen.has(id)) {
+      id = `${baseId}-${suffix++}`;
+    }
+    seen.add(id);
+    return {
+      id,
+      skill: String(t.skill || 'backend').replace(/[^A-Za-z0-9_.:@-]/g, '').trim() || 'backend',
+      durationMin: Math.max(1, Math.round(Number(t.durationMin) || 60)),
+      ...(Number(t.lagMin) > 0 ? { lagMin: Math.round(Number(t.lagMin)) } : {}),
+      rawAfter: Array.isArray(t.after) ? t.after.filter(Boolean) : []
+    };
+  });
+  return normalized.map(t => ({
+    id: t.id,
+    skill: t.skill,
+    durationMin: t.durationMin,
+    ...(t.lagMin ? { lagMin: t.lagMin } : {}),
+    after: t.rawAfter.filter(dep => dep !== t.id && seen.has(dep))
   }));
 }
 
 export function visualPeopleToApi(people, horizonMin) {
-  return people.map(p => {
+  const seen = new Set();
+  const out = [];
+  for (let idx = 0; idx < (people || []).length; idx++) {
+    const p = people[idx];
+    if (!p) continue;
+    const rawId = normalizeBuilderId(p.plannerId || p.id) || String(p.id || '').replace(/[^A-Za-z0-9_.:@-]/g, '').trim() || `builder-${idx + 1}`;
+    if (seen.has(rawId)) continue;
+    seen.add(rawId);
     const start = Math.max(0, Math.round(Number(p.startMin) || 0));
     const end = Math.max(start + 15, Math.min(Math.max(horizonMin, start + 15), Math.round(Number(p.endMin) || horizonMin)));
     const abilities = {};
@@ -660,14 +892,15 @@ export function visualPeopleToApi(people, horizonMin) {
       if (st === 'supported') abilities[sk] = { support: true, refute: false };
       else if (st === 'unknown') abilities[sk] = { support: false, refute: false };
     }
-    return {
-      id: String(p.id || '').trim(),
+    out.push({
+      id: rawId,
       timezone: p.timezone || `T+${start}m..T+${end}m`,
       abilities,
       windows: [{ start, end }],
       consent: p.consent !== false
-    };
-  });
+    });
+  }
+  return out;
 }
 
 export function tasksToDsl(tasks) {

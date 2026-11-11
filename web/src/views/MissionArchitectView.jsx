@@ -40,11 +40,12 @@ function ContributorListEditor({
   people,
   horizonMin,
   onChange,
+  onNotify,
   addDefaultLabel = 'Add Builder'
 }) {
-  function updatePerson(idx, patch) {
+  function updatePerson(idx, patch, toastMsg) {
     const next = people.map((p, i) => (i === idx ? { ...p, ...patch } : p));
-    onChange(next);
+    onChange(next, toastMsg);
   }
 
   function cycleSkill(idx, skillId) {
@@ -54,25 +55,35 @@ function ContributorListEditor({
     const nextSkills = { ...(person.skills || {}) };
     if (nextState === 'none') delete nextSkills[skillId];
     else nextSkills[skillId] = nextState;
-    updatePerson(idx, { skills: nextSkills });
+    const stateLabel =
+      nextState === 'supported'
+        ? '✓ Supported'
+        : nextState === 'unknown'
+          ? '? Provisional'
+          : '- Not Claimed';
+    updatePerson(idx, { skills: nextSkills }, `${person.id} · ${skillId} -> ${stateLabel}`);
   }
 
   function addPerson() {
     const n = people.length + 1;
-    onChange([
+    const newId = `${addDefaultLabel.toLowerCase().includes('candidate') ? 'cand' : 'builder'}-${n}`;
+    const next = [
       ...people,
       {
-        id: `builder-${n}`,
+        id: newId,
         timezone: TIMEZONE_PRESETS[0].value,
         startMin: 0,
         endMin: horizonMin,
         skills: { backend: 'supported' }
       }
-    ]);
+    ];
+    onChange(next, `Added '${newId}' to ${title.split('(')[0].trim()}.`);
   }
 
   function removePerson(idx) {
-    onChange(people.filter((_, i) => i !== idx));
+    const removed = people[idx];
+    const next = people.filter((_, i) => i !== idx);
+    onChange(next, `Removed '${removed?.id || 'builder'}' from ${title.split('(')[0].trim()}.`);
   }
 
   return (
@@ -181,21 +192,39 @@ function ContributorListEditor({
                     <button
                       type="button"
                       className="micro-preset-btn"
-                      onClick={() => updatePerson(idx, { startMin: 0, endMin: Math.round(horizonMin * 0.5) })}
+                      onClick={() =>
+                        updatePerson(
+                          idx,
+                          { startMin: 0, endMin: Math.round(horizonMin * 0.5) },
+                          `${person.id}: Set wake window to Shift 1 (0..${Math.round(horizonMin * 0.5)}m)`
+                        )
+                      }
                     >
                       Shift 1 (0-50%)
                     </button>
                     <button
                       type="button"
                       className="micro-preset-btn"
-                      onClick={() => updatePerson(idx, { startMin: Math.round(horizonMin * 0.5), endMin: horizonMin })}
+                      onClick={() =>
+                        updatePerson(
+                          idx,
+                          { startMin: Math.round(horizonMin * 0.5), endMin: horizonMin },
+                          `${person.id}: Set wake window to Baton Relay (${Math.round(horizonMin * 0.5)}..${horizonMin}m)`
+                        )
+                      }
                     >
                       Baton Relay (50-100%)
                     </button>
                     <button
                       type="button"
                       className="micro-preset-btn"
-                      onClick={() => updatePerson(idx, { startMin: 0, endMin: horizonMin })}
+                      onClick={() =>
+                        updatePerson(
+                          idx,
+                          { startMin: 0, endMin: horizonMin },
+                          `${person.id}: Set wake window to Full Horizon (0..${horizonMin}m)`
+                        )
+                      }
                     >
                       Full Horizon
                     </button>
@@ -271,7 +300,8 @@ export default function MissionArchitectView({
   onAddCandidateToTeam,
   onVerifyPersonSkill,
   onLockPlanAndMintInvite,
-  onOpenCharterExport
+  onOpenCharterExport,
+  onNotify
 }) {
   const [showDsl, setShowDsl] = useState(false);
   const [dslTasksDraft, setDslTasksDraft] = useState('');
@@ -281,54 +311,73 @@ export default function MissionArchitectView({
   const horizonMin = Math.max(60, Math.round(Number(horizonHours || 4) * 60));
 
   function openDslInspector() {
-    if (!showDsl) {
+    const nextOpen = !showDsl;
+    if (nextOpen) {
       setDslTasksDraft(tasksToDsl(tasks));
       setDslTeamDraft(peopleToDsl(teamPeople));
       setDslCandDraft(peopleToDsl(candidates));
     }
-    setShowDsl(!showDsl);
+    setShowDsl(nextOpen);
+    onNotify?.(nextOpen ? 'Opened Advanced DSL & API JSON Inspector.' : 'Closed Advanced DSL Inspector.', 'info');
   }
 
   function applyDslChanges() {
     const nextTasks = dslToTasks(dslTasksDraft);
     const nextTeam = dslToPeople(dslTeamDraft, horizonMin);
     const nextCand = dslToPeople(dslCandDraft, horizonMin);
-    if (nextTasks.length > 0) onChangeTasks(nextTasks);
-    if (nextTeam.length > 0) onChangeTeamPeople(nextTeam);
+    const resolvedTasks = nextTasks.length > 0 ? nextTasks : tasks;
+    const resolvedTeam = nextTeam.length > 0 ? nextTeam : teamPeople;
+    if (nextTasks.length > 0) onChangeTasks(resolvedTasks);
+    if (nextTeam.length > 0) onChangeTeamPeople(resolvedTeam);
     onChangeCandidates(nextCand);
     onRunSolveAndRecommend({
-      tasks: nextTasks.length > 0 ? nextTasks : tasks,
-      teamPeople: nextTeam.length > 0 ? nextTeam : teamPeople,
-      candidates: nextCand
+      tasks: resolvedTasks,
+      teamPeople: resolvedTeam,
+      candidates: nextCand,
+      toastMessage: 'Synced DSL to visual studio & re-evaluated critical-path DAG!'
     });
   }
 
-  function updateTask(idx, patch) {
+  function updateTask(idx, patch, toastMsg) {
     const next = tasks.map((t, i) => (i === idx ? { ...t, ...patch } : t));
     onChangeTasks(next);
+    onRunSolveAndRecommend({ tasks: next, toastMessage: toastMsg });
   }
 
   function toggleTaskDep(idx, depId) {
     const cur = tasks[idx].after || [];
-    const nextAfter = cur.includes(depId) ? cur.filter(x => x !== depId) : [...cur, depId];
-    updateTask(idx, { after: nextAfter });
+    const removing = cur.includes(depId);
+    const nextAfter = removing ? cur.filter(x => x !== depId) : [...cur, depId];
+    updateTask(
+      idx,
+      { after: nextAfter },
+      removing
+        ? `Removed dependency '${tasks[idx].id} after:${depId}'.`
+        : `Added dependency '${tasks[idx].id} after:${depId}'.`
+    );
   }
 
   function addTask() {
     if (tasks.length >= 8) return;
     const n = tasks.length + 1;
     const prevId = tasks.length > 0 ? [tasks[tasks.length - 1].id] : [];
-    onChangeTasks([
+    const newId = `task-${n}`;
+    const next = [
       ...tasks,
       {
-        id: `task-${n}`,
+        id: newId,
         title: `Deliverable Step ${n}`,
         skill: 'integrate',
         durationMin: 60,
         lagMin: 0,
         after: prevId
       }
-    ]);
+    ];
+    onChangeTasks(next);
+    onRunSolveAndRecommend({
+      tasks: next,
+      toastMessage: `Added deliverable task '${newId}' & re-evaluated DAG.`
+    });
   }
 
   function removeTask(idx) {
@@ -337,6 +386,26 @@ export default function MissionArchitectView({
       .filter((_, i) => i !== idx)
       .map(t => ({ ...t, after: (t.after || []).filter(d => d !== removedId) }));
     onChangeTasks(next);
+    onRunSolveAndRecommend({
+      tasks: next,
+      toastMessage: `Removed task '${removedId}' & re-evaluated DAG.`
+    });
+  }
+
+  function handleHorizonChange(nextHrs) {
+    const clamped = Math.max(1, Math.min(168, Number(nextHrs) || 1));
+    onChangeHorizonHours(clamped);
+    onRunSolveAndRecommend({ horizonHours: clamped });
+  }
+
+  function handleTeamPeopleEdit(nextTeam, toastMsg) {
+    onChangeTeamPeople(nextTeam);
+    onRunSolveAndRecommend({ teamPeople: nextTeam, toastMessage: toastMsg });
+  }
+
+  function handleCandidatesEdit(nextCands, toastMsg) {
+    onChangeCandidates(nextCands);
+    onRunSolveAndRecommend({ candidates: nextCands, toastMessage: toastMsg });
   }
 
   const currentScenario = MISSION_SCENARIOS[activeScenarioKey];
@@ -398,9 +467,9 @@ export default function MissionArchitectView({
               type="button"
               className="btn btn-primary"
               disabled={solving}
-              onClick={() => onRunSolveAndRecommend()}
+              onClick={() => onRunSolveAndRecommend({ explicitEvaluate: true })}
             >
-              <PlayIcon /> {solving ? 'Solving DAG...' : 'Evaluate Plan & Recommendations'}
+              <PlayIcon /> {solving ? 'Syncing DAG...' : 'Evaluate Plan & Recommendations'}
             </button>
           </div>
         </div>
@@ -743,14 +812,14 @@ export default function MissionArchitectView({
                 max={48}
                 step={1}
                 value={Math.min(48, Math.max(1, Number(horizonHours) || 4))}
-                onChange={e => onChangeHorizonHours(Number(e.target.value))}
+                onChange={e => handleHorizonChange(Number(e.target.value))}
               />
               <input
                 type="number"
                 min={1}
                 max={168}
                 value={horizonHours}
-                onChange={e => onChangeHorizonHours(Math.max(1, Math.min(168, Number(e.target.value) || 1)))}
+                onChange={e => handleHorizonChange(Number(e.target.value))}
                 className="compact-num-in"
                 aria-label="Deadline horizon in hours"
               />
@@ -760,9 +829,11 @@ export default function MissionArchitectView({
 
         <TaskDagTimeline
           tasks={tasks}
+          teamPeople={teamPeople}
           horizonMin={horizonMin}
           plan={plan}
           beforeSnapshot={beforeSnapshot}
+          onNotify={onNotify}
         />
       </div>
 
@@ -884,7 +955,8 @@ export default function MissionArchitectView({
           subtitle="Accepted or active simulation teammates"
           people={teamPeople}
           horizonMin={horizonMin}
-          onChange={onChangeTeamPeople}
+          onChange={handleTeamPeopleEdit}
+          onNotify={onNotify}
           addDefaultLabel="Add Teammate"
         />
 
@@ -893,7 +965,8 @@ export default function MissionArchitectView({
           subtitle="Ranked by /api/recommendations for feasibility & async UTC baton-pass"
           people={candidates}
           horizonMin={horizonMin}
-          onChange={onChangeCandidates}
+          onChange={handleCandidatesEdit}
+          onNotify={onNotify}
           addDefaultLabel="Add Candidate"
         />
       </div>

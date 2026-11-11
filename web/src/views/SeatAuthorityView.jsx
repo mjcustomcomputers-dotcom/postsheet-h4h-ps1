@@ -60,7 +60,8 @@ export default function SeatAuthorityView({
   auditRows,
   onLoadAudit,
   onOpenCharterExport,
-  onClaimAsFreshCandidate
+  onClaimAsFreshCandidate,
+  onNotify
 }) {
   const [nowMs, setNowMs] = useState(Date.now());
   const [transferTarget, setTransferTarget] = useState('');
@@ -105,16 +106,37 @@ export default function SeatAuthorityView({
       await navigator.clipboard.writeText(issuedInvite.code);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+      onNotify?.('✓ Copied single-use invite token to clipboard!', 'ok');
     } catch {
-      // Clipboard fallback ignored cleanly
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = issuedInvite.code;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+        onNotify?.('✓ Copied single-use invite token to clipboard!', 'ok');
+      } catch {
+        onNotify?.('Select the invite token input to copy manually.', 'warn');
+      }
     }
   }
 
   function toggleCustomSkill(skId) {
     setCustomSkillsDraft(prev => {
       if (prev.includes(skId)) {
-        return prev.length > 1 ? prev.filter(s => s !== skId) : prev;
+        if (prev.length <= 1) {
+          onNotify?.('At least one target skill must stay selected.', 'warn');
+          return prev;
+        }
+        onNotify?.(`Removed '${skId}' from target crew skills.`, 'info');
+        return prev.filter(s => s !== skId);
       }
+      onNotify?.(`Added '${skId}' to target crew skills.`, 'info');
       return [...prev, skId];
     });
   }

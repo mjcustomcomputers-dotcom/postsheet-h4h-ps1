@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import EpistemicStencil from './EpistemicStencil.jsx';
+import { computePartialTaskPreview } from '../presets-and-catalog.js';
 import { SplitWipeIcon } from '../icons.jsx';
 
 function computeClientSchedule(tasks, horizonMin) {
@@ -78,16 +79,20 @@ function computeClientSchedule(tasks, horizonMin) {
   };
 }
 
-function buildScheduleRows(tasks, horizonMin, plan) {
+function buildScheduleRows(tasks, horizonMin, plan, teamPeople = []) {
   const preview = computeClientSchedule(tasks, horizonMin);
   if (preview.hasCycle) return preview;
 
   const serverMeta = new Map((plan?.criticalPath || []).map(m => [m.taskId, m]));
   const assignMap = new Map((plan?.witness?.assignments || []).map(a => [a.taskId, a]));
+  const partialMap =
+    !plan?.witness && Array.isArray(teamPeople) && teamPeople.length > 0
+      ? computePartialTaskPreview(tasks, teamPeople, horizonMin, plan)
+      : new Map();
 
   const rows = preview.rows.map(r => {
     const sm = serverMeta.get(r.taskId);
-    const asg = assignMap.get(r.taskId) || null;
+    const asg = assignMap.get(r.taskId) || partialMap.get(r.taskId) || null;
     return {
       ...r,
       earliestStartMin: sm ? sm.earliestStartMin : r.earliestStartMin,
@@ -221,12 +226,16 @@ function DagSvgDiagram({ rows, horizonMin, maxTime, planRan, markerId }) {
 
         const isCritical = r.slackMin <= 0;
         const isGuarded = r.assignment?.evidence === 'unknown';
+        const isReadyOnly = Boolean(r.assignment?.readyOnly);
         const isAssigned = Boolean(r.assignment);
 
         let fillVar = 'var(--dag-bar-preview)';
         let strokeVar = 'var(--accent-primary)';
         if (planRan) {
-          if (isAssigned && !isGuarded) {
+          if (isAssigned && isReadyOnly && !isGuarded) {
+            fillVar = 'var(--dag-bar-preview)';
+            strokeVar = 'var(--accent-secondary)';
+          } else if (isAssigned && !isGuarded) {
             fillVar = 'var(--dag-bar-ok)';
             strokeVar = 'var(--tone-ok-ink)';
           } else if (isAssigned && isGuarded) {
@@ -280,9 +289,11 @@ function DagSvgDiagram({ rows, horizonMin, maxTime, planRan, markerId }) {
 
             <text x={execX + 8} y={barY + 17} className="svg-bar-label">
               {r.assignment
-                ? `${r.assignment.evidence === 'unknown' ? '? ' : '✓ '}${r.assignment.personId} [${execStart}..${execEnd}m]`
+                ? isReadyOnly
+                  ? `${r.assignment.evidence === 'unknown' ? '? ' : '✓ '}${r.assignment.personId} (Ready ${execStart}..${execEnd}m)`
+                  : `${r.assignment.evidence === 'unknown' ? '? ' : '✓ '}${r.assignment.personId} [${execStart}..${execEnd}m]`
                 : planRan
-                  ? '! Unassigned / Blocked'
+                  ? `! Blocked (Needs ${r.skill})`
                   : `ES ${r.earliestStartMin}..${r.earliestFinishMin}m`}
             </text>
 
@@ -301,7 +312,7 @@ function DagSvgDiagram({ rows, horizonMin, maxTime, planRan, markerId }) {
   );
 }
 
-export default function TaskDagTimeline({ tasks, horizonMin, plan, beforeSnapshot = null }) {
+export default function TaskDagTimeline({ tasks, teamPeople = [], horizonMin, plan, beforeSnapshot = null, onNotify }) {
   const [viewMode, setViewMode] = useState('dual'); // 'dual' | 'dag' | 'table'
   const [wipeActive, setWipeActive] = useState(false);
   const [wipePct, setWipePct] = useState(50);
@@ -325,8 +336,8 @@ export default function TaskDagTimeline({ tasks, horizonMin, plan, beforeSnapsho
   }, [canCompareWipe]);
 
   const schedule = useMemo(
-    () => buildScheduleRows(tasks, horizonMin, plan),
-    [tasks, horizonMin, plan]
+    () => buildScheduleRows(tasks, horizonMin, plan, teamPeople),
+    [tasks, horizonMin, plan, teamPeople]
   );
 
   const beforeSchedule = useMemo(() => {
@@ -334,7 +345,8 @@ export default function TaskDagTimeline({ tasks, horizonMin, plan, beforeSnapsho
     return buildScheduleRows(
       beforeSnapshot.tasks || tasks,
       beforeSnapshot.horizonMin || horizonMin,
-      beforeSnapshot.plan
+      beforeSnapshot.plan,
+      []
     );
   }, [canCompareWipe, beforeSnapshot, tasks, horizonMin]);
 
@@ -378,7 +390,14 @@ export default function TaskDagTimeline({ tasks, horizonMin, plan, beforeSnapsho
               type="button"
               aria-pressed={wipeActive}
               className={`chip-toggle ${wipeActive ? 'active' : ''}`}
-              onClick={() => setWipeActive(v => !v)}
+              onClick={() => {
+                const next = !wipeActive;
+                setWipeActive(next);
+                onNotify?.(
+                  next ? 'Before/After Split-Wipe comparison enabled.' : 'Before/After Split-Wipe hidden.',
+                  'info'
+                );
+              }}
             >
               <SplitWipeIcon size={14} /> Compare Before / After Wipe
             </button>
@@ -394,7 +413,10 @@ export default function TaskDagTimeline({ tasks, horizonMin, plan, beforeSnapsho
               type="button"
               aria-pressed={viewMode === m.id}
               className={`chip-toggle ${viewMode === m.id ? 'active' : ''}`}
-              onClick={() => setViewMode(m.id)}
+              onClick={() => {
+                setViewMode(m.id);
+                onNotify?.(`DAG Timeline mode: ${m.label}`, 'info');
+              }}
             >
               {m.label}
             </button>
@@ -522,7 +544,7 @@ export default function TaskDagTimeline({ tasks, horizonMin, plan, beforeSnapsho
                       <div className="pill-row">
                         <span className={`status-chip ${r.assignment.evidence === 'unknown' ? 'chip-warn' : 'chip-ok'}`}>
                           {r.assignment.evidence === 'unknown' ? '? ' : '✓ '}
-                          {r.assignment.personId} ({r.assignment.startMin}..{r.assignment.endMin}m)
+                          {r.assignment.personId} ({r.assignment.readyOnly ? 'Ready ' : ''}{r.assignment.startMin}..{r.assignment.endMin}m)
                         </span>
                         <EpistemicStencil
                           kind={r.assignment.evidence === 'unknown' ? 'VOI_PROVISIONAL' : 'SQLITE_AUTHORITY'}
@@ -530,7 +552,7 @@ export default function TaskDagTimeline({ tasks, horizonMin, plan, beforeSnapsho
                         />
                       </div>
                     ) : plan ? (
-                      <span className="status-chip chip-err">Unassigned / Blocked</span>
+                      <span className="status-chip chip-err">Blocked · Needs {r.skill}</span>
                     ) : (
                       <span className="muted-copy">Pending solve</span>
                     )}

@@ -20,7 +20,8 @@ export default function ProofArenaView({
   probeStats,
   probingLatency,
   onRunLatencyProbe,
-  onExecuteWalkthroughStep
+  onExecuteWalkthroughStep,
+  onNotify
 }) {
   const [evidenceTab, setEvidenceTab] = useState('scale'); // 'scale' | 'boundary' | 'walkthrough'
 
@@ -166,7 +167,10 @@ export default function ProofArenaView({
             role="tab"
             aria-selected={evidenceTab === 'scale'}
             className={`tab-pill ${evidenceTab === 'scale' ? 'active' : ''}`}
-            onClick={() => setEvidenceTab('scale')}
+            onClick={() => {
+              setEvidenceTab('scale');
+              onNotify?.('Showing 10k-User / 2k-Team Scale Telemetry.', 'info');
+            }}
           >
             10k-User / 2k-Team Scale Telemetry
           </button>
@@ -175,7 +179,10 @@ export default function ProofArenaView({
             role="tab"
             aria-selected={evidenceTab === 'boundary'}
             className={`tab-pill ${evidenceTab === 'boundary' ? 'active' : ''}`}
-            onClick={() => setEvidenceTab('boundary')}
+            onClick={() => {
+              setEvidenceTab('boundary');
+              onNotify?.('Showing Layer-A vs. Layer-B Security Boundary Matrix.', 'info');
+            }}
           >
             Layer-A vs. Layer-B Security Boundary
           </button>
@@ -184,7 +191,10 @@ export default function ProofArenaView({
             role="tab"
             aria-selected={evidenceTab === 'walkthrough'}
             className={`tab-pill ${evidenceTab === 'walkthrough' ? 'active' : ''}`}
-            onClick={() => setEvidenceTab('walkthrough')}
+            onClick={() => {
+              setEvidenceTab('walkthrough');
+              onNotify?.('Opened 5-Minute Judge Walkthrough (0:00 - 5:00).', 'info');
+            }}
           >
             5-Minute Judge Walkthrough (0:00 - 5:00)
           </button>

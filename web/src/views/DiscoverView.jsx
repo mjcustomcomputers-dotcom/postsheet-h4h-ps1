@@ -4,7 +4,10 @@ import {
   SKILLS_CATALOG,
   BUILDER_DIRECTORY,
   MISSION_SCENARIOS,
-  deriveCrewProfile
+  deriveCrewProfile,
+  normalizeBuilderId,
+  findBuilderById,
+  computePartialTaskPreview
 } from '../presets-and-catalog.js';
 import {
   SearchIcon,
@@ -79,12 +82,14 @@ function LifecycleBadge({ lifecycle, label, legacyMode, openSeats, members, maxS
 }
 
 function isBuilderInActiveCrew(builder, teamPeople) {
+  const target = normalizeBuilderId(builder?.plannerId || builder?.id);
+  if (!target) return false;
   return (teamPeople || []).some(
-    p => p.id === builder.id || (builder.plannerId && p.id === builder.plannerId)
+    p => normalizeBuilderId(p?.plannerId || p?.id) === target || p?.id === builder?.id
   );
 }
 
-function describeSandboxVerdict(plan, tasks) {
+function describeSandboxVerdict(plan, tasks, partialPreview) {
   if (!plan) {
     return {
       tone: 'warn',
@@ -106,19 +111,21 @@ function describeSandboxVerdict(plan, tasks) {
       codeTitle: `${plan.status} · ${plan.classification}`
     };
   }
-  const assignedIds = new Set((plan.witness?.assignments || []).map(a => a.taskId));
-  const missingTask = (tasks || []).find(t => !assignedIds.has(t.id));
-  if (plan.hallContention || plan.classification === 'INFEASIBLE_WITHIN_SCOPE') {
-    if (missingTask?.id === 'integration' || (tasks || []).some(t => t.id === 'integration')) {
-      return {
-        tone: 'err',
-        badge: 'Blocked: Missing Integration Window',
-        codeTitle: `${plan.status} · ${plan.classification}`
-      };
-    }
+  const hasHall =
+    Boolean(plan.hallContention) ||
+    (plan.repairs || []).some(r => r.kind === 'HALL_CAPACITY_CONTENTION_REPAIR');
+  if (hasHall) {
     return {
       tone: 'err',
       badge: 'Blocked: Simultaneous Capacity Overload',
+      codeTitle: `${plan.status} · ${plan.classification}`
+    };
+  }
+  const missingTask = (tasks || []).find(t => !partialPreview?.has(t.id));
+  if (missingTask?.id === 'integration') {
+    return {
+      tone: 'err',
+      badge: 'Blocked: Missing Integration Window',
       codeTitle: `${plan.status} · ${plan.classification}`
     };
   }
@@ -169,8 +176,10 @@ export default function DiscoverView({
   solving = false,
   lockingPlan = false,
   onToggleBuilderInCrew,
+  onVerifyPersonSkill,
   onLockPlanAndMintInvite,
-  onInspectDagWipe
+  onInspectDagWipe,
+  onNotify
 }) {
   const [directoryTab, setDirectoryTab] = useState('featured'); // 'featured' | 'builders' | 'crews'
   const [lensMode, setLensMode] = useState('ps1'); // 'ps1' | 'legacy'
@@ -230,6 +239,7 @@ export default function DiscoverView({
     const map = new Map();
     for (const r of recs?.recommendations || []) {
       map.set(r.candidateId, r);
+      map.set(normalizeBuilderId(r.candidateId), r);
     }
     return map;
   }, [recs]);
@@ -248,6 +258,7 @@ export default function DiscoverView({
     setSearchQuery('');
     setSelectedSkill('all');
     setOpenOnly(false);
+    onNotify?.('✓ Cleared all active directory filters', 'ok');
   }
 
   function handleJumpSubmit(e) {
@@ -256,6 +267,9 @@ export default function DiscoverView({
     if (Number.isFinite(target) && target >= 1 && target <= totalPages) {
       onPageChange(target - 1);
       setJumpInput('');
+      onNotify?.(`✓ Jumped to Crew Board Page ${target} of ${totalPages}`, 'info');
+    } else {
+      onNotify?.(`Enter a page number between 1 and ${totalPages}`, 'warn');
     }
   }
 
@@ -264,8 +278,12 @@ export default function DiscoverView({
     (selectedSkill !== 'all' ? 1 : 0) +
     (openOnly ? 1 : 0);
 
-  const verdict = describeSandboxVerdict(plan, tasks);
-  const priyaBuilder = BUILDER_DIRECTORY.find(b => b.id === 'builder-priya');
+  const partialPreview = useMemo(
+    () => computePartialTaskPreview(tasks, teamPeople, horizonMin, plan),
+    [tasks, teamPeople, horizonMin, plan]
+  );
+  const verdict = describeSandboxVerdict(plan, tasks, partialPreview);
+  const priyaBuilder = useMemo(() => findBuilderById('priya'), []);
   const priyaInCrew = priyaBuilder ? isBuilderInActiveCrew(priyaBuilder, teamPeople) : false;
 
   const crewsToDisplay = directoryTab === 'featured' ? featuredCrews : filteredCrews;
@@ -301,7 +319,10 @@ export default function DiscoverView({
               type="button"
               aria-pressed={!legacyMode}
               className={`lens-btn ${!legacyMode ? 'active' : ''}`}
-              onClick={() => setLensMode('ps1')}
+              onClick={() => {
+                setLensMode('ps1');
+                onNotify?.('Lens: Purpose-First Glass (PS1) active - critical-path & UTC baton truth visible.', 'ok');
+              }}
             >
               <SparklesIcon size={14} /> Purpose-First Glass (PS1)
             </button>
@@ -309,7 +330,10 @@ export default function DiscoverView({
               type="button"
               aria-pressed={legacyMode}
               className={`lens-btn lens-btn-warn ${legacyMode ? 'active' : ''}`}
-              onClick={() => setLensMode('legacy')}
+              onClick={() => {
+                setLensMode('legacy');
+                onNotify?.('Lens: Legacy Profile-Only View active - notice hidden UTC & capacity blindspots!', 'warn');
+              }}
             >
               <AlertTriangleIcon size={14} /> Legacy Profile-Only View
             </button>
@@ -348,7 +372,10 @@ export default function DiscoverView({
                 role="tab"
                 aria-selected={directoryTab === tab.id}
                 className={`tab-pill ${directoryTab === tab.id ? 'active' : ''}`}
-                onClick={() => setDirectoryTab(tab.id)}
+                onClick={() => {
+                  setDirectoryTab(tab.id);
+                  onNotify?.(`Directory tab: ${tab.label}`, 'info');
+                }}
               >
                 {tab.label}
               </button>
@@ -360,7 +387,10 @@ export default function DiscoverView({
               type="button"
               aria-pressed={selectedSkill === 'all'}
               className={`chip-toggle chip-compact ${selectedSkill === 'all' ? 'active' : ''}`}
-              onClick={() => setSelectedSkill('all')}
+              onClick={() => {
+                setSelectedSkill('all');
+                onNotify?.('Showing all critical-path skills.', 'info');
+              }}
             >
               All
             </button>
@@ -370,7 +400,14 @@ export default function DiscoverView({
                 type="button"
                 aria-pressed={selectedSkill === sk.id}
                 className={`chip-toggle chip-compact ${selectedSkill === sk.id ? 'active' : ''}`}
-                onClick={() => setSelectedSkill(selectedSkill === sk.id ? 'all' : sk.id)}
+                onClick={() => {
+                  const nextSk = selectedSkill === sk.id ? 'all' : sk.id;
+                  setSelectedSkill(nextSk);
+                  onNotify?.(
+                    nextSk === 'all' ? 'Cleared skill filter.' : `Filtered directory by skill: ${sk.short} (${sk.id}).`,
+                    'info'
+                  );
+                }}
               >
                 {sk.short}
               </button>
@@ -383,7 +420,11 @@ export default function DiscoverView({
               role="switch"
               aria-checked={openOnly}
               className={`open-seats-switch ${openOnly ? 'active' : ''}`}
-              onClick={() => setOpenOnly(v => !v)}
+              onClick={() => {
+                const nextOpen = !openOnly;
+                setOpenOnly(nextOpen);
+                onNotify?.(nextOpen ? 'Filter: Showing Open Seats Only.' : 'Filter: Showing All Crews (Open + Full).', 'info');
+              }}
             >
               <span className="switch-dot" aria-hidden="true" />
               <span>Open Seats Only</span>
@@ -393,7 +434,11 @@ export default function DiscoverView({
               type="button"
               aria-expanded={showScopeTools}
               className="btn btn-ghost btn-compact"
-              onClick={() => setShowScopeTools(v => !v)}
+              onClick={() => {
+                const nextShow = !showScopeTools;
+                setShowScopeTools(nextShow);
+                onNotify?.(nextShow ? `Opened Event Scope & Crew Spawner (${eventId}).` : 'Closed Event Scope drawer.', 'info');
+              }}
               title="Switch event scope or spawn fresh open-seat showcase crews"
             >
               Scope: <code>{eventId}</code>
@@ -533,8 +578,20 @@ export default function DiscoverView({
                 )}
               </div>
 
-              <div className="crew-grid studio-card-grid">
-                {filteredBuilders.map(b => {
+              {filteredBuilders.length === 0 ? (
+                <div className="surface-card empty-state-card">
+                  <p className="muted-copy">
+                    No teammates match your active search or skill filter.
+                  </p>
+                  {activeFilterCount > 0 && (
+                    <button type="button" className="btn btn-secondary btn-compact" onClick={clearFilters}>
+                      Reset Filters
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="crew-grid studio-card-grid">
+                  {filteredBuilders.map(b => {
                   const inCrew = isBuilderInActiveCrew(b, teamPeople);
                   const rec = recById.get(b.plannerId) || recById.get(b.id);
                   const restores = Boolean(rec?.restoresFeasibility);
@@ -652,7 +709,8 @@ export default function DiscoverView({
                     </article>
                   );
                 })}
-              </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -676,7 +734,10 @@ export default function DiscoverView({
                     <button
                       type="button"
                       className="btn btn-secondary btn-compact"
-                      onClick={() => setDirectoryTab('crews')}
+                      onClick={() => {
+                        setDirectoryTab('crews');
+                        onNotify?.('Viewing all authoritative SQLite crews.', 'info');
+                      }}
                     >
                       Browse All {totalTeams !== null ? totalTeams.toLocaleString() : ''} SQLite Crews <ArrowRightIcon size={13} />
                     </button>
@@ -687,7 +748,10 @@ export default function DiscoverView({
                       type="button"
                       className="btn btn-secondary btn-compact"
                       disabled={!hasPrev}
-                      onClick={() => onPageChange(0)}
+                      onClick={() => {
+                        onPageChange(0);
+                        onNotify?.('Jumped to Page 1 of SQLite crews.', 'info');
+                      }}
                       aria-label="First page"
                     >
                       « First
@@ -696,7 +760,11 @@ export default function DiscoverView({
                       type="button"
                       className="btn btn-secondary btn-compact"
                       disabled={!hasPrev}
-                      onClick={() => onPageChange(Math.max(0, pageIndex - 1))}
+                      onClick={() => {
+                        const targetPg = Math.max(0, pageIndex - 1);
+                        onPageChange(targetPg);
+                        onNotify?.(`Page ${targetPg + 1} of ${totalPages.toLocaleString()}`, 'info');
+                      }}
                     >
                       ‹ Prev
                     </button>
@@ -724,7 +792,11 @@ export default function DiscoverView({
                       type="button"
                       className="btn btn-secondary btn-compact"
                       disabled={!hasNext}
-                      onClick={() => onPageChange(pageIndex + 1)}
+                      onClick={() => {
+                        const targetPg = pageIndex + 1;
+                        onPageChange(targetPg);
+                        onNotify?.(`Page ${targetPg + 1} of ${totalPages.toLocaleString()}`, 'info');
+                      }}
                     >
                       Next ›
                     </button>
@@ -733,7 +805,10 @@ export default function DiscoverView({
                         type="button"
                         className="btn btn-secondary btn-compact"
                         disabled={pageIndex + 1 >= totalPages}
-                        onClick={() => onPageChange(totalPages - 1)}
+                        onClick={() => {
+                          onPageChange(totalPages - 1);
+                          onNotify?.(`Jumped to final Page ${totalPages.toLocaleString()}.`, 'info');
+                        }}
                         aria-label="Last page"
                       >
                         Last »
@@ -746,7 +821,11 @@ export default function DiscoverView({
                     <select
                       id="page-size-select"
                       value={pageSize}
-                      onChange={e => onPageSizeChange(Number(e.target.value))}
+                      onChange={e => {
+                        const sz = Number(e.target.value);
+                        onPageSizeChange(sz);
+                        onNotify?.(`Showing ${sz} SQLite crews per page.`, 'info');
+                      }}
                       className="compact-select"
                       aria-label="Crews per page"
                     >
@@ -926,7 +1005,8 @@ export default function DiscoverView({
                   {[
                     { key: 'baton', label: 'A: Baton' },
                     { key: 'hall', label: 'B: Hall' },
-                    { key: 'omega', label: 'C: Omega' }
+                    { key: 'omega', label: 'C: Omega' },
+                    { key: 'prereq', label: 'D: Prereq' }
                   ].map(sc => (
                     <button
                       key={sc.key}
@@ -956,7 +1036,7 @@ export default function DiscoverView({
                     ) : (
                       <AlertTriangleIcon size={16} />
                     )}
-                    <strong>{solving ? 'Solving Critical Path...' : verdict.badge}</strong>
+                    <strong>{verdict.badge}</strong>
                   </span>
                   <span className="mono-pill">
                     {teamPeople.length} {teamPeople.length === 1 ? 'builder' : 'builders'}
@@ -967,9 +1047,7 @@ export default function DiscoverView({
               {/* Active Simulated Crew Chips */}
               <div className="dock-roster-row" aria-label="Simulated crew members">
                 {teamPeople.map(p => {
-                  const dirMatch = BUILDER_DIRECTORY.find(
-                    b => b.plannerId === p.id || b.id === p.id
-                  );
+                  const dirMatch = findBuilderById(p, [candidates, teamPeople]);
                   return (
                     <button
                       key={p.id}
@@ -1020,7 +1098,7 @@ export default function DiscoverView({
               recommendations={recs?.recommendations || []}
             />
 
-            {/* 3. Live Critical-Path Mini-Bars (ES..EF, Slack & Assigned Builder) */}
+            {/* 3. Live Critical-Path Mini-Bars (ES..EF, Slack & Assigned / Ready Builder) */}
             <div className="dock-tasks-block">
               <div className="row-between small-copy">
                 <strong>Critical-Path Task Schedule (0..{horizonMin}m)</strong>
@@ -1030,33 +1108,65 @@ export default function DiscoverView({
               <div className="dock-task-bars">
                 {tasks.map(t => {
                   const cp = (plan?.criticalPath || []).find(m => m.taskId === t.id);
-                  const asg = (plan?.witness?.assignments || []).find(a => a.taskId === t.id);
-                  const es = asg ? asg.startMin : cp ? cp.earliestStartMin : 0;
-                  const ef = asg ? asg.endMin : cp ? cp.earliestFinishMin : t.durationMin;
+                  const witnessAsg = (plan?.witness?.assignments || []).find(a => a.taskId === t.id);
+                  const previewAsg = witnessAsg || partialPreview.get(t.id) || null;
+                  const isFullWitness = Boolean(witnessAsg) && plan?.status === 'FEASIBLE_WITNESS';
+                  const isConditional = Boolean(witnessAsg) && plan?.status !== 'FEASIBLE_WITNESS';
+                  const isReadyUpstream = !witnessAsg && Boolean(previewAsg?.readyOnly);
+                  const es = previewAsg ? previewAsg.startMin : cp ? cp.earliestStartMin : 0;
+                  const ef = previewAsg ? previewAsg.endMin : cp ? cp.earliestFinishMin : t.durationMin;
                   const leftPct = Math.min(92, Math.max(0, Math.round((es / horizonMin) * 100)));
                   const widthPct = Math.max(8, Math.min(100 - leftPct, Math.round(((ef - es) / horizonMin) * 100)));
 
+                  const rowClass = isFullWitness
+                    ? 'task-assigned'
+                    : isConditional || isReadyUpstream
+                      ? 'task-ready'
+                      : 'task-blocked';
+
+                  const barClass = isFullWitness
+                    ? 'bar-ok'
+                    : isConditional
+                      ? previewAsg?.evidence === 'unknown'
+                        ? 'bar-warn'
+                        : 'bar-ready'
+                      : isReadyUpstream
+                        ? previewAsg?.evidence === 'unknown'
+                          ? 'bar-warn'
+                          : 'bar-ready'
+                        : 'bar-missing';
+
                   return (
-                    <div key={t.id} className={`dock-task-row ${asg ? 'task-assigned' : 'task-blocked'}`}>
+                    <div key={t.id} className={`dock-task-row ${rowClass}`}>
                       <div className="row-between small-copy">
                         <span>
                           <strong>{t.id}</strong> <span className="muted-copy">({t.skill})</span>
                         </span>
                         <span className="mono-cell">
-                          {asg ? (
+                          {isFullWitness ? (
                             <span className="assigned-ok">
-                              {asg.evidence === 'unknown' ? '? ' : '✓ '}
-                              {asg.personId} [{asg.startMin}..{asg.endMin}m]
+                              {witnessAsg.evidence === 'unknown' ? '? ' : '✓ '}
+                              {witnessAsg.personId} [{witnessAsg.startMin}..{witnessAsg.endMin}m]
+                            </span>
+                          ) : isConditional ? (
+                            <span className={witnessAsg.evidence === 'unknown' ? 'assigned-warn' : 'assigned-ready'}>
+                              {witnessAsg.evidence === 'unknown' ? '? ' : '✓ '}
+                              {witnessAsg.personId} [{witnessAsg.startMin}..{witnessAsg.endMin}m]
+                            </span>
+                          ) : isReadyUpstream ? (
+                            <span className={previewAsg.evidence === 'unknown' ? 'assigned-warn' : 'assigned-ready'}>
+                              {previewAsg.evidence === 'unknown' ? '? ' : '✓ '}
+                              {previewAsg.personId} (Ready {previewAsg.startMin}..{previewAsg.endMin}m)
                             </span>
                           ) : (
-                            <span className="assigned-missing">Unassigned</span>
+                            <span className="assigned-missing">Blocked · Needs {t.skill}</span>
                           )}
                         </span>
                       </div>
 
                       <div className="dock-bar-track">
                         <div
-                          className={`dock-bar-fill ${asg ? 'bar-ok' : 'bar-missing'}`}
+                          className={`dock-bar-fill ${barClass}`}
                           style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
                         />
                       </div>
@@ -1112,15 +1222,35 @@ export default function DiscoverView({
                     >
                       <PlusIcon size={15} /> Simulate Priya (UTC+5:30 Baton) in Crew
                     </button>
+                  ) : plan?.frontier?.voiQuestion && onVerifyPersonSkill ? (
+                    <button
+                      type="button"
+                      className="btn btn-primary full-width"
+                      onClick={() =>
+                        onVerifyPersonSkill(
+                          plan.frontier.voiQuestion.personId,
+                          plan.frontier.voiQuestion.skill
+                        )
+                      }
+                    >
+                      <CheckCircleIcon size={15} /> Confirm {plan.frontier.voiQuestion.personId} ?
+                      {plan.frontier.voiQuestion.skill} -&gt; ✓
+                    </button>
+                  ) : activeScenarioKey === 'prereq' && onVerifyPersonSkill ? (
+                    <button
+                      type="button"
+                      className="btn btn-primary full-width"
+                      onClick={() => onVerifyPersonSkill('aurora', 'devops')}
+                    >
+                      <CheckCircleIcon size={15} /> Grant Cloud Sandbox to Aurora (devops ✓)
+                    </button>
                   ) : recs?.recommendations?.[0]?.restoresFeasibility ? (
                     <button
                       type="button"
                       className="btn btn-primary full-width"
                       onClick={() => {
                         const topId = recs.recommendations[0].candidateId;
-                        const match =
-                          BUILDER_DIRECTORY.find(b => b.plannerId === topId || b.id === topId) ||
-                          candidates.find(c => c.id === topId);
+                        const match = findBuilderById(topId, [candidates, teamPeople]);
                         if (match) onToggleBuilderInCrew(match);
                       }}
                     >

@@ -1,4 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { planGoal } from '../../src/goal-planner.mjs';
+import { recommendComplementary, contextGlueOrExplain } from '../../src/synchronicity-solvers.mjs';
 import { getOrCreateClaimOperation, finishClaimOperation } from './claim-operation.js';
 import {
   THEME_OPTIONS,
@@ -8,6 +10,9 @@ import {
 } from './ergonomics.js';
 import {
   MISSION_SCENARIOS,
+  normalizeBuilderId,
+  findBuilderById,
+  computePartialTaskPreview,
   visualTasksToApi,
   visualPeopleToApi,
   loadCustomCrewOverlay,
@@ -41,7 +46,9 @@ import {
   PaletteIcon,
   ColumnsIcon,
   RefreshIcon,
-  FileTextIcon
+  FileTextIcon,
+  CheckCircleIcon,
+  AlertTriangleIcon
 } from './icons.jsx';
 
 const PRIMARY_TABS = [
@@ -50,6 +57,76 @@ const PRIMARY_TABS = [
   { id: 'authority', num: '3', label: 'Seat & Mesh Relay', short: 'Seat & Mesh Relay', hotkey: 'Alt+3', Icon: ShieldCheckIcon },
   { id: 'arena', num: '4', label: '50x Race Proof', short: '50x Race Proof', hotkey: 'Alt+4', Icon: ZapIcon }
 ];
+
+function computeLocalSolve({ goalDescription, horizonHours, tasks, teamPeople, candidates }) {
+  const horizonMin = Math.max(60, Math.round(Number(horizonHours || 4) * 60));
+  const safeTasks = visualTasksToApi(tasks || []);
+  const goalPayload = {
+    id: 'mission-goal',
+    description: goalDescription || 'Deliverable mission',
+    startMin: 0,
+    deadlineMin: horizonMin,
+    tasks: safeTasks
+  };
+  const apiTeam = visualPeopleToApi(teamPeople || [], horizonMin);
+  const apiCands = visualPeopleToApi(candidates || [], horizonMin);
+
+  if (safeTasks.length === 0) {
+    return {
+      horizonMin,
+      goalPayload,
+      apiTeam,
+      apiCands,
+      planRes: {
+        status: 'SEARCH_INCOMPLETE',
+        classification: 'INFEASIBLE_WITHIN_SCOPE',
+        witness: null,
+        residuals: [],
+        repairs: [{ code: 'NO_TASKS', action: 'Add at least 1 mission task (up to 8 tasks).' }]
+      },
+      recRes: { recommendations: [] }
+    };
+  }
+
+  const effectiveTeam =
+    apiTeam.length > 0
+      ? apiTeam
+      : [{ id: 'empty-crew-slot', consent: false, abilities: {}, windows: [{ start: 0, end: horizonMin }] }];
+
+  try {
+    const planRes = planGoal({ goal: goalPayload, people: effectiveTeam, maxNodes: 5000 });
+    const recRes = recommendComplementary({
+      goal: goalPayload,
+      teamPeople: effectiveTeam,
+      candidates: apiCands,
+      planFn: planGoal
+    });
+    return { horizonMin, goalPayload, apiTeam, apiCands, planRes, recRes };
+  } catch (err) {
+    return {
+      horizonMin,
+      goalPayload,
+      apiTeam,
+      apiCands,
+      planRes: {
+        status: 'SEARCH_INCOMPLETE',
+        classification: 'INFEASIBLE_WITHIN_SCOPE',
+        witness: null,
+        residuals: [],
+        repairs: [{ code: err?.message || 'SOLVER_SCOPE', action: 'Adjust task dependencies or wake windows.' }]
+      },
+      recRes: { recommendations: [] }
+    };
+  }
+}
+
+const INITIAL_BATON_SOLVE = computeLocalSolve({
+  goalDescription: MISSION_SCENARIOS.baton.goalDescription,
+  horizonHours: MISSION_SCENARIOS.baton.horizonHours,
+  tasks: MISSION_SCENARIOS.baton.tasks,
+  teamPeople: MISSION_SCENARIOS.baton.teamPeople,
+  candidates: MISSION_SCENARIOS.baton.candidates
+});
 
 async function readApiJson(response) {
   const body = await response.json();
@@ -107,7 +184,7 @@ export default function App() {
   const [verifiedCrewMap, setVerifiedCrewMap] = useState({});
   const [customCrewMap, setCustomCrewMap] = useState(() => loadCustomCrewOverlay());
 
-  // Mission & Ability Architect State (View 2)
+  // Mission & Ability Architect State (View 2) - Instant <2ms Client Solver Initialized
   const [activeScenarioKey, setActiveScenarioKey] = useState('baton');
   const [omegaMode, setOmegaMode] = useState('contingent');
   const [goalDescription, setGoalDescription] = useState(MISSION_SCENARIOS.baton.goalDescription);
@@ -115,11 +192,17 @@ export default function App() {
   const [tasks, setTasks] = useState(MISSION_SCENARIOS.baton.tasks);
   const [teamPeople, setTeamPeople] = useState(MISSION_SCENARIOS.baton.teamPeople);
   const [candidates, setCandidates] = useState(MISSION_SCENARIOS.baton.candidates);
-  const [plan, setPlan] = useState(null);
+  const [plan, setPlan] = useState(() => INITIAL_BATON_SOLVE.planRes);
   const [beforeSnapshot, setBeforeSnapshot] = useState(null);
-  const lastBlockedSnapshotRef = useRef(null);
-  const [recs, setRecs] = useState(null);
+  const lastBlockedSnapshotRef = useRef({
+    plan: INITIAL_BATON_SOLVE.planRes,
+    tasks: MISSION_SCENARIOS.baton.tasks,
+    horizonMin: INITIAL_BATON_SOLVE.horizonMin,
+    label: `Baseline roster (${MISSION_SCENARIOS.baton.teamPeople.map(p => p.id).join(', ')})`
+  });
+  const [recs, setRecs] = useState(() => INITIAL_BATON_SOLVE.recRes);
   const [solving, setSolving] = useState(false);
+  const solveSeqRef = useRef(0);
   const [lockingPlan, setLockingPlan] = useState(false);
   const [evaluatingCrewId, setEvaluatingCrewId] = useState(null);
 
@@ -144,12 +227,35 @@ export default function App() {
   const [probeStats, setProbeStats] = useState(null);
   const [probingLatency, setProbingLatency] = useState(false);
 
-  // Global Polite Status & Authority Health
+  // Global Polite Status, Center-Top Low-Vision Toast & Authority Health
   const [statusMessage, setStatusMessage] = useState(
     'Ready. Browse live SQLite crews, model a mission DAG, test WAN-drop peer relay, or fire the 50-claimant race.'
   );
+  const [toast, setToast] = useState(null);
+  const toastTimerRef = useRef(null);
   const [authorityHealth, setAuthorityHealth] = useState('checking'); // 'online' | 'wan-dropped' | 'unreachable' | 'checking'
+  const [retryingServer, setRetryingServer] = useState(false);
   const tabRefs = useRef({});
+
+  const notifyToast = useCallback((message, tone = 'info') => {
+    if (!message) return;
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast({
+      key: Date.now() + Math.random(),
+      message,
+      tone
+    });
+    toastTimerRef.current = setTimeout(() => {
+      setToast(null);
+      toastTimerRef.current = null;
+    }, 3500);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
 
   // Apply Ergonomics to <html> and persist
   useEffect(() => {
@@ -224,24 +330,50 @@ export default function App() {
     [ensureToken]
   );
 
-  const runProtectedAction = useCallback(async (label, actionFn) => {
-    try {
-      return await actionFn(tokenRef.current, actorRef.current);
-    } catch (err) {
-      if (err?.status === 401 || err?.message === 'UNAUTHORIZED') {
-        tokenRef.current = '';
-        setToken('');
-        pendingAuthReplayRef.current = { label, actionFn };
-        setAuthPromptMessage(
-          `HTTP 401 UNAUTHORIZED while attempting "${label}". Sign in, register a salted scrypt account, or select a Judge Persona below; "${label}" will replay automatically.`
-        );
-        setAuthModalOpen(true);
-        setStatusMessage(`AUTH REQUIRED (401) | Queued "${label}" for immediate replay upon sign-in.`);
-        return null;
+  const runProtectedAction = useCallback(
+    async (label, actionFn) => {
+      try {
+        return await actionFn(tokenRef.current, actorRef.current);
+      } catch (err) {
+        if (err?.status === 401 || err?.message === 'UNAUTHORIZED') {
+          tokenRef.current = '';
+          setToken('');
+
+          // Silently auto-refresh expired 2h demo bearer token when demo auth is enabled and user did not manually sign out
+          if (!signedOutManuallyRef.current) {
+            try {
+              const refreshActor = actorRef.current || 'leader-aurora';
+              const refreshed = await readApiJson(
+                await fetch('/api/auth/demo', {
+                  method: 'POST',
+                  headers: { 'content-type': 'application/json' },
+                  body: JSON.stringify({ actorId: refreshActor, eventId, maxSize: 5 })
+                })
+              );
+              tokenRef.current = refreshed.token;
+              actorRef.current = refreshed.actorId;
+              setActorId(refreshed.actorId);
+              setToken(refreshed.token);
+              return await actionFn(refreshed.token, refreshed.actorId);
+            } catch {
+              // Demo auth disabled (PS1_DEMO_AUTH=0) -> fall through to AuthAccountModal
+            }
+          }
+
+          pendingAuthReplayRef.current = { label, actionFn };
+          setAuthPromptMessage(
+            `HTTP 401 UNAUTHORIZED while attempting "${label}". Sign in, register a salted scrypt account, or select a Judge Persona below; "${label}" will replay automatically.`
+          );
+          setAuthModalOpen(true);
+          setStatusMessage(`AUTH REQUIRED (401) | Queued "${label}" for immediate replay upon sign-in.`);
+          notifyToast(`Authentication required for "${label}" - queued for automatic replay.`, 'warn');
+          return null;
+        }
+        throw err;
       }
-      throw err;
-    }
-  }, []);
+    },
+    [eventId, notifyToast]
+  );
 
   const replayPendingAuthAction = useCallback(async (freshToken, freshActor) => {
     const pending = pendingAuthReplayRef.current;
@@ -256,35 +388,66 @@ export default function App() {
   }, []);
 
   // Board refresh with live latency measurement
-  const refreshBoard = useCallback(async () => {
-    if (wanOffline) {
-      setAuthorityHealth('wan-dropped');
-      return;
-    }
-    if (!/^[A-Za-z0-9_.:@-]{1,128}$/.test(eventId)) {
-      setAuthorityHealth('unreachable');
-      return;
-    }
-    const offset = pageIndex * pageSize;
-    const t0 = performance.now();
+  const refreshBoard = useCallback(
+    async (manual = false) => {
+      if (wanOffline) {
+        setAuthorityHealth('wan-dropped');
+        if (manual === true) {
+          notifyToast('Direct WAN is currently simulated offline (View 3 Theater).', 'warn');
+        }
+        return false;
+      }
+      if (!/^[A-Za-z0-9_.:@-]{1,128}$/.test(eventId)) {
+        setAuthorityHealth('unreachable');
+        return false;
+      }
+      const offset = pageIndex * pageSize;
+      const t0 = performance.now();
+      try {
+        const res = await fetch(
+          `/api/events/${encodeURIComponent(eventId)}/board?limit=${pageSize}&offset=${offset}&meta=1`,
+          { cache: 'no-store' }
+        );
+        const data = await readApiJson(res);
+        const dt = performance.now() - t0;
+        setBoard(data.teams || []);
+        if (typeof data.totalTeams === 'number') setTotalTeams(data.totalTeams);
+        if (typeof data.totalMembers === 'number') setTotalMembers(data.totalMembers);
+        if (typeof data.maxSize === 'number') setEventMaxSize(data.maxSize);
+        setBoardLatencyMs(dt);
+        setAuthorityHealth('online');
+        if (manual === true) {
+          notifyToast(`Synced live SQLite board (${dt.toFixed(1)} ms).`, 'ok');
+        }
+        return true;
+      } catch (e) {
+        setAuthorityHealth('unreachable');
+        setStatusMessage(`BOARD | ${e.message}`);
+        if (manual === true) {
+          notifyToast('Local SQLite server (:8788) unreachable - client-side solver remains active.', 'err');
+        }
+        return false;
+      }
+    },
+    [eventId, pageIndex, pageSize, wanOffline, notifyToast]
+  );
+
+  async function retryServerConnection() {
+    setRetryingServer(true);
     try {
-      const res = await fetch(
-        `/api/events/${encodeURIComponent(eventId)}/board?limit=${pageSize}&offset=${offset}&meta=1`,
-        { cache: 'no-store' }
-      );
-      const data = await readApiJson(res);
-      const dt = performance.now() - t0;
-      setBoard(data.teams || []);
-      if (typeof data.totalTeams === 'number') setTotalTeams(data.totalTeams);
-      if (typeof data.totalMembers === 'number') setTotalMembers(data.totalMembers);
-      if (typeof data.maxSize === 'number') setEventMaxSize(data.maxSize);
-      setBoardLatencyMs(dt);
-      setAuthorityHealth('online');
-    } catch (e) {
-      setAuthorityHealth('unreachable');
-      setStatusMessage(`BOARD | ${e.message}`);
+      if (!signedOutManuallyRef.current) {
+        await ensureToken('');
+      }
+      const ok = await refreshBoard(false);
+      if (ok) {
+        notifyToast('Connected to live SQLite Authority server (:8788)!', 'ok');
+      } else {
+        notifyToast('Server :8788 still offline - launch LAUNCH_H4H_PS1.cmd on Desktop.', 'err');
+      }
+    } finally {
+      setRetryingServer(false);
     }
-  }, [eventId, pageIndex, pageSize, wanOffline]);
+  }
 
   useEffect(() => {
     refreshBoard();
@@ -508,16 +671,18 @@ export default function App() {
         setToken(main.token);
         setRelayToken(relay.token);
         setStatusMessage(`AUTH | Active persona switched to '${main.actorId}' (peer relay 'relay-mateo' armed).`);
+        notifyToast(`Active persona: ${main.actorId} (relay-mateo armed)`, 'ok');
         refreshBoard();
         await replayPendingAuthAction(main.token, main.actorId);
         return true;
       } catch (e) {
         setStatusMessage(`AUTH | ${e.message} (Sign in or register via Account modal when PS1_DEMO_AUTH=0).`);
+        notifyToast(`Demo auth unavailable (${e.message}) - sign in via Account modal.`, 'warn');
         setAuthModalOpen(true);
         return false;
       }
     },
-    [eventId, refreshBoard, replayPendingAuthAction]
+    [eventId, refreshBoard, replayPendingAuthAction, notifyToast]
   );
 
   async function handleAccountAuth(mode, payload) {
@@ -536,6 +701,7 @@ export default function App() {
     setStatusMessage(
       `AUTH | ${mode === 'register' ? 'Registered salted scrypt account' : 'Signed in'} as '${res.actorId}'.`
     );
+    notifyToast(`${mode === 'register' ? 'Registered' : 'Signed in'} as ${res.actorId}`, 'ok');
     refreshBoard();
     await replayPendingAuthAction(res.token, res.actorId);
     return res;
@@ -558,12 +724,14 @@ export default function App() {
       setActorId('');
       setToken('');
       setStatusMessage('AUTH | Session token revoked in SQLite ps1_revoked_tokens.');
+      notifyToast('Signed out & revoked Bearer token in SQLite.', 'info');
     } catch (e) {
       tokenRef.current = '';
       actorRef.current = '';
       setActorId('');
       setToken('');
       setStatusMessage(`AUTH | Signed out (${e.message}).`);
+      notifyToast('Signed out locally.', 'info');
     }
   }
 
@@ -571,6 +739,7 @@ export default function App() {
   async function handleEnsureEvent(nextEv) {
     if (!/^[A-Za-z0-9_.:@-]{1,128}$/.test(nextEv)) {
       setStatusMessage('EVENT | Invalid event identifier.');
+      notifyToast('Invalid event scope identifier.', 'err');
       return;
     }
     try {
@@ -580,11 +749,13 @@ export default function App() {
         setPageIndex(0);
         setSelectedTeam(null);
         setStatusMessage(`EVENT | Active event scope set to '${nextEv}'.`);
+        notifyToast(`Event scope switched to '${nextEv}'.`, 'ok');
       });
     } catch (e) {
       setEventId(nextEv);
       setPageIndex(0);
       setStatusMessage(`EVENT | Switched scope to '${nextEv}' (${e.message}).`);
+      notifyToast(`Event scope set to '${nextEv}'.`, 'info');
     }
   }
 
@@ -684,21 +855,22 @@ export default function App() {
         setCustomCrewMap(nextCustom);
         setPageIndex(0);
         await refreshBoard();
-        setStatusMessage(
-          `BOARD | Spawned ${spawnedCount} live SQLite open-seat showcase ${
-            spawnedCount === 1 ? 'crew' : 'crews'
-          } on Page 1 of '${eventId}'.`
-        );
+        const msg = `Spawned ${spawnedCount} live SQLite open-seat showcase ${
+          spawnedCount === 1 ? 'crew' : 'crews'
+        } on Page 1 of '${eventId}'.`;
+        setStatusMessage(`BOARD | ${msg}`);
+        notifyToast(msg, 'ok');
       } catch (e) {
         if (e?.status === 401 || e?.message === 'UNAUTHORIZED') throw e;
         setStatusMessage(`SPAWN | ${e.message}`);
+        notifyToast(`Spawn crews failed: ${e.message}`, 'err');
       } finally {
         setSpawningDemo(false);
       }
     });
   }
 
-  // Mission Architect Solver Execution
+  // Mission Architect Solver Execution: Instant <2ms Client-Side Solver + Non-Blocking /api/plan Sync
   const runSolveAndRecommend = useCallback(
     async (overrides = {}) => {
       const useGoal = overrides.goalDescription ?? goalDescription;
@@ -709,66 +881,161 @@ export default function App() {
       const useCrewTag = overrides.crewId !== undefined ? overrides.crewId : evaluatingCrewId;
       const resetComparison = Boolean(overrides.resetComparison);
 
-      const horizonMin = Math.max(60, Math.round(Number(useHours || 4) * 60));
-      const goalPayload = {
-        id: 'mission-goal',
-        description: useGoal,
-        startMin: 0,
-        deadlineMin: horizonMin,
-        tasks: visualTasksToApi(useTasks)
+      // 1. Synchronous <2ms client-side critical-path & complementary recommendation solve
+      const local = computeLocalSolve({
+        goalDescription: useGoal,
+        horizonHours: useHours,
+        tasks: useTasks,
+        teamPeople: useTeam,
+        candidates: useCands
+      });
+
+      const applySnapshotTransition = nextPlan => {
+        if (resetComparison) {
+          setBeforeSnapshot(null);
+          if (nextPlan.status !== 'FEASIBLE_WITNESS') {
+            lastBlockedSnapshotRef.current = {
+              plan: nextPlan,
+              tasks: useTasks,
+              horizonMin: local.horizonMin,
+              label: `Baseline (${useTeam.map(p => p.id).join(', ')})`
+            };
+          } else {
+            lastBlockedSnapshotRef.current = null;
+          }
+        } else if (nextPlan.status !== 'FEASIBLE_WITNESS') {
+          lastBlockedSnapshotRef.current = {
+            plan: nextPlan,
+            tasks: useTasks,
+            horizonMin: local.horizonMin,
+            label: `Blocked state (${useTeam.map(p => p.id).join(', ')})`
+          };
+          setBeforeSnapshot(null);
+        } else if (
+          lastBlockedSnapshotRef.current &&
+          (lastBlockedSnapshotRef.current.tasks || []).length === useTasks.length
+        ) {
+          setBeforeSnapshot(lastBlockedSnapshotRef.current);
+        }
       };
 
-      await runProtectedAction('Evaluate Critical-Path Plan (/api/plan)', async freshTok => {
-        setSolving(true);
-        try {
-          const [planRes, recRes] = await Promise.all([
-            sendPost(
-              '/api/plan',
-              {
-                goal: goalPayload,
-                people: visualPeopleToApi(useTeam, horizonMin),
-                maxNodes: 5000
-              },
-              freshTok
+      applySnapshotTransition(local.planRes);
+      setPlan(local.planRes);
+      setRecs(local.recRes);
+      if (useCrewTag) {
+        setVerifiedCrewMap(prev => ({
+          ...prev,
+          [`${eventId}::${useCrewTag}`]: local.planRes.status,
+          [useCrewTag]: local.planRes.status
+        }));
+      }
+      setStatusMessage(
+        `SOLVER | ${local.planRes.status} (${local.planRes.classification}) · Quantifier: ${
+          local.planRes.frontier?.quantifierStatus || 'BOUNDED'
+        } · Ranked ${local.recRes.recommendations?.length || 0} complementary builders.`
+      );
+
+      if (overrides.toastMessage) {
+        const tone =
+          local.planRes.status === 'FEASIBLE_WITNESS'
+            ? 'ok'
+            : local.planRes.status === 'CONDITIONAL_WITNESS'
+              ? 'warn'
+              : 'info';
+        notifyToast(overrides.toastMessage, tone);
+      } else if (overrides.explicitEvaluate) {
+        const tone =
+          local.planRes.status === 'FEASIBLE_WITNESS'
+            ? 'ok'
+            : local.planRes.status === 'CONDITIONAL_WITNESS'
+              ? 'warn'
+              : 'warn';
+        notifyToast(
+          `Evaluated DAG: ${local.planRes.status} (${local.planRes.classification})`,
+          tone
+        );
+      }
+
+      // 2. Non-blocking authoritative /api/plan + /api/recommendations verification when online
+      if (wanOffline || local.apiTeam.length === 0 || local.goalPayload.tasks.length === 0) {
+        return local;
+      }
+
+      const seq = ++solveSeqRef.current;
+      setSolving(true);
+      try {
+        let activeTok = await ensureToken('');
+        if (!activeTok && !signedOutManuallyRef.current) {
+          try {
+            const refreshed = await readApiJson(
+              await fetch('/api/auth/demo', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ actorId: actorRef.current || 'leader-aurora', eventId, maxSize: 5 })
+              })
+            );
+            activeTok = refreshed.token;
+            tokenRef.current = refreshed.token;
+            actorRef.current = refreshed.actorId;
+            setToken(refreshed.token);
+            setActorId(refreshed.actorId);
+          } catch {
+            // Keep instant client-side solve without interrupting user
+          }
+        }
+        if (!activeTok) return local;
+
+        const callServerPair = async bearer =>
+          Promise.all([
+            readApiJson(
+              await fetch('/api/plan', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json', authorization: 'Bearer ' + bearer },
+                body: JSON.stringify({
+                  goal: local.goalPayload,
+                  people: local.apiTeam,
+                  maxNodes: 5000
+                })
+              })
             ),
-            sendPost(
-              '/api/recommendations',
-              {
-                goal: goalPayload,
-                teamPeople: visualPeopleToApi(useTeam, horizonMin),
-                candidates: visualPeopleToApi(useCands, horizonMin)
-              },
-              freshTok
+            readApiJson(
+              await fetch('/api/recommendations', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json', authorization: 'Bearer ' + bearer },
+                body: JSON.stringify({
+                  goal: local.goalPayload,
+                  teamPeople: local.apiTeam,
+                  candidates: local.apiCands
+                })
+              })
             )
           ]);
 
-          if (resetComparison) {
-            setBeforeSnapshot(null);
-            if (planRes.status !== 'FEASIBLE_WITNESS') {
-              lastBlockedSnapshotRef.current = {
-                plan: planRes,
-                tasks: useTasks,
-                horizonMin,
-                label: `Baseline (${useTeam.map(p => p.id).join(', ')})`
-              };
-            } else {
-              lastBlockedSnapshotRef.current = null;
-            }
-          } else if (planRes.status !== 'FEASIBLE_WITNESS') {
-            lastBlockedSnapshotRef.current = {
-              plan: planRes,
-              tasks: useTasks,
-              horizonMin,
-              label: `Blocked state (${useTeam.map(p => p.id).join(', ')})`
-            };
-            setBeforeSnapshot(null);
-          } else if (
-            lastBlockedSnapshotRef.current &&
-            (lastBlockedSnapshotRef.current.tasks || []).length === useTasks.length
-          ) {
-            setBeforeSnapshot(lastBlockedSnapshotRef.current);
+        let pair;
+        try {
+          pair = await callServerPair(activeTok);
+        } catch (firstErr) {
+          if ((firstErr?.status === 401 || firstErr?.message === 'UNAUTHORIZED') && !signedOutManuallyRef.current) {
+            tokenRef.current = '';
+            const refreshed = await readApiJson(
+              await fetch('/api/auth/demo', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ actorId: actorRef.current || 'leader-aurora', eventId, maxSize: 5 })
+              })
+            );
+            tokenRef.current = refreshed.token;
+            actorRef.current = refreshed.actorId;
+            setToken(refreshed.token);
+            setActorId(refreshed.actorId);
+            pair = await callServerPair(refreshed.token);
+          } else {
+            throw firstErr;
           }
+        }
 
+        if (seq === solveSeqRef.current && pair) {
+          const [planRes, recRes] = pair;
           setPlan(planRes);
           setRecs(recRes);
           if (useCrewTag) {
@@ -778,22 +1045,18 @@ export default function App() {
               [useCrewTag]: planRes.status
             }));
           }
-          setStatusMessage(
-            `SOLVER | ${planRes.status} (${planRes.classification}) · Quantifier: ${
-              planRes.frontier?.quantifierStatus || 'BOUNDED'
-            } · Ranked ${recRes.recommendations?.length || 0} complementary builders.`
-          );
-        } catch (e) {
-          if (e?.status === 401 || e?.message === 'UNAUTHORIZED') throw e;
-          setPlan(null);
-          setRecs(null);
-          setStatusMessage(`SOLVER | ${e.message}`);
-        } finally {
+          setAuthorityHealth('online');
+        }
+      } catch {
+        // Never wipe local instant solve on transient network or offline state
+      } finally {
+        if (seq === solveSeqRef.current) {
           setSolving(false);
         }
-      });
+      }
+      return local;
     },
-    [goalDescription, horizonHours, tasks, teamPeople, candidates, evaluatingCrewId, eventId, sendPost, runProtectedAction]
+    [goalDescription, horizonHours, tasks, teamPeople, candidates, evaluatingCrewId, eventId, wanOffline, ensureToken, notifyToast]
   );
 
   const selectScenario = useCallback(
@@ -809,6 +1072,13 @@ export default function App() {
       setTasks(sc.tasks);
       setTeamPeople(sc.teamPeople);
       setCandidates(sc.candidates);
+      const solved = computeLocalSolve({
+        goalDescription: sc.goalDescription,
+        horizonHours: sc.horizonHours,
+        tasks: sc.tasks,
+        teamPeople: sc.teamPeople,
+        candidates: sc.candidates
+      });
       runSolveAndRecommend({
         goalDescription: sc.goalDescription,
         horizonHours: sc.horizonHours,
@@ -816,7 +1086,8 @@ export default function App() {
         teamPeople: sc.teamPeople,
         candidates: sc.candidates,
         crewId: null,
-        resetComparison: true
+        resetComparison: true,
+        toastMessage: `Loaded ${sc.code} (${sc.title}) -> ${solved.planRes.status}`
       });
     },
     [runSolveAndRecommend]
@@ -832,30 +1103,90 @@ export default function App() {
       horizonHours: sc.horizonHours,
       tasks: sc.tasks,
       teamPeople: nextRoster,
-      candidates: sc.candidates
+      candidates: sc.candidates,
+      toastMessage:
+        nextMode === 'robust'
+          ? 'Mode C2: Robust backup active (EXISTS_FORALL_ROBUST -> 0 VOI questions!)'
+          : 'Mode C1: Contingent ?frontend active (1.0-bit Shannon VOI prompt)'
     });
   }
 
   function handleAddCandidateToTeam(candId) {
-    const found = candidates.find(c => c.id === candId);
+    const targetId = normalizeBuilderId(candId);
+    if (!targetId) return;
+    const found =
+      candidates.find(c => normalizeBuilderId(c.id) === targetId) ||
+      findBuilderById(targetId, [teamPeople, candidates]);
     if (!found) return;
-    const nextTeam = [...teamPeople, found];
-    const nextCands = candidates.filter(c => c.id !== candId);
+
+    const alreadyInTeam = teamPeople.some(p => normalizeBuilderId(p.id) === targetId);
+    const personEntry = {
+      id: targetId,
+      timezone: found.timezone || 'UTC-6 · Hot Springs / Central',
+      startMin: found.startMin ?? 0,
+      endMin: found.endMin ?? Math.max(60, Math.round(Number(horizonHours || 4) * 60)),
+      skills: { ...(found.skills || {}) }
+    };
+    const nextTeam = alreadyInTeam ? teamPeople : [...teamPeople, personEntry];
+    const nextCands = candidates.filter(c => normalizeBuilderId(c.id) !== targetId);
     setTeamPeople(nextTeam);
     setCandidates(nextCands);
-    runSolveAndRecommend({ teamPeople: nextTeam, candidates: nextCands });
+    const preview = computeLocalSolve({
+      goalDescription,
+      horizonHours,
+      tasks,
+      teamPeople: nextTeam,
+      candidates: nextCands
+    });
+    runSolveAndRecommend({
+      teamPeople: nextTeam,
+      candidates: nextCands,
+      toastMessage:
+        preview.planRes.status === 'FEASIBLE_WITNESS'
+          ? `✓ Added ${found.displayName || targetId} to crew -> Critical-path schedule FEASIBLE!`
+          : `Added ${found.displayName || targetId} to crew -> ${preview.planRes.status}`
+    });
   }
 
   function handleVerifyPersonSkill(personId, skillId) {
-    const nextTeam = teamPeople.map(p =>
-      p.id === personId ? { ...p, skills: { ...(p.skills || {}), [skillId]: 'supported' } } : p
-    );
+    const targetId = normalizeBuilderId(personId);
+    const inTeam = teamPeople.some(p => normalizeBuilderId(p.id) === targetId);
+    let nextTeam;
+    if (inTeam) {
+      nextTeam = teamPeople.map(p =>
+        normalizeBuilderId(p.id) === targetId
+          ? { ...p, id: targetId, skills: { ...(p.skills || {}), [skillId]: 'supported' } }
+          : p
+      );
+    } else {
+      const base = findBuilderById(targetId, [candidates, teamPeople]);
+      nextTeam = [
+        ...teamPeople,
+        {
+          id: targetId,
+          timezone: base?.timezone || 'UTC-6 · Hot Springs / Central',
+          startMin: base?.startMin ?? 0,
+          endMin: base?.endMin ?? Math.max(60, Math.round(Number(horizonHours || 4) * 60)),
+          skills: { ...(base?.skills || {}), [skillId]: 'supported' }
+        }
+      ];
+    }
     setTeamPeople(nextTeam);
-    runSolveAndRecommend({ teamPeople: nextTeam });
+    const preview = computeLocalSolve({
+      goalDescription,
+      horizonHours,
+      tasks,
+      teamPeople: nextTeam,
+      candidates
+    });
+    runSolveAndRecommend({
+      teamPeople: nextTeam,
+      toastMessage: `✓ Verified ${targetId}'s ${skillId} capability -> ${preview.planRes.status}`
+    });
   }
 
   // Cross-View Actions
-  async function inspectTeam(tid) {
+  async function inspectTeam(tid, silent = false) {
     try {
       const detail = await readApiJson(
         await fetch(`/api/events/${encodeURIComponent(eventId)}/teams/${encodeURIComponent(tid)}`, {
@@ -865,9 +1196,18 @@ export default function App() {
       setSelectedTeam(detail);
       setTeamId(tid);
       setStatusMessage(`ROSTER | Loaded ${detail.members.length}/${detail.maxSize} members for '${tid}'.`);
+      if (!silent) {
+        notifyToast(
+          `Loaded SQLite roster for '${tid}' (${detail.members.length}/${detail.maxSize} seats).`,
+          'info'
+        );
+      }
     } catch (e) {
       setSelectedTeam(null);
       setStatusMessage(`ROSTER | ${e.message}`);
+      if (!silent) {
+        notifyToast(`Could not load roster for '${tid}': ${e.message}`, 'err');
+      }
     }
   }
 
@@ -931,16 +1271,18 @@ export default function App() {
         setInviteCode(inv.code);
         setPageIndex(0);
         await refreshBoard();
-        await inspectTeam(targetTid);
+        await inspectTeam(targetTid, true);
         const aud = await sendGetAuth(`/api/events/${encodeURIComponent(eventId)}/audit`, activeTok);
         setAuditRows(aud.audit || []);
         setActiveView('authority');
         setStatusMessage(
           `PLAN LOCKED -> VIEW 3 | Created crew '${targetTid}' (${activeLead}) and minted single-use SHA-256 invite token.`
         );
+        notifyToast(`✓ Committed crew '${targetTid}' & minted single-use invite in View 3!`, 'ok');
       } catch (e) {
         if (e?.status === 401 || e?.message === 'UNAUTHORIZED') throw e;
         setStatusMessage(`LOCK PLAN | ${e.message}`);
+        notifyToast(`Commit crew failed: ${e.message}`, 'err');
       } finally {
         setLockingPlan(false);
       }
@@ -950,7 +1292,7 @@ export default function App() {
   function handleCheckFitCrew(crewProfile) {
     const sc = MISSION_SCENARIOS[crewProfile.scenarioKey] || MISSION_SCENARIOS.baton;
     setEvaluatingCrewId(crewProfile.teamId);
-    setActiveScenarioKey(crewProfile.scenarioKey);
+    setActiveScenarioKey(crewProfile.scenarioKey || 'baton');
     const customGoal = `[${crewProfile.teamId}] ${crewProfile.mission}`;
     setGoalDescription(customGoal);
     setHorizonHours(sc.horizonHours);
@@ -966,55 +1308,65 @@ export default function App() {
       teamPeople: sc.teamPeople,
       candidates: sc.candidates,
       crewId: crewProfile.teamId,
-      resetComparison: true
+      resetComparison: true,
+      toastMessage: `Evaluating '${crewProfile.teamId}' in Mission Planner (View 2)`
     });
   }
 
   function handleRequestSeatForTeam(tid) {
     setTeamId(tid);
-    inspectTeam(tid);
+    inspectTeam(tid, true);
     setActiveView('authority');
+    notifyToast(`Selected '${tid}' in Seat & Mesh Relay (View 3).`, 'info');
   }
 
   function handleSendBuilderToArchitect(builder) {
-    const targetId = builder.plannerId || builder.id;
-    const existsInTeam = teamPeople.some(p => p.id === targetId || p.id === builder.id);
-    const existsInCands = candidates.some(p => p.id === targetId || p.id === builder.id);
+    const resolved = findBuilderById(builder, [teamPeople, candidates]);
+    if (!resolved) return;
+    const targetId = normalizeBuilderId(resolved.plannerId || resolved.id);
+    const existsInTeam = teamPeople.some(p => normalizeBuilderId(p.id) === targetId);
+    const existsInCands = candidates.some(p => normalizeBuilderId(p.id) === targetId);
     let nextCands = candidates;
     if (!existsInTeam && !existsInCands) {
       nextCands = [
         {
           id: targetId,
-          timezone: builder.timezone,
-          startMin: builder.startMin,
-          endMin: builder.endMin,
-          skills: { ...builder.skills }
+          timezone: resolved.timezone,
+          startMin: resolved.startMin ?? 0,
+          endMin: resolved.endMin ?? 240,
+          skills: { ...(resolved.skills || {}) }
         },
         ...candidates
       ];
       setCandidates(nextCands);
     }
     setActiveView('architect');
-    runSolveAndRecommend({ candidates: nextCands });
+    runSolveAndRecommend({
+      candidates: nextCands,
+      toastMessage: `Opened ${resolved.displayName || targetId} in Mission Planner (View 2).`
+    });
   }
 
   // Real-time in-place Builder toggle on View 1 Live Split Studio
-  function handleToggleBuilderInCrew(builder) {
-    const targetId = builder.plannerId || builder.id;
-    const existsInTeam = teamPeople.some(p => p.id === targetId || p.id === builder.id);
+  function handleToggleBuilderInCrew(builderOrId) {
+    const resolved = findBuilderById(builderOrId, [teamPeople, candidates]);
+    if (!resolved) return;
+    const targetId = normalizeBuilderId(resolved.plannerId || resolved.id);
+    const label = resolved.displayName || targetId;
+    const existsInTeam = teamPeople.some(p => normalizeBuilderId(p.id) === targetId);
     let nextTeam;
     let nextCands = [...candidates];
 
     if (existsInTeam) {
-      nextTeam = teamPeople.filter(p => p.id !== targetId && p.id !== builder.id);
-      if (!nextCands.some(c => c.id === targetId || c.id === builder.id)) {
+      nextTeam = teamPeople.filter(p => normalizeBuilderId(p.id) !== targetId);
+      if (!nextCands.some(c => normalizeBuilderId(c.id) === targetId)) {
         nextCands = [
           {
             id: targetId,
-            timezone: builder.timezone,
-            startMin: builder.startMin ?? 0,
-            endMin: builder.endMin ?? 240,
-            skills: { ...(builder.skills || {}) }
+            timezone: resolved.timezone,
+            startMin: resolved.startMin ?? 0,
+            endMin: resolved.endMin ?? 240,
+            skills: { ...(resolved.skills || {}) }
           },
           ...nextCands
         ];
@@ -1022,37 +1374,60 @@ export default function App() {
     } else {
       const personEntry = {
         id: targetId,
-        timezone: builder.timezone,
-        startMin: builder.startMin ?? 0,
-        endMin: builder.endMin ?? 240,
-        skills: { ...(builder.skills || {}) }
+        timezone: resolved.timezone,
+        startMin: resolved.startMin ?? 0,
+        endMin: resolved.endMin ?? 240,
+        skills: { ...(resolved.skills || {}) }
       };
       nextTeam = [...teamPeople, personEntry];
-      nextCands = nextCands.filter(c => c.id !== targetId && c.id !== builder.id);
+      nextCands = nextCands.filter(c => normalizeBuilderId(c.id) !== targetId);
     }
 
     setTeamPeople(nextTeam);
     setCandidates(nextCands);
-    runSolveAndRecommend({ teamPeople: nextTeam, candidates: nextCands });
+    const preview = computeLocalSolve({
+      goalDescription,
+      horizonHours,
+      tasks,
+      teamPeople: nextTeam,
+      candidates: nextCands
+    });
+    const toastMsg = existsInTeam
+      ? `Removed ${label} (${targetId}) from active crew -> ${preview.planRes.status}`
+      : preview.planRes.status === 'FEASIBLE_WITNESS'
+        ? `✓ Added ${label} (${targetId}) -> Critical-path schedule is now FEASIBLE!`
+        : `Simulated ${label} (${targetId}) in crew -> ${preview.planRes.status}`;
+
+    runSolveAndRecommend({
+      teamPeople: nextTeam,
+      candidates: nextCands,
+      toastMessage: toastMsg
+    });
   }
 
   // View 3: Seat Authority & Peer Mesh Handlers
   const loadAudit = useCallback(
-    async overrideTok => {
+    async (overrideTok, manual = false) => {
       try {
         await runProtectedAction('Load Attributable Audit Log', async freshTok => {
           const aud = await sendGetAuth(
             `/api/events/${encodeURIComponent(eventId)}/audit`,
-            overrideTok || freshTok
+            typeof overrideTok === 'string' ? overrideTok : freshTok
           );
           setAuditRows(aud.audit || []);
           setStatusMessage(`AUDIT | Loaded ${aud.audit?.length || 0} attributable SQLite audit entries.`);
+          if (manual === true) {
+            notifyToast(`Loaded ${aud.audit?.length || 0} attributable SQLite audit entries.`, 'ok');
+          }
         });
       } catch (e) {
         setStatusMessage(`AUDIT | ${e.message}`);
+        if (manual === true) {
+          notifyToast(`Audit sync failed: ${e.message}`, 'err');
+        }
       }
     },
-    [eventId, runProtectedAction, sendGetAuth]
+    [eventId, runProtectedAction, sendGetAuth, notifyToast]
   );
 
   async function handleCreateTeam(customMeta = {}) {
@@ -1069,12 +1444,14 @@ export default function App() {
         setStatusMessage(
           `AUTHORITY | Created team '${res.teamId}' with leader '${freshActor || actorRef.current}' and saved custom mission to Discover overlay.`
         );
+        notifyToast(`✓ Created SQLite crew '${res.teamId}' (Leader: ${freshActor || actorRef.current})`, 'ok');
         await refreshBoard();
-        await inspectTeam(teamId);
+        await inspectTeam(teamId, true);
         await loadAudit(freshTok);
       });
     } catch (e) {
       setStatusMessage(`CREATE TEAM | ${e.message}`);
+      notifyToast(`Create team failed: ${e.message}`, 'err');
     }
   }
 
@@ -1087,10 +1464,12 @@ export default function App() {
         setIssuedInvite({ ...res, teamId, eventId, issuedBy: activeLead });
         setInviteCode(res.code);
         setStatusMessage(`INVITE | Minted single-use SHA-256 hashed invitation for '${teamId}' (10m TTL).`);
+        notifyToast(`✓ Minted single-use SHA-256 invite for '${teamId}' (10m TTL).`, 'ok');
         await loadAudit(freshTok);
       });
     } catch (e) {
       setStatusMessage(`INVITE | ${e.message}`);
+      notifyToast(`Issue invite failed: ${e.message}`, 'err');
     }
   }
 
@@ -1135,8 +1514,9 @@ export default function App() {
           );
           if (res.status === 'COMMITTED') finishClaimOperation(sessionStorage, op.key);
           setStatusMessage(`AUTHORITY | ${res.status} for '${replayedActor || res.actorId}' on '${res.teamId}'.`);
+          notifyToast(`✓ Seat committed for '${replayedActor || res.actorId}' on '${res.teamId}'!`, 'ok');
           await refreshBoard();
-          await inspectTeam(teamId);
+          await inspectTeam(teamId, true);
           await loadAudit(replayedTok);
         });
         return;
@@ -1164,6 +1544,7 @@ export default function App() {
         setStatusMessage(
           `LOCAL OUTBOX | Switched to '${claimantActor}' while WAN is offline. Queued opId '${operation.opId}' for peer relay!`
         );
+        notifyToast(`WAN Offline: Queued '${claimantActor}' claim (${operation.opId}) in Local Outbox!`, 'warn');
         return;
       }
 
@@ -1179,11 +1560,13 @@ export default function App() {
       setStatusMessage(
         `AUTHORITY | Switched to invited candidate '${claimantActor}' and committed seat on '${result.teamId}' in 1 click!`
       );
+      notifyToast(`✓ Switched to '${claimantActor}' & committed seat on '${result.teamId}'!`, 'ok');
       await refreshBoard();
-      await inspectTeam(teamId);
+      await inspectTeam(teamId, true);
       await loadAudit(claimantTok);
     } catch (e) {
       setStatusMessage(`CANDIDATE CLAIM | ${e.message}`);
+      notifyToast(`Seat claim failed: ${e.message}`, 'err');
     } finally {
       joiningLock.current = false;
       setJoining(false);
@@ -1224,6 +1607,7 @@ export default function App() {
           setStatusMessage(
             `LOCAL OUTBOX | Direct WAN is offline. Retained SHA-256 opId '${operation.opId}' in Pending Relay Outbox (seat NOT yet confirmed).`
           );
+          notifyToast(`Step 1 Complete: Queued SHA-256 opId '${operation.opId}' to Pending Relay Outbox!`, 'warn');
           return;
         }
 
@@ -1249,12 +1633,17 @@ export default function App() {
             result.replayed ? ' (replayed: true - idempotent recovery, 0 duplicate rows!)' : ' (fresh seat committed)'
           }.`
         );
+        notifyToast(
+          `✓ ${result.status} for '${result.actorId}' on '${result.teamId}'${result.replayed ? ' (replayed: true)' : ''}!`,
+          'ok'
+        );
         await refreshBoard();
-        await inspectTeam(teamId);
+        await inspectTeam(teamId, true);
         await loadAudit(useTok);
       });
     } catch (e) {
       setStatusMessage(`CLAIM | ${e.message} (opId preserved in sessionStorage for safe retry).`);
+      notifyToast(`Claim rejected (${e.message}) - opId retained safely.`, 'err');
     } finally {
       joiningLock.current = false;
       setJoining(false);
@@ -1298,9 +1687,11 @@ export default function App() {
         setStatusMessage(
           `PEER RELAY -> LAYER A | ${res.status} for '${res.actorId}' forwarded via '${res.relayedBy}' (opId '${res.opId}'). Now click Step 3 to restore WAN & verify replayed: true!`
         );
+        notifyToast(`✓ Step 2 Complete: Peer '${res.relayedBy}' committed '${res.actorId}'! Now click Step 3.`, 'ok');
       });
     } catch (e) {
       setStatusMessage(`PEER RELAY | ${e.message}`);
+      notifyToast(`Peer relay failed: ${e.message}`, 'err');
     }
   }
 
@@ -1308,7 +1699,11 @@ export default function App() {
     const targetClaim = queuedClaim;
     setWanOffline(false);
     setAuthorityHealth('online');
-    if (!targetClaim) return;
+    if (!targetClaim) {
+      notifyToast('Direct WAN restored.', 'ok');
+      refreshBoard();
+      return;
+    }
 
     try {
       await runProtectedAction('Idempotent Reconnect Claim Replay', async freshTok => {
@@ -1330,12 +1725,14 @@ export default function App() {
         setStatusMessage(
           `IDEMPOTENT RECOVERY | Direct WAN restored -> Layer A returned ${result.status} (replayed: ${result.replayed}) with zero duplicate seat rows!`
         );
+        notifyToast(`✓ Step 3 Complete: WAN restored -> replayed: ${String(result.replayed)} (0 duplicate rows)!`, 'ok');
         await refreshBoard();
-        await inspectTeam(targetClaim.teamId);
+        await inspectTeam(targetClaim.teamId, true);
         await loadAudit(targetClaim.claimantToken || freshTok);
       });
     } catch (e) {
       setStatusMessage(`RETRY | ${e.message}`);
+      notifyToast(`Reconnect replay failed: ${e.message}`, 'err');
     }
   }
 
@@ -1385,16 +1782,18 @@ export default function App() {
         setQueuedClaim(null);
         setRelayedReceipt(null);
         setReplayReceipt(null);
-        await inspectTeam(demoTeam);
+        await inspectTeam(demoTeam, true);
         setWanOffline(true);
         setAuthorityHealth('wan-dropped');
         setStatusMessage(
           `THEATER ARMED | Created '${demoTeam}', issued single-use invite, switched to '${priyaSession.actorId}', and simulated WAN drop. Click Step 1B -> Step 2 -> Step 3!`
         );
+        notifyToast(`✓ WAN-Drop Theater armed on '${demoTeam}'! Click Step 1B -> Step 2 -> Step 3.`, 'ok');
         return freshTok;
       });
     } catch (e) {
       setStatusMessage(`THEATER PREP | ${e.message}`);
+      notifyToast(`Theater prep failed: ${e.message}`, 'err');
     }
   }
 
@@ -1403,12 +1802,14 @@ export default function App() {
       await runProtectedAction(`Transfer Leadership to ${newLeaderId}`, async freshTok => {
         const res = await sendPost('/api/teams/transfer', { eventId, teamId, newLeaderId }, freshTok);
         setStatusMessage(`LEADER TRANSFER | ${res.status}: '${res.leader}' now leads '${teamId}'.`);
+        notifyToast(`✓ Transferred leadership of '${teamId}' to '${res.leader}'.`, 'ok');
         await refreshBoard();
-        await inspectTeam(teamId);
+        await inspectTeam(teamId, true);
         await loadAudit(freshTok);
       });
     } catch (e) {
       setStatusMessage(`TRANSFER | ${e.message}`);
+      notifyToast(`Leader transfer failed: ${e.message}`, 'err');
     }
   }
 
@@ -1421,27 +1822,40 @@ export default function App() {
             res.leader ? ` (deterministic succession -> '${res.leader}')` : ' (final member left -> team auto-deleted)'
           }.`
         );
+        notifyToast(
+          res.leader
+            ? `Left '${teamId}' -> deterministic leader succession to '${res.leader}'.`
+            : `Left '${teamId}' -> final member departed, crew auto-deleted.`,
+          'info'
+        );
         if (res.status === 'TEAM_DELETED') setSelectedTeam(null);
-        else await inspectTeam(teamId);
+        else await inspectTeam(teamId, true);
         await refreshBoard();
         await loadAudit(freshTok);
       });
     } catch (e) {
       setStatusMessage(`LEAVE | ${e.message}`);
+      notifyToast(`Leave team failed: ${e.message}`, 'err');
     }
   }
 
-  async function handleLoadPeerNotes(overrideTok) {
+  async function handleLoadPeerNotes(overrideTok, manual = false) {
     try {
       await runProtectedAction('Sync Encrypted Layer-B Notes', async freshTok => {
         const list = await sendGetAuth(
           `/api/peer/notes?eventId=${encodeURIComponent(eventId)}`,
-          overrideTok || freshTok
+          typeof overrideTok === 'string' ? overrideTok : freshTok
         );
         setPeerNotes(list.notes || []);
+        if (manual === true) {
+          notifyToast(`Synced ${list.notes?.length || 0} encrypted Layer-B peer notes.`, 'ok');
+        }
       });
     } catch (e) {
       setStatusMessage(`LAYER B | ${e.message}`);
+      if (manual === true) {
+        notifyToast(`Sync notes failed: ${e.message}`, 'err');
+      }
     }
   }
 
@@ -1450,37 +1864,50 @@ export default function App() {
       await runProtectedAction('Seal & Broadcast Encrypted Peer Note', async freshTok => {
         const opId = 'note-' + crypto.randomUUID().slice(0, 12);
         const res = await sendPost('/api/peer/notes', { eventId, opId, text: peerNoteText, epoch: 1 }, freshTok);
-        await handleLoadPeerNotes(freshTok);
+        await handleLoadPeerNotes(freshTok, false);
         setStatusMessage(
           `LAYER B | Sealed AES-256-GCM + P-256 note (${res.transportStatus}) SHA-256=${res.digest.slice(0, 16)}...`
         );
+        notifyToast(`✓ Sealed AES-256-GCM + P-256 note (${res.digest.slice(0, 10)}...)!`, 'ok');
       });
     } catch (e) {
       setStatusMessage(`LAYER B | ${e.message}`);
+      notifyToast(`Broadcast note failed: ${e.message}`, 'err');
     }
   }
 
   async function handleRunGluePreset(preset) {
+    let localRecords = [];
+    let peerRecords = [];
+    if (preset === 'clean') {
+      localRecords = [{ id: 'slot-1', personId: 'aurora', taskId: 'api', startMin: 0, endMin: 120, epoch: 1, digest: 'd1', actorId: 'aurora' }];
+      peerRecords = [{ id: 'slot-2', personId: 'priya', taskId: 'integration', startMin: 240, endMin: 330, epoch: 1, digest: 'd2', actorId: 'priya' }];
+    } else if (preset === 'overlap') {
+      localRecords = [{ id: 'slot-1', personId: 'aurora', taskId: 'api', startMin: 0, endMin: 120, epoch: 1, digest: 'd1', actorId: 'aurora' }];
+      peerRecords = [{ id: 'slot-2', personId: 'aurora', taskId: 'schema', startMin: 60, endMin: 150, epoch: 1, digest: 'd2', actorId: 'kai' }];
+    } else {
+      localRecords = [{ id: 'note-spec', epoch: 1, digest: 'sha256-alpha', actorId: 'aurora' }];
+      peerRecords = [{ id: 'note-spec', epoch: 1, digest: 'sha256-divergent', actorId: 'kai' }];
+    }
+
+    // Instant <1ms client-side sheaf glue check + non-blocking server verification
+    const instantGlue = contextGlueOrExplain(localRecords, peerRecords);
+    setGlueResult(instantGlue);
+    setStatusMessage(`SHEAF GLUE | ${instantGlue.status} (${instantGlue.obstructions?.length || 0} obstructions).`);
+    notifyToast(
+      `Sheaf Glue (${preset}): ${instantGlue.status} (${instantGlue.obstructions?.length || 0} obstructions)`,
+      instantGlue.status === 'GLUED_CONSISTENT' ? 'ok' : 'warn'
+    );
+
+    if (wanOffline) return;
     try {
-      await runProtectedAction(`Sheaf Context Glue (${preset})`, async freshTok => {
-        let localRecords = [];
-        let peerRecords = [];
-        if (preset === 'clean') {
-          localRecords = [{ id: 'slot-1', personId: 'aurora', taskId: 'api', startMin: 0, endMin: 120, epoch: 1, digest: 'd1', actorId: 'aurora' }];
-          peerRecords = [{ id: 'slot-2', personId: 'priya', taskId: 'integration', startMin: 240, endMin: 330, epoch: 1, digest: 'd2', actorId: 'priya' }];
-        } else if (preset === 'overlap') {
-          localRecords = [{ id: 'slot-1', personId: 'aurora', taskId: 'api', startMin: 0, endMin: 120, epoch: 1, digest: 'd1', actorId: 'aurora' }];
-          peerRecords = [{ id: 'slot-2', personId: 'aurora', taskId: 'schema', startMin: 60, endMin: 150, epoch: 1, digest: 'd2', actorId: 'kai' }];
-        } else {
-          localRecords = [{ id: 'note-spec', epoch: 1, digest: 'sha256-alpha', actorId: 'aurora' }];
-          peerRecords = [{ id: 'note-spec', epoch: 1, digest: 'sha256-divergent', actorId: 'kai' }];
-        }
-        const res = await sendPost('/api/peer/glue', { localRecords, peerRecords }, freshTok);
+      const tok = await ensureToken('');
+      if (tok) {
+        const res = await sendPost('/api/peer/glue', { localRecords, peerRecords }, tok);
         setGlueResult(res);
-        setStatusMessage(`SHEAF GLUE | ${res.status} (${res.obstructions?.length || 0} obstructions).`);
-      });
-    } catch (e) {
-      setStatusMessage(`SHEAF GLUE | ${e.message}`);
+      }
+    } catch {
+      // Keep instant local glue result if server unreachable
     }
   }
 
@@ -1494,9 +1921,14 @@ export default function App() {
         setStatusMessage(
           `RACE ORACLE | 50 simultaneous claimants -> ${res.committed} winner (${res.winner}), ${res.rejected} HTTP 409 TEAM_FULL in ${res.elapsedMs}ms (oversize=${res.invariants.oversize}).`
         );
+        notifyToast(
+          `★ 50x Race Complete in ${res.elapsedMs}ms: 1 winner (${res.winner}), ${res.rejected} x 409 TEAM_FULL (oversize=0)!`,
+          'ok'
+        );
       } catch (e) {
         if (e?.status === 401 || e?.message === 'UNAUTHORIZED') throw e;
         setStatusMessage(`RACE ORACLE | ${e.message}`);
+        notifyToast(`50x Race failed: ${e.message}`, 'err');
       } finally {
         setRunningRace(false);
       }
@@ -1521,8 +1953,10 @@ export default function App() {
         maxMs: sorted[sorted.length - 1]
       });
       setStatusMessage(`LATENCY PROBE | 5x /board?limit=100 median=${sorted[2]}ms (min=${sorted[0]}ms, max=${sorted[4]}ms).`);
+      notifyToast(`✓ 5x Live Board Probe: median ${sorted[2]} ms (min ${sorted[0]} ms, max ${sorted[4]} ms)`, 'ok');
     } catch (e) {
       setStatusMessage(`LATENCY PROBE | ${e.message}`);
+      notifyToast(`Latency probe failed: ${e.message}`, 'err');
     } finally {
       setProbingLatency(false);
     }
@@ -1531,6 +1965,8 @@ export default function App() {
   function handleExecuteWalkthroughStep(step) {
     if (step.scenarioKey) {
       selectScenario(step.scenarioKey);
+    } else {
+      notifyToast(`Walkthrough ${step.time}: ${step.title}`, 'info');
     }
     setActiveView(step.targetView);
   }
@@ -1546,13 +1982,18 @@ export default function App() {
     const next = THEME_OPTIONS[(idx + 1) % THEME_OPTIONS.length];
     setErgonomics(s => ({ ...s, theme: next.id }));
     setStatusMessage(`THEME | Switched visual surface to '${next.label}'.`);
+    notifyToast(`Theme switched to ${next.label}`, 'info');
   }
 
   function togglePanoramicWorkbench() {
-    setErgonomics(s => {
-      const nextDensity = s.density === 'panoramic-3' ? 'calm-focus' : 'panoramic-3';
-      return { ...s, density: nextDensity };
-    });
+    const nextDensity = ergonomics.density === 'panoramic-3' ? 'calm-focus' : 'panoramic-3';
+    setErgonomics(s => ({ ...s, density: nextDensity }));
+    notifyToast(
+      nextDensity === 'panoramic-3'
+        ? '3-Panel Panoramic Workbench active (41% / 29% / 29%).'
+        : 'Returned to Calm-Focus single-view layout.',
+      'info'
+    );
   }
 
   // Global Keyboard Shortcuts (Guarded against inputs, isContentEditable & open [role="dialog"])
@@ -1650,6 +2091,17 @@ export default function App() {
     [selectScenario, switchPersona]
   );
 
+  const panoramaPartialPreview = useMemo(
+    () =>
+      computePartialTaskPreview(
+        tasks,
+        teamPeople,
+        Math.max(60, Math.round(Number(horizonHours || 4) * 60)),
+        plan
+      ),
+    [tasks, teamPeople, horizonHours, plan]
+  );
+
   const layoutClass =
     ergonomics.density === 'panoramic-3'
       ? 'is-panoramic-3'
@@ -1662,6 +2114,35 @@ export default function App() {
       <a href="#main-workspace" className="skip-link no-print">
         Skip to main content
       </a>
+
+      {/* High-Visibility Center-Top Toast Pill for Low-Vision Ergonomics */}
+      {toast && (
+        <div
+          key={toast.key}
+          role="status"
+          aria-live="polite"
+          className={`center-toast-banner toast-${toast.tone || 'info'} no-print`}
+        >
+          <span className="center-toast-icon" aria-hidden="true">
+            {toast.tone === 'ok' ? (
+              <CheckCircleIcon size={18} />
+            ) : toast.tone === 'warn' || toast.tone === 'err' ? (
+              <AlertTriangleIcon size={18} />
+            ) : (
+              '●'
+            )}
+          </span>
+          <span className="center-toast-text">{toast.message}</span>
+          <button
+            type="button"
+            className="center-toast-dismiss"
+            onClick={() => setToast(null)}
+            aria-label="Dismiss notification"
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {/* Single-Row Spatial Optical Glass Top Header */}
       <header className="top-command-header top-header no-print" role="banner">
@@ -1708,7 +2189,10 @@ export default function App() {
                   aria-controls={`panel-${tab.id}`}
                   tabIndex={selected ? 0 : -1}
                   className={`nav-tab ${selected ? 'active' : ''}`}
-                  onClick={() => setActiveView(tab.id)}
+                  onClick={() => {
+                    setActiveView(tab.id);
+                    notifyToast(`View ${tab.num}: ${tab.label}`, 'info');
+                  }}
                   onKeyDown={e => handleTabListKeyDown(e, idx)}
                   title={`${tab.label} (${tab.hotkey})`}
                 >
@@ -1764,7 +2248,10 @@ export default function App() {
           <button
             type="button"
             className="network-coords-pill"
-            onClick={() => setActiveView('authority')}
+            onClick={() => {
+              setActiveView('authority');
+              notifyToast('Opened View 3: Live Seat Authority & Peer Mesh.', 'info');
+            }}
             aria-label={`Three-coordinate network status. Authority Path: ${
               wanOffline ? 'WAN Dropped' : authorityHealth === 'online' ? 'Direct SQLite Online' : 'Checking'
             }. Encrypted Peer Mesh: Ready via relay-mateo. Local Durable Outbox: ${
@@ -1843,6 +2330,26 @@ export default function App() {
         </div>
       </header>
 
+      {/* Prominent Warning Banner if Local Authority Server (:8788) is Unreachable */}
+      {authorityHealth === 'unreachable' && !wanOffline && (
+        <div role="alert" className="offline-server-banner no-print">
+          <div className="offline-server-copy">
+            <AlertTriangleIcon size={18} />
+            <div>
+              <strong>Local SQLite Authority Server (:8788) Unreachable:</strong> Client-side critical-path DAG &amp; complementary builder simulation continue to work in <code>&lt;2ms</code>, while live SQLite seat mutations await server connection.
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn btn-primary btn-compact"
+            disabled={retryingServer}
+            onClick={retryServerConnection}
+          >
+            <RefreshIcon size={14} /> {retryingServer ? 'Reconnecting...' : 'Retry Server (:8788)'}
+          </button>
+        </div>
+      )}
+
       {/* Main Workspace (Supports Calm-Focus, 2-Panel Split Studio, OR 3-Panel Panorama 41/29/29) */}
       <div className={`workspace-layout no-print ${layoutClass}`}>
         <main
@@ -1870,10 +2377,13 @@ export default function App() {
                 setPageSize(sz);
                 setPageIndex(0);
               }}
-              onRefreshBoard={refreshBoard}
+              onRefreshBoard={() => refreshBoard(true)}
               selectedTeam={selectedTeam}
               onInspectTeam={inspectTeam}
-              onCloseInspect={() => setSelectedTeam(null)}
+              onCloseInspect={() => {
+                setSelectedTeam(null);
+                notifyToast('Closed live roster inspector.', 'info');
+              }}
               onCheckFitCrew={handleCheckFitCrew}
               onRequestSeatForTeam={handleRequestSeatForTeam}
               onSendBuilderToArchitect={handleSendBuilderToArchitect}
@@ -1893,8 +2403,13 @@ export default function App() {
               solving={solving}
               lockingPlan={lockingPlan}
               onToggleBuilderInCrew={handleToggleBuilderInCrew}
+              onVerifyPersonSkill={handleVerifyPersonSkill}
               onLockPlanAndMintInvite={handleLockPlanAndMintInvite}
-              onInspectDagWipe={() => setActiveView('architect')}
+              onInspectDagWipe={() => {
+                setActiveView('architect');
+                notifyToast('Opened Mission Planner & Before/After DAG Wipe (View 2).', 'info');
+              }}
+              onNotify={notifyToast}
             />
           )}
 
@@ -1925,7 +2440,11 @@ export default function App() {
               onAddCandidateToTeam={handleAddCandidateToTeam}
               onVerifyPersonSkill={handleVerifyPersonSkill}
               onLockPlanAndMintInvite={handleLockPlanAndMintInvite}
-              onOpenCharterExport={() => setCharterOpen(true)}
+              onOpenCharterExport={() => {
+                setCharterOpen(true);
+                notifyToast('Opened #FFFFFF Crew Feasibility Charter & Seat Receipt.', 'info');
+              }}
+              onNotify={notifyToast}
             />
           )}
 
@@ -1948,7 +2467,18 @@ export default function App() {
               onTransferLeader={handleTransferLeader}
               onLeaveTeam={handleLeaveTeam}
               wanOffline={wanOffline}
-              onToggleWanOffline={() => setWanOffline(v => !v)}
+              onToggleWanOffline={() => {
+                const nextOff = !wanOffline;
+                setWanOffline(nextOff);
+                setAuthorityHealth(nextOff ? 'wan-dropped' : 'online');
+                notifyToast(
+                  nextOff
+                    ? 'Direct WAN simulated offline -> claims will queue to Local Outbox.'
+                    : 'Direct WAN restored -> connected to Layer-A SQLite.',
+                  nextOff ? 'warn' : 'ok'
+                );
+                if (!nextOff) refreshBoard();
+              }}
               queuedClaim={queuedClaim}
               relayedReceipt={relayedReceipt}
               replayReceipt={replayReceipt}
@@ -1959,13 +2489,17 @@ export default function App() {
               onChangePeerNoteText={setPeerNoteText}
               peerNotes={peerNotes}
               onSendPeerNote={handleSendPeerNote}
-              onLoadPeerNotes={handleLoadPeerNotes}
+              onLoadPeerNotes={() => handleLoadPeerNotes(undefined, true)}
               glueResult={glueResult}
               onRunGluePreset={handleRunGluePreset}
               auditRows={auditRows}
-              onLoadAudit={loadAudit}
-              onOpenCharterExport={() => setCharterOpen(true)}
+              onLoadAudit={() => loadAudit(undefined, true)}
+              onOpenCharterExport={() => {
+                setCharterOpen(true);
+                notifyToast('Opened #FFFFFF Crew Feasibility Charter & Seat Receipt.', 'info');
+              }}
               onClaimAsFreshCandidate={handleClaimAsFreshCandidate}
+              onNotify={notifyToast}
             />
           )}
 
@@ -1979,6 +2513,7 @@ export default function App() {
               probingLatency={probingLatency}
               onRunLatencyProbe={handleRunLatencyProbe}
               onExecuteWalkthroughStep={handleExecuteWalkthroughStep}
+              onNotify={notifyToast}
             />
           )}
         </main>
@@ -2015,6 +2550,7 @@ export default function App() {
                 {tasks.map(t => {
                   const cp = (plan?.criticalPath || []).find(m => m.taskId === t.id);
                   const asg = (plan?.witness?.assignments || []).find(a => a.taskId === t.id);
+                  const prevAsg = asg || panoramaPartialPreview.get(t.id) || null;
                   return (
                     <div key={t.id} className="mini-dag-row">
                       <div className="row-between small-copy">
@@ -2026,7 +2562,9 @@ export default function App() {
                       <div className="small-copy muted-copy">
                         {asg
                           ? `${asg.evidence === 'unknown' ? '? ' : '✓ '}${asg.personId} [${asg.startMin}..${asg.endMin}m]`
-                          : 'Unassigned / Blocked'}
+                          : prevAsg
+                            ? `${prevAsg.evidence === 'unknown' ? '? ' : '✓ '}${prevAsg.personId} (Ready ${prevAsg.startMin}..${prevAsg.endMin}m)`
+                            : `Blocked · Needs ${t.skill}`}
                       </div>
                     </div>
                   );
@@ -2037,14 +2575,20 @@ export default function App() {
                 <button
                   type="button"
                   className="btn btn-secondary btn-compact"
-                  onClick={() => setActiveView('architect')}
+                  onClick={() => {
+                    setActiveView('architect');
+                    notifyToast('Opened Mission Planner (View 2).', 'info');
+                  }}
                 >
                   Open Architect
                 </button>
                 <button
                   type="button"
                   className="btn btn-ghost btn-compact"
-                  onClick={() => setCharterOpen(true)}
+                  onClick={() => {
+                    setCharterOpen(true);
+                    notifyToast('Opened Crew Charter Preview.', 'info');
+                  }}
                 >
                   <FileTextIcon size={14} /> Charter
                 </button>
@@ -2063,7 +2607,11 @@ export default function App() {
               </div>
               <div className="row-between top-gap-xs">
                 <h3 className="card-subtitle">Live Board &amp; Ledger</h3>
-                <button type="button" className="btn btn-ghost btn-compact" onClick={() => loadAudit()}>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-compact"
+                  onClick={() => loadAudit(undefined, true)}
+                >
                   <RefreshIcon size={14} /> Sync
                 </button>
               </div>
@@ -2240,6 +2788,7 @@ export default function App() {
         teamPeople={teamPeople}
         plan={plan}
         issuedInvite={issuedInvite}
+        onNotify={notifyToast}
       />
     </div>
   );

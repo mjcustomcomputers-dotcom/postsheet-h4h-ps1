@@ -116,7 +116,8 @@ export default function CrewCharterExportModal({
   tasks,
   teamPeople,
   plan,
-  issuedInvite
+  issuedInvite,
+  onNotify
 }) {
   const docRef = useRef(null);
   const [copyState, setCopyState] = useState('');
@@ -207,27 +208,43 @@ export default function CrewCharterExportModal({
     return lines.join('\n');
   }
 
-  async function handleCopyWhitePaperHtml() {
+  async function copyWithFallback(text) {
     try {
-      await navigator.clipboard.writeText(buildWhitePaperHtml());
-      setCopyState('html');
-      setTimeout(() => setCopyState(''), 2200);
+      await navigator.clipboard.writeText(text);
+      return true;
     } catch {
-      setCopyState('err');
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        return true;
+      } catch {
+        return false;
+      }
     }
+  }
+
+  async function handleCopyWhitePaperHtml() {
+    const ok = await copyWithFallback(buildWhitePaperHtml());
+    setCopyState(ok ? 'html' : 'err');
+    setTimeout(() => setCopyState(''), 2200);
+    if (ok) onNotify?.('✓ Copied deterministic #FFFFFF White-Paper Charter HTML!', 'ok');
   }
 
   async function handleCopyPlainText() {
-    try {
-      await navigator.clipboard.writeText(buildPlainTextReceipt());
-      setCopyState('text');
-      setTimeout(() => setCopyState(''), 2200);
-    } catch {
-      setCopyState('err');
-    }
+    const ok = await copyWithFallback(buildPlainTextReceipt());
+    setCopyState(ok ? 'text' : 'err');
+    setTimeout(() => setCopyState(''), 2200);
+    if (ok) onNotify?.('✓ Copied plain-text Crew Charter & Seat Receipt!', 'ok');
   }
 
   function handlePrintWhitePaper() {
+    onNotify?.('Opening browser Print / Save as #FFFFFF PDF dialog...', 'info');
     if (typeof window !== 'undefined' && typeof window.print === 'function') {
       window.print();
     }
