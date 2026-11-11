@@ -1,16 +1,17 @@
 # Attribution: Pre-Existing Concepts vs. New Hack4Hack PS1 Implementation
 
-## Owner & Conceptual Lineage
-- **Applicant:** Melvin Jackson (Founder, Post Sheet — `https://postsheet.org`).
-- **Conceptual Origin:** Architectural patterns adapted in this repository—*Purpose Before Positioning*, four-valued `{support, refute}` evidence classification, *Wildcard Omega* guard partitioning, *P9R Minimum-Sufficient* question suppression, and dual-layer authority vs. local-first peer continuity—originate from the applicant's own *Post Sheet / Synchronicity* research framework (including MIT Solve 2027 submission #121080).
+## Owner, Conceptual Lineage, and Ownership Retention
+- **Applicant:** Melvin Jackson (Founder, Post Sheet: `https://postsheet.org`).
+- **Ownership Notice:** Submitted for evaluation in the Hack4Hack Crew Hiring Challenge 2026 under Hack4Hack terms, which retain full applicant intellectual property ownership. All commercial rights to underlying Post Sheet and Synchronicity architectures remain with Melvin Jackson.
+- **Conceptual Origin:** Architectural patterns adapted in this repository (purpose-first discovery before positioning, Belnap four-valued `{support, refute}` evidence classification, Wildcard Omega guard partitioning, minimum-sufficient question suppression, and dual-layer authority vs. local-first peer continuity) originate from the applicant's own *Post Sheet / Synchronicity* research framework (including MIT Solve 2027 submission #121080).
 
-## Clean-Room Hack4Hack PS1 Engineering Delta (Built November 10–11, 2026)
-All source modules, SQLite schemas, cryptographic adapters, React UI components, and test suites in this repository were newly authored and verified specifically for **Hack4Hack Crew Hiring Challenge 2026 — PS1**:
-- `src/authority.mjs`: Event-scoped SQLite WAL `BEGIN IMMEDIATE` membership authority, 50-way final-seat contention guard, single-use SHA-256 invite digests, leader succession, auto-deletion, and transactional audit log.
-- `src/synchronicity-solvers.mjs` & `src/goal-planner.mjs`: Directed DAG backward-slack (EDD) scheduler, Wildcard Omega quantifier partition, VOI question selector, Hall capacity-deficit repair solver, complementary UTC baton-pass recommender, and overlap obstruction checker.
-- `src/peer-envelope.mjs`, `src/peer-receipts.mjs`, `src/peer-relay.mjs`, `src/synchronicity-ext.mjs`: `AES-256-GCM` + `P-256` signed peer collaboration, durable SQLite replay ledger, `scrypt` account authentication, leader transfer, and WAN-drop peer-relayed seat claims.
-- `web/src/App.jsx` & `web/src/claim-operation.js`: Low-luminance accessible React workstation, SSE live board, SHA-256 idempotent claim retry storage, and interactive WAN-drop / 50-way race workspace.
-- `tests/*` & `scripts/*`: 102 automated checks (97 suite assertions + 5 load-gate checks), 12-query independent Python SQLite race oracle, 10,000-user / 2,000-team deterministic seed, and 100-client `p95` latency benchmark.
+## Clean-Room Hack4Hack PS1 Engineering Delta (Built November 10-11, 2026)
+All source modules, SQLite schemas, cryptographic adapters, React UI components, Docker artifacts, and test suites in this repository were newly authored and verified specifically for **Hack4Hack Crew Hiring Challenge 2026 (PS1)**:
+- `src/authority.mjs`: Event-scoped SQLite WAL `BEGIN IMMEDIATE` membership authority, defensive pragmas, 50-way final-seat contention guard, single-use SHA-256 invite digests, leader succession, auto-deletion, and bounded transactional audit log.
+- `src/synchronicity-solvers.mjs` and `src/goal-planner.mjs`: Directed DAG backward-slack (Lawler/Jackson EDD) scheduler with event-point branching, Wildcard Omega quantifier partition, Shannon VOI question selector, parallel-only Hall capacity-deficit repair solver, merged interval-union overlap calculator, complementary UTC baton-pass recommender, and overlap obstruction checker.
+- `src/peer-envelope.mjs`, `src/peer-receipts.mjs`, `src/peer-relay.mjs`, `src/synchronicity-ext.mjs`, and `src/server.mjs`: Per-event `HKDF-SHA256` derived `AES-256-GCM` and `P-256` signed peer collaboration (`0` plaintext notes on disk), `WITHOUT ROWID` durable SQLite replay ledger, non-blocking `scrypt` account authentication, leader transfer, scoped relay warrants (`h4h-ps1-relay-warrant`) for WAN-drop peer-relayed seat claims, and wire-level path-traversal / static-asset confinement.
+- `web/src/*`: Low-luminance accessible React 19 workstation (`60%` 3-column desktop panorama down to `360px` mobile), `0`-idle-frame UTC handoff horizon, SSE live board, SHA-256 idempotent claim retry storage (`web/src/claim-operation.js`), printable white-paper plan exporter, and interactive WAN-drop / 50-way race workspace.
+- `tests/*` and `scripts/*`: 170 automated suite assertions (`59` kernel gate checks including a 12-query independent Python SQLite race oracle, and `111` Node cryptographic, relay, UI retry, solver, and `SEC01..SEC12` security subtests), deterministic 10,000-user / 2,000-team seed, and 100-client `p95` latency benchmark.
 
-## AI Assistance Disclosure
-AI collaboration (Google Gemini and OpenAI ChatGPT) was used under the applicant's direct architectural specification, adversarial testing, and local Linux verification in accordance with Hack4Hack rules.
+## AI Collaboration Disclosure
+AI coding tools (Google Gemini and OpenAI ChatGPT) were used under the applicant's direct architectural specification, mathematical formulation, adversarial testing, and local verification in accordance with Hack4Hack challenge rules.

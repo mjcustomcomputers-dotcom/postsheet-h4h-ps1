@@ -28,6 +28,6 @@ ENV NODE_ENV=production \
 
 EXPOSE 8788
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD ["node", "-e", "fetch('http://127.0.0.1:8788/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+  CMD ["sh", "-c", "node -e \"fetch('http://127.0.0.1:'+(process.env.PORT||process.env.PS1_PORT||8788)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
 
-CMD ["sh", "-c", "DB_TARGET=\"${PS1_SQLITE_PATH:-/data/seed-event.sqlite}\"; DB_DIR=$(dirname \"$DB_TARGET\"); if [ ! -w \"$DB_DIR\" ]; then DB_TARGET=/tmp/seed-event.sqlite; fi; if [ ! -f \"$DB_TARGET\" ]; then cp /build-seed/seed-event.sqlite \"$DB_TARGET\" && chmod 0600 \"$DB_TARGET\"; fi; PS1_SQLITE_PATH=\"$DB_TARGET\" PS1_AUTH_SECRET=\"${PS1_AUTH_SECRET:-$(node -e \"process.stdout.write(require('node:crypto').randomBytes(32).toString('hex'))\")}\" exec node src/server.mjs"]
+CMD ["sh", "-c", "DB_TARGET=\"${PS1_SQLITE_PATH:-/data/seed-event.sqlite}\"; DB_DIR=$(dirname \"$DB_TARGET\"); if [ ! -w \"$DB_DIR\" ]; then DB_TARGET=/tmp/seed-event.sqlite; fi; if [ ! -f \"$DB_TARGET\" ]; then cp /build-seed/seed-event.sqlite \"$DB_TARGET\" && chmod 0600 \"$DB_TARGET\"; fi; PS1_PORT=\"${PORT:-${PS1_PORT:-8788}}\" PS1_SQLITE_PATH=\"$DB_TARGET\" PS1_AUTH_SECRET=\"${PS1_AUTH_SECRET:-$(node -e \"process.stdout.write(require('node:crypto').randomBytes(32).toString('hex'))\")}\" exec node src/server.mjs"]

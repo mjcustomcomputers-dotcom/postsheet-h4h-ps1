@@ -1,12 +1,12 @@
 {
   "project": "Post Sheet | Ability & Purpose Crew Network (H4H-PS1)",
-  "generatedAt": "2026-11-11T13:01:41.612Z",
+  "generatedAt": "2026-11-11T13:41:22.019Z",
   "fileCount": 81,
   "files": [
     {
       "path": ".github/workflows/ci.yml",
-      "bytes": 1751,
-      "sha256": "11c8230e17b02788a12f7ac61fdb1aaa299bffa793173337d2c3b77b0eb83a21"
+      "bytes": 2956,
+      "sha256": "9dcc6695c6318056aa7eee403d734e07b90afffc8af47d9b5ab7b17d04ff8dc1"
     },
     {
       "path": ".gitignore",
@@ -15,28 +15,28 @@
     },
     {
       "path": "DESIGN.md",
-      "bytes": 4080,
-      "sha256": "accd8436ec265f3c9a1681c4dafb9132f40cd3c6c7dfdc5d8787fe22c69508e1"
+      "bytes": 4492,
+      "sha256": "07b1deca83150e55702de570c9da9bcfee627716e293d560a8f1a05b4c24d74c"
     },
     {
       "path": "Dockerfile",
-      "bytes": 1500,
-      "sha256": "ecd5da7d3cd277b3c38518aaaca1d3612719dda9849d5b39d6d4d3888e0c84a8"
+      "bytes": 1596,
+      "sha256": "2b5a48fdfd6cb7d9127d04e0f52481fca88a439276cc6904d0dc3ea403c6b6cf"
     },
     {
       "path": "LOAD_REPORT.md",
-      "bytes": 1143,
-      "sha256": "6239adb8be0f05bed510ffdf95f8e556c8b4ca7dddeb4b10bc541ee08e9619cd"
+      "bytes": 6962,
+      "sha256": "e7ef7eb6fb29f9e29c0c21213542cc77d561c052e622284625cc054dff9831ee"
     },
     {
       "path": "PREEXISTING_WORK.md",
-      "bytes": 2351,
-      "sha256": "0ed2b0a3dc129b472f8fea13112cdb21f665af9a267713bfc0b31e35b9c1455c"
+      "bytes": 3296,
+      "sha256": "e592b5a46a58576724cf82f2a814d33903ac4568f77ac66ac9ebc36829edf132"
     },
     {
       "path": "README.md",
-      "bytes": 1965,
-      "sha256": "c98281a302ba2420b3024b80b23f65569ea09862fbb2cc0577b71ed1b017181c"
+      "bytes": 35362,
+      "sha256": "916760e45101dce4d9d2a62519d11b58b726854abf59ec78b5dd217d8d0aaedf"
     },
     {
       "path": "SECURITY.md",
