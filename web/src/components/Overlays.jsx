@@ -5,6 +5,13 @@ import {
   SCALE_OPTIONS,
   DENSITY_OPTIONS,
   MOTION_OPTIONS,
+  FLASHLIGHT_TINTS,
+  FLASHLIGHT_POWERS,
+  CVD_MODE_OPTIONS,
+  STAGE_DIRECTOR_OPTIONS,
+  LIGHT_SURFACE_MODES,
+  BLUE_GLARE_OPTIONS,
+  DISABILITY_PRESETS,
   detectOsDefaults
 } from '../ergonomics.js';
 import {
@@ -68,27 +75,49 @@ export function ActingAsMenuPopover({
   onLogout
 }) {
   const menuRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const handingOffRef = useRef(false);
 
   useEffect(() => {
     if (!open || typeof document === 'undefined') return undefined;
+    handingOffRef.current = false;
+    const prevFocus = document.activeElement;
+    const focusTimer = setTimeout(() => {
+      const firstFocusable = menuRef.current?.querySelector(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (firstFocusable) firstFocusable.focus();
+      else menuRef.current?.focus();
+    }, 10);
+
     const onKey = e => {
       if (e.key === 'Escape') {
+        e.preventDefault();
         e.stopPropagation();
-        onClose();
+        onCloseRef.current();
+        const trigger =
+          document.querySelector('[data-acting-trigger]') ||
+          (prevFocus && prevFocus.isConnected && prevFocus !== document.body ? prevFocus : null);
+        trigger?.focus();
       }
     };
     const onPointerDown = e => {
       if (menuRef.current && !menuRef.current.contains(e.target) && !e.target.closest?.('[data-acting-trigger]')) {
-        onClose();
+        onCloseRef.current();
       }
     };
     document.addEventListener('keydown', onKey);
     document.addEventListener('mousedown', onPointerDown);
     return () => {
+      clearTimeout(focusTimer);
       document.removeEventListener('keydown', onKey);
       document.removeEventListener('mousedown', onPointerDown);
+      if (!handingOffRef.current && menuRef.current?.contains(document.activeElement)) {
+        document.querySelector('[data-acting-trigger]')?.focus();
+      }
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
@@ -102,8 +131,10 @@ export function ActingAsMenuPopover({
   return (
     <div
       ref={menuRef}
+      tabIndex={-1}
       role="dialog"
       aria-label="Switch demo profile or account session"
+      data-popover-owner="acting"
       className="ide-popover acting-popover no-print"
     >
       <div className="ide-popover-section">
@@ -137,6 +168,8 @@ export function ActingAsMenuPopover({
           type="button"
           className="btn btn-secondary btn-compact"
           onClick={() => {
+            handingOffRef.current = true;
+            document.querySelector('[data-acting-trigger]')?.focus();
             onClose();
             onOpenAuthModal();
           }}
@@ -168,27 +201,49 @@ export function DisplayComfortPopover({
   onOpenFullStudio
 }) {
   const popRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const handingOffRef = useRef(false);
 
   useEffect(() => {
     if (!open || typeof document === 'undefined') return undefined;
+    handingOffRef.current = false;
+    const prevFocus = document.activeElement;
+    const focusTimer = setTimeout(() => {
+      const firstFocusable = popRef.current?.querySelector(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (firstFocusable) firstFocusable.focus();
+      else popRef.current?.focus();
+    }, 10);
+
     const onKey = e => {
       if (e.key === 'Escape') {
+        e.preventDefault();
         e.stopPropagation();
-        onClose();
+        onCloseRef.current();
+        const trigger =
+          document.querySelector('[data-display-trigger]') ||
+          (prevFocus && prevFocus.isConnected && prevFocus !== document.body ? prevFocus : null);
+        trigger?.focus();
       }
     };
     const onPointerDown = e => {
       if (popRef.current && !popRef.current.contains(e.target) && !e.target.closest?.('[data-display-trigger]')) {
-        onClose();
+        onCloseRef.current();
       }
     };
     document.addEventListener('keydown', onKey);
     document.addEventListener('mousedown', onPointerDown);
     return () => {
+      clearTimeout(focusTimer);
       document.removeEventListener('keydown', onKey);
       document.removeEventListener('mousedown', onPointerDown);
+      if (!handingOffRef.current && popRef.current?.contains(document.activeElement)) {
+        document.querySelector('[data-display-trigger]')?.focus();
+      }
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
@@ -201,8 +256,10 @@ export function DisplayComfortPopover({
   return (
     <div
       ref={popRef}
+      tabIndex={-1}
       role="dialog"
       aria-label="Display and accessibility settings"
+      data-popover-owner="display"
       className="ide-popover display-popover no-print"
     >
       {/* Essential Control 1: Text & FOV Scale */}
@@ -240,34 +297,74 @@ export function DisplayComfortPopover({
       </div>
 
       {/* Essential Control 2: Contrast & Surface */}
-      <div className="ide-popover-section">
-        <div className="ide-popover-label">2. Contrast &amp; Surface</div>
-        <div className="ide-seg-row" role="group" aria-label="Contrast and surface theme">
-          {[
-            { id: 'h4h-glass', label: 'Moonlight Dark' },
-            { id: 'aaa-contrast', label: 'High Contrast' },
-            { id: 'warm-paper', label: 'Moonlit Pearl (Light)' }
-          ].map(th => {
-            const active = settings.theme === th.id;
-            return (
-              <button
-                key={th.id}
-                type="button"
-                aria-pressed={active}
-                className={`ide-seg-btn ${active ? 'active' : ''}`}
-                onClick={() => patch({ theme: th.id })}
-              >
-                {th.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      <section className="ide-popover-section popover-section" aria-labelledby="heading-contrast-surface">
+        <h3 id="heading-contrast-surface" className="ide-popover-label popover-section-title">
+          2. CONTRAST &amp; SURFACE
+        </h3>
 
-      {/* Essential Control 3: Layout & Motion */}
+        <div className="ide-seg-row popover-pill-grid-3" role="group" aria-label="Primary theme mode">
+          <button
+            type="button"
+            className={`ide-seg-btn popover-pill ${settings.theme !== 'warm-paper' && settings.theme !== 'light' && settings.theme !== 'aaa-contrast' ? 'active is-active' : ''}`}
+            aria-pressed={settings.theme !== 'warm-paper' && settings.theme !== 'light' && settings.theme !== 'aaa-contrast'}
+            onClick={() => patch({ theme: 'h4h-glass', blueGlareShield: 'matte-balanced', lightSurface: 'moonlit-pearl' })}
+          >
+            Moonlight Dark
+          </button>
+
+          <button
+            type="button"
+            className={`ide-seg-btn popover-pill ${settings.theme === 'aaa-contrast' ? 'active is-active' : ''}`}
+            aria-pressed={settings.theme === 'aaa-contrast'}
+            onClick={() => patch({ theme: 'aaa-contrast', blueGlareShield: 'matte-balanced', lightSurface: 'moonlit-pearl' })}
+          >
+            High Contrast
+          </button>
+
+          <button
+            type="button"
+            className={`ide-seg-btn popover-pill ${(settings.theme === 'warm-paper' || settings.theme === 'light') && (settings.lightSurface || 'moonlit-pearl') === 'moonlit-pearl' && (settings.blueGlareShield || 'matte-balanced') === 'matte-balanced' ? 'active is-active' : ''}`}
+            aria-pressed={(settings.theme === 'warm-paper' || settings.theme === 'light') && (settings.lightSurface || 'moonlit-pearl') === 'moonlit-pearl' && (settings.blueGlareShield || 'matte-balanced') === 'matte-balanced'}
+            onClick={() => patch({ theme: 'warm-paper', lightSurface: 'moonlit-pearl', blueGlareShield: 'matte-balanced' })}
+            title={LIGHT_SURFACE_MODES[0].description}
+          >
+            Moonlit Pearl (Light)
+          </button>
+        </div>
+
+        {/* Optical Glare & Ambient Compensation Row */}
+        <div
+          className="ide-seg-row popover-pill-grid-2"
+          role="group"
+          aria-label="Light glare protection and outdoor sunlight modes"
+          style={{ marginTop: '6px' }}
+        >
+          <button
+            type="button"
+            className={`ide-seg-btn popover-pill ${(settings.theme === 'warm-paper' || settings.theme === 'light') && (settings.lightSurface === 'blue-glare-shield' || settings.blueGlareShield === 'shield-max') ? 'active is-active' : ''}`}
+            aria-pressed={(settings.theme === 'warm-paper' || settings.theme === 'light') && (settings.lightSurface === 'blue-glare-shield' || settings.blueGlareShield === 'shield-max')}
+            onClick={() => patch({ theme: 'warm-paper', lightSurface: 'blue-glare-shield', blueGlareShield: 'shield-max' })}
+            title={LIGHT_SURFACE_MODES[1].description}
+          >
+            Blue-Glare Shield (-34% Blue)
+          </button>
+
+          <button
+            type="button"
+            className={`ide-seg-btn popover-pill ${(settings.theme === 'warm-paper' || settings.theme === 'light') && (settings.lightSurface === 'daylight-sun' || settings.blueGlareShield === 'sunlight-day') ? 'active is-active' : ''}`}
+            aria-pressed={(settings.theme === 'warm-paper' || settings.theme === 'light') && (settings.lightSurface === 'daylight-sun' || settings.blueGlareShield === 'sunlight-day')}
+            onClick={() => patch({ theme: 'warm-paper', lightSurface: 'daylight-sun', blueGlareShield: 'sunlight-day' })}
+            title={LIGHT_SURFACE_MODES[2].description}
+          >
+            Daylight Sun (Outdoor)
+          </button>
+        </div>
+      </section>
+
+      {/* Essential Control 3: CRR Layout & Affordalume */}
       <div className="ide-popover-section">
-        <div className="ide-popover-label">3. Layout &amp; Motion</div>
-        <div className="ide-seg-grid" role="group" aria-label="Workspace layout and motion">
+        <div className="ide-popover-label">3. CRR Layout &amp; Affordalume</div>
+        <div className="ide-seg-grid" role="group" aria-label="CRR layout and Affordalume">
           <button
             type="button"
             aria-pressed={settings.density === 'panoramic-3'}
@@ -290,7 +387,7 @@ export function DisplayComfortPopover({
             className={`ide-seg-btn ${settings.motion !== 'off' ? 'active' : ''}`}
             onClick={() => patch({ motion: 'spring' })}
           >
-            Reactive Light
+            Affordalume Shading
           </button>
           <button
             type="button"
@@ -302,11 +399,76 @@ export function DisplayComfortPopover({
           </button>
           <button
             type="button"
-            aria-pressed={settings.upperKeyMirror !== false}
-            className={`ide-seg-btn span-full ${settings.upperKeyMirror !== false ? 'active' : ''}`}
-            onClick={() => patch({ upperKeyMirror: settings.upperKeyMirror === false })}
+            aria-pressed={settings.upperKeyMirror === true}
+            className={`ide-seg-btn span-full ${settings.upperKeyMirror === true ? 'active' : ''}`}
+            onClick={() => patch({ upperKeyMirror: settings.upperKeyMirror !== true })}
           >
-            Upper Shortcut Mirror: {settings.upperKeyMirror !== false ? 'Visible' : 'Hidden'}
+            Shortcut Reference Bar: {settings.upperKeyMirror === true ? 'Visible' : 'Collapsed'}
+          </button>
+        </div>
+      </div>
+
+      <div className="ide-popover-section">
+        <span className="ide-popover-label">4. Flashlight Shade &amp; Clarity Aids</span>
+        <div className="ide-seg-grid two-col">
+          {FLASHLIGHT_TINTS.slice(0, 4).map(tint => {
+            const active = (settings.flashlightTint || 'emerald') === tint.id;
+            return (
+              <button
+                key={tint.id}
+                type="button"
+                aria-pressed={active}
+                className={`ide-seg-btn ${active ? 'active' : ''}`}
+                onClick={() => patch({ flashlightTint: tint.id, crrMode: 'crr' })}
+              >
+                <span className="swatch-dot" style={{ background: tint.hex }} aria-hidden="true" />
+                <span>{tint.shortLabel}</span>
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            aria-pressed={settings.taskGuide !== false}
+            className={`ide-seg-btn ${settings.taskGuide !== false ? 'active' : ''}`}
+            onClick={() => patch({ taskGuide: settings.taskGuide === false })}
+          >
+            Step Guide: {settings.taskGuide !== false ? 'On' : 'Off'}
+          </button>
+          <button
+            type="button"
+            aria-pressed={settings.textSpacing === 'wcag-1412'}
+            className={`ide-seg-btn ${settings.textSpacing === 'wcag-1412' ? 'active' : ''}`}
+            onClick={() => patch({ textSpacing: settings.textSpacing === 'wcag-1412' ? 'standard' : 'wcag-1412' })}
+          >
+            SC 1.4.12 Spacing
+          </button>
+          <button
+            type="button"
+            aria-pressed={settings.readingRuler === true}
+            className={`ide-seg-btn ${settings.readingRuler === true ? 'active' : ''}`}
+            onClick={() => patch({ readingRuler: !settings.readingRuler })}
+          >
+            Reading Ruler
+          </button>
+          <button
+            type="button"
+            aria-pressed={settings.cvdMode === 'cvd-safe'}
+            className={`ide-seg-btn ${settings.cvdMode === 'cvd-safe' ? 'active' : ''}`}
+            onClick={() => patch({ cvdMode: settings.cvdMode === 'cvd-safe' ? 'none' : 'cvd-safe' })}
+          >
+            CVD Safe + Hatch
+          </button>
+          <button
+            type="button"
+            aria-pressed={(settings.stageDirector || 'cinema-guided') !== 'minimal'}
+            className={`ide-seg-btn span-full ${(settings.stageDirector || 'cinema-guided') !== 'minimal' ? 'active' : ''}`}
+            onClick={() =>
+              patch({
+                stageDirector: (settings.stageDirector || 'cinema-guided') === 'minimal' ? 'cinema-guided' : 'minimal'
+              })
+            }
+          >
+            Cinema Purpose Cues: {(settings.stageDirector || 'cinema-guided') !== 'minimal' ? 'On' : 'Minimal'}
           </button>
         </div>
       </div>
@@ -323,6 +485,8 @@ export function DisplayComfortPopover({
           type="button"
           className="btn btn-secondary btn-compact"
           onClick={() => {
+            handingOffRef.current = true;
+            document.querySelector('[data-display-trigger]')?.focus();
             onClose();
             onOpenFullStudio();
           }}
@@ -604,11 +768,33 @@ export function AuthAccountModal({
       </div>
 
       <div className="section-block">
-        <div className="tab-strip" role="tablist" aria-label="Account authentication mode">
+        <div
+          className="tab-strip"
+          role="tablist"
+          aria-label="Account authentication mode"
+          onKeyDown={e => {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+            e.preventDefault();
+            const next =
+              e.key === 'Home'
+                ? 'login'
+                : e.key === 'End'
+                  ? 'register'
+                  : mode === 'login'
+                    ? 'register'
+                    : 'login';
+            setMode(next);
+            setLocalError('');
+            const tabs = Array.from(e.currentTarget.querySelectorAll('[role="tab"]'));
+            const targetBtn = next === 'login' ? tabs[0] : tabs[1];
+            requestAnimationFrame(() => targetBtn?.focus());
+          }}
+        >
           <button
             type="button"
             role="tab"
             aria-selected={mode === 'login'}
+            tabIndex={mode === 'login' ? 0 : -1}
             className={`tab-pill ${mode === 'login' ? 'active' : ''}`}
             onClick={() => {
               setMode('login');
@@ -621,6 +807,7 @@ export function AuthAccountModal({
             type="button"
             role="tab"
             aria-selected={mode === 'register'}
+            tabIndex={mode === 'register' ? 0 : -1}
             className={`tab-pill ${mode === 'register' ? 'active' : ''}`}
             onClick={() => {
               setMode('register');
@@ -720,6 +907,7 @@ export function AccessibilityStudioDrawer({ open, onClose, settings, onChange })
       open={open}
       onClose={onClose}
       variant="drawer"
+      returnFocusSelector="[data-display-trigger]"
       eyebrow="DISPLAY, CONTRAST & KEYBOARD STUDIO"
       title="Extended Display & Comfort Options"
     >
@@ -750,6 +938,24 @@ export function AccessibilityStudioDrawer({ open, onClose, settings, onChange })
                   </span>
                 </div>
                 <span className="muted-copy">{t.subtitle}</span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="option-pills-grid top-gap-xs" role="radiogroup" aria-label="Synthetic blue-glare safety switch and sunlight mode">
+          {BLUE_GLARE_OPTIONS.map(bg => {
+            const active = (settings.blueGlareShield || 'matte-balanced') === bg.id;
+            return (
+              <button
+                key={bg.id}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                className={`studio-option-card compact ${active ? 'selected' : ''}`}
+                onClick={() => update({ blueGlareShield: bg.id })}
+              >
+                <strong>{bg.label}</strong>
+                <span className="muted-copy">{bg.desc}</span>
               </button>
             );
           })}
@@ -842,6 +1048,21 @@ export function AccessibilityStudioDrawer({ open, onClose, settings, onChange })
               Operable contact shadows, subtle negative-space lift, and cross-panel relationship ridges
             </span>
           </button>
+          {STAGE_DIRECTOR_OPTIONS.map(sd => {
+            const active = (settings.stageDirector || 'cinema-guided') === sd.id;
+            return (
+              <button
+                key={sd.id}
+                type="button"
+                aria-pressed={active}
+                className={`studio-option-card compact ${active ? 'selected' : ''}`}
+                onClick={() => update({ stageDirector: sd.id })}
+              >
+                <strong>{sd.label}</strong>
+                <span className="muted-copy">{sd.desc}</span>
+              </button>
+            );
+          })}
           <button
             type="button"
             aria-pressed={settings.singleKeyShortcuts}
@@ -853,32 +1074,152 @@ export function AccessibilityStudioDrawer({ open, onClose, settings, onChange })
           </button>
           <button
             type="button"
-            aria-pressed={settings.upperKeyMirror !== false}
-            className={`studio-option-card compact ${settings.upperKeyMirror !== false ? 'selected' : ''}`}
-            onClick={() => update({ upperKeyMirror: settings.upperKeyMirror === false })}
+            aria-pressed={settings.upperKeyMirror === true}
+            className={`studio-option-card compact ${settings.upperKeyMirror === true ? 'selected' : ''}`}
+            onClick={() => update({ upperKeyMirror: settings.upperKeyMirror !== true })}
           >
-            <strong>Upper Peripheral Shortcut Mirror: {settings.upperKeyMirror !== false ? 'Visible' : 'Hidden'}</strong>
-            <span className="muted-copy">Translucent upper bar with clickable keyboard and mouse/touch shortcuts</span>
+            <strong>Upper Shortcut Reference Bar: {settings.upperKeyMirror === true ? 'Visible' : 'Collapsed'}</strong>
+            <span className="muted-copy">Expandable top bar with keyboard shortcut reference pills</span>
           </button>
         </div>
       </div>
 
       <div className="section-block">
-        <h3>5. Reading Line Width</h3>
-        <button
-          type="button"
-          aria-pressed={settings.readingLock}
-          className={`studio-option-card ${settings.readingLock ? 'selected' : ''}`}
-          onClick={() => update({ readingLock: !settings.readingLock })}
-        >
-          <div className="row-between">
-            <strong>68-Character Comfortable Line Width</strong>
-            <span className="badge-pill">{settings.readingLock ? 'On (68ch)' : 'Full width'}</span>
-          </div>
-          <span className="muted-copy">
-            Keeps paragraphs and explanations comfortable to scan on wide monitors.
-          </span>
-        </button>
+        <h3>5. Reading Line Width &amp; Comprehension Aids</h3>
+        <div className="studio-stack">
+          <button
+            type="button"
+            aria-pressed={settings.taskGuide !== false}
+            className={`studio-option-card compact ${settings.taskGuide !== false ? 'selected' : ''}`}
+            onClick={() => update({ taskGuide: settings.taskGuide === false })}
+          >
+            <strong>Plain-Language Task Clarity Guide (W3C COGA): {settings.taskGuide !== false ? 'Active' : 'Minimized'}</strong>
+            <span className="muted-copy">
+              Pins current step goal, live state memory anchors, safe consequence preview, and next action in Grade &lt;= 6 English.
+            </span>
+          </button>
+          <button
+            type="button"
+            aria-pressed={settings.textSpacing === 'wcag-1412'}
+            className={`studio-option-card compact ${settings.textSpacing === 'wcag-1412' ? 'selected' : ''}`}
+            onClick={() => update({ textSpacing: settings.textSpacing === 'wcag-1412' ? 'standard' : 'wcag-1412' })}
+          >
+            <strong>Dyslexia &amp; Low-Vision Text Spacing (WCAG 1.4.12): {settings.textSpacing === 'wcag-1412' ? 'On' : 'Standard'}</strong>
+            <span className="muted-copy">
+              Applies &gt;=1.5 line height, 0.12em letter spacing, and 0.16em word spacing with zero clipped controls.
+            </span>
+          </button>
+          <button
+            type="button"
+            aria-pressed={settings.readingRuler === true}
+            className={`studio-option-card compact ${settings.readingRuler === true ? 'selected' : ''}`}
+            onClick={() => update({ readingRuler: !settings.readingRuler })}
+          >
+            <strong>Focus Reading Ruler Band: {settings.readingRuler ? 'On' : 'Off'}</strong>
+            <span className="muted-copy">
+              Soft horizontal line-tracking band following pointer or keyboard focus for Dyslexia and ADHD line tracking.
+            </span>
+          </button>
+          <button
+            type="button"
+            aria-pressed={settings.calmFirewall === true}
+            className={`studio-option-card compact ${settings.calmFirewall === true ? 'selected' : ''}`}
+            onClick={() => update({ calmFirewall: !settings.calmFirewall })}
+          >
+            <strong>Cognitive Firewall Calm Mode: {settings.calmFirewall ? 'On' : 'Standard'}</strong>
+            <span className="muted-copy">
+              Freezes background invite countdown ticks and softens peripheral visual contrast for calm executive focus.
+            </span>
+          </button>
+          <button
+            type="button"
+            aria-pressed={settings.readingLock}
+            className={`studio-option-card compact ${settings.readingLock ? 'selected' : ''}`}
+            onClick={() => update({ readingLock: !settings.readingLock })}
+          >
+            <strong>68-Character Comfortable Line Width: {settings.readingLock ? 'On (68ch)' : 'Full width'}</strong>
+            <span className="muted-copy">
+              Keeps paragraphs and explanations comfortable to scan on wide monitors.
+            </span>
+          </button>
+        </div>
+      </div>
+
+      <div className="section-block">
+        <h3>6. Affordalume Matte Flashlight Shade &amp; Beam Power</h3>
+        <div className="studio-grid">
+          {FLASHLIGHT_TINTS.map(tint => {
+            const active = (settings.flashlightTint || 'emerald') === tint.id;
+            return (
+              <button
+                key={tint.id}
+                type="button"
+                aria-pressed={active}
+                className={`studio-option-card compact ${active ? 'selected' : ''}`}
+                onClick={() => update({ flashlightTint: tint.id, crrMode: 'crr' })}
+              >
+                <div className="row-between">
+                  <strong>{tint.label}</strong>
+                  <span className="swatch-dot" style={{ background: tint.hex }} aria-hidden="true" />
+                </div>
+                <span className="muted-copy">{tint.desc}</span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="pill-row top-gap-xs" role="group" aria-label="Flashlight beam intensity">
+          {FLASHLIGHT_POWERS.map(pw => {
+            const active = (settings.flashlightPower || 'balanced') === pw.id;
+            return (
+              <button
+                key={pw.id}
+                type="button"
+                aria-pressed={active}
+                className={`btn ${active ? 'btn-primary' : 'btn-secondary'} btn-compact`}
+                onClick={() => update({ flashlightPower: pw.id })}
+              >
+                Beam: {pw.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="section-block">
+        <h3>7. Color-Vision Deficiency (CVD) Safe Mode &amp; Simulator</h3>
+        <div className="studio-grid">
+          {CVD_MODE_OPTIONS.map(cvd => {
+            const active = (settings.cvdMode || 'none') === cvd.id;
+            return (
+              <button
+                key={cvd.id}
+                type="button"
+                aria-pressed={active}
+                className={`studio-option-card compact ${active ? 'selected' : ''}`}
+                onClick={() => update({ cvdMode: cvd.id })}
+              >
+                <strong>{cvd.label}</strong>
+                <span className="muted-copy">{cvd.desc}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="section-block">
+        <h3>8. One-Click Disability &amp; Comprehension Presets</h3>
+        <div className="pill-row wrap-gap" role="group" aria-label="Disability and comprehension presets">
+          {DISABILITY_PRESETS.map(pr => (
+            <button
+              key={pr.id}
+              type="button"
+              className="btn btn-secondary btn-compact"
+              onClick={() => update(pr.patch)}
+            >
+              {pr.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="row-between">

@@ -2,6 +2,11 @@
 
 Post Sheet is a race-safe, goal-conditioned team formation engine built for Hack4Hack Crew Hiring Challenge 2026 (Problem Statement 1). Instead of treating team formation as a static directory of resumes, cities, and school badges, the system starts from what a crew is actually trying to build, verifies whether real human schedules and skills can deliver every task before the deadline, guarantees single-winner seat admission under 50-way burst traffic, and keeps teammates collaborating through signed encrypted peer relays when direct internet access drops.
 
+> **Live Production Application:** https://postsheet-h4h-ps1-production.up.railway.app
+> **4m 14s Walkthrough Video (1080p Narrated + Captioned):** https://postsheet-h4h-media-production.up.railway.app/video ([Direct MP4](https://postsheet-h4h-media-production.up.railway.app/walkthrough.mp4))
+> **Architecture & Pitch Deck (11-Slide PDF + Interactive Deck):** https://postsheet-h4h-media-production.up.railway.app/pitch-deck.pdf ([Web Deck](https://postsheet-h4h-media-production.up.railway.app/deck))
+> **Submission Artifacts:** [`DESIGN.md`](./DESIGN.md) (1-Page Design Doc) | [`LOAD_REPORT.md`](./LOAD_REPORT.md) (10k Seed, 100-Client `p95`, 50-Way Race) | [`SECURITY.md`](./SECURITY.md) | [`docs/postsheet-h4h-ps1-walkthrough.srt`](./docs/postsheet-h4h-ps1-walkthrough.srt) | [`.github/workflows/ci.yml`](./.github/workflows/ci.yml) (`183` Automated Checks)
+
 ---
 
 ## Table of Contents
@@ -97,7 +102,7 @@ Hack4Hack permits any defensible stack. Rather than assembling an ORM, an extern
 | **Offline Relay Authorization** | **Scoped HMAC Relay Warrants** (`aud: h4h-ps1-relay-warrant`) and **SHA-256 `opId`** | When a claimant loses WAN access, they do not hand their session token to a peer. Instead, a narrow 10-minute warrant bound to `{sub, eventId, teamId, opId, codeHash}` authorizes an uplinked peer (`relay-mateo`) to forward that exact claim once. Direct retry after reconnect returns `replayed: true` with zero duplicate rows. |
 | **Live Updates** | **Server-Sent Events (SSE)** (`text/event-stream`) | Lighter and proxy-friendlier than bidirectional WebSockets for one-way roster invalidation, with automatic browser reconnect, `25s` keepalive heartbeats, and per-IP stream caps. |
 | **Frontend Application** | **React 19** and **Vite 7** with custom CSS tokens (`web/src/style.css`) | Zero CSS/UI widget dependencies. Total production bundle builds in ~750 ms, honors strict `Content-Security-Policy: default-src 'self'` (zero external fonts, scripts, or CDNs), runs the R5 planner locally in under `2 ms` for instant preview, and adapts cleanly from `1440px` 3-column desktop panorama down to `360px` mobile screens. |
-| **Independent Verification** | **Node Test Runner (`node:test`)** and **Python 3.12 (`sqlite3`)** | Alongside 117 Node integration, crypto, security, and solver/matcher tests across 10 test files, an independent Python process (`tests/sql-independent.py`) opens the post-race SQLite file directly to verify relational, capacity, uniqueness, and audit invariants without sharing a single line of JavaScript application code. |
+| **Independent Verification** | **Node Test Runner (`node:test`)** and **Python 3.12 (`sqlite3`)** | Alongside 124 Node integration, crypto, security, cognitive-firewall, and solver/matcher tests across 11 test files, an independent Python process (`tests/sql-independent.py`) opens the post-race SQLite file directly to verify relational, capacity, uniqueness, and audit invariants without sharing a single line of JavaScript application code. |
 | **Container and Cloud Packaging** | **Multi-stage `Dockerfile`** (`node:24-bookworm-slim`), **`render.yaml`**, **`docker-compose.hardened.yml`** | Pre-builds the React bundle and bakes the deterministic 10,000-user / 2,000-team seed at image build time. Runs as non-root `USER node` with `/app` chmodded read-only, dropped Linux capabilities (`cap_drop: [ALL]`), `no-new-privileges`, and `/health` readiness checks. |
 
 ---
@@ -191,9 +196,9 @@ Every acceptance criterion in the Hack4Hack PS1 brief is implemented, tested in 
 | **Live board updates** | SSE `GET /api/events/:id/stream` (`ROSTER_REVISION` push on commit) | `API29` (`tests/sse.test.mjs`) and live Column 3 indicator in React workspace |
 | **Authentication, security hardening, and attributable audit log** | `scrypt` auth, HMAC tokens, scoped relay warrants, static path jail, `audit` table | `API02..04`, `API19..20`, `SEC01..12` (`12/12` exploit & wire-traversal suites PASS) |
 | **Explained complementary-skill and timezone recommendations** | `recommendComplementary` (`src/synchronicity-solvers.mjs`) and `POST /api/recommendations` | `R5_01..04`, `R6_EXP01..14`, `LAB01..06` (multi-hole partial progress, sync overlap, and directed UTC baton-pass explanations) |
-| **At least 20 API checks in GitHub Actions** | `.github/workflows/ci.yml` | **176 automated assertions** (`59` gate checks and `117` Node tests across 10 test files) alongside `5` load-gate checks in CI |
+| **At least 20 API checks in GitHub Actions** | `.github/workflows/ci.yml` | **183 automated assertions** (`59` gate checks and `124` Node tests across 11 test files) alongside `5` load-gate checks in CI |
 | **10,000-user / 2,000-team seed & `/board` `p95 < 200 ms` at 100 clients** | `src/seed.mjs` and `scripts/exact-p95-bench.mjs` | Seeded in `13.4 s`; `100`-client `/board` **`p95 = 36.68 ms`** (`16,983` reqs in `5s`, `0` errors) |
-| **Mobile and keyboard-accessible React flow and live deployment** | `web/src/*` (`360px` responsive layout, `Ctrl+K`, `Alt+1..4`) with `Dockerfile` and `render.yaml` | Verified at `1440x900` and `360x800` (`0` horizontal overflow) with 1-click Render Docker blueprint |
+| **Mobile and keyboard-accessible React flow and live deployment** | `web/src/*` (`360px` responsive layout, `Ctrl+K`, `Alt+1..4`, WCAG 2.2 AA / Section 508 verified) with `Dockerfile` and `render.yaml` | Live on Railway (`https://postsheet-h4h-ps1-production.up.railway.app`); verified at `1440x900` and `360x800` (`0` horizontal overflow, `0` idle GPU frames) |
 
 ---
 
@@ -240,10 +245,10 @@ All verification suites run locally without external cloud accounts or network d
 #    - Independent Oracle: 12 direct Python sqlite3 relational & audit queries (12)
 bash scripts/run-gates.sh scripts/baseline.sh scripts/adversarial.sh scripts/independent.sh
 
-# 2. Complete Node Test Suite (117 subtests across 10 test files):
+# 2. Complete Node Test Suite (124 subtests across 11 test files):
 #    Covers Layer-B AES-256-GCM / P-256 envelopes, WITHOUT ROWID durable receipts,
 #    loopback HTTP peer relay, browser SHA-256 retry storage, R5/R12/R15 solver & matcher labs,
-#    and SEC01..SEC12 security & wire-level path-traversal hardening
+#    cognitive firewall & comprehension guards, and SEC01..SEC12 security hardening
 node --test tests/*.test.mjs
 
 # 3. Deterministic 10,000-User / 2,000-Team Seed & 100-Concurrent-Client p95 Benchmark:
@@ -310,7 +315,7 @@ kill "$SRV_PID"
 - [`PREEXISTING_WORK.md`](./PREEXISTING_WORK.md): Attribution of prior Post Sheet / Synchronicity concepts vs. clean-room Hack4Hack PS1 implementation, ownership notice, and AI collaboration disclosure.
 - [`docs/ENGINE_SOLVER_ADVERSARIAL_REVIEW.md`](./docs/ENGINE_SOLVER_ADVERSARIAL_REVIEW.md): Formal adversarial verification of scheduler completeness, Wildcard Omega frontiers, and parallel Hall contention (`R6_EXP01..14`).
 - [`docs/PSS-H4H-CRR-01.R1-SUPPLEMENT.md`](./docs/PSS-H4H-CRR-01.R1-SUPPLEMENT.md): Visual perception, contrast tokens, and cognitive ergonomics engineering packet.
-- [`docs/DECISION_AND_EXPERIMENT_LEDGER.md`](./docs/DECISION_AND_EXPERIMENT_LEDGER.md): Chronological engineering ledger preserving accepted, rejected-by-test, and superseded design experiments (`LED-01..LED-21`).
+- [`docs/DECISION_AND_EXPERIMENT_LEDGER.md`](./docs/DECISION_AND_EXPERIMENT_LEDGER.md): Chronological engineering ledger preserving accepted, rejected-by-test, and superseded design experiments (`LED-01..LED-22`).
 - [`SOURCE_MANIFEST.json`](./SOURCE_MANIFEST.json): SHA-256 integrity manifest covering every tracked file in the submission repository.
 
 ---

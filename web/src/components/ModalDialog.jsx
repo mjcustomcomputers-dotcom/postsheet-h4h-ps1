@@ -11,15 +11,29 @@ export default function ModalDialog({
   eyebrow,
   variant = 'modal', // 'modal' | 'drawer' | 'palette'
   initialFocusRef,
+  returnFocusSelector = null,
   children
 }) {
   const containerRef = useRef(null);
   const returnFocusRef = useRef(null);
+  const fallbackSelectorRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   const titleId = useRef(`dialog-title-${Math.random().toString(36).slice(2, 9)}`).current;
 
   useEffect(() => {
     if (!open) return undefined;
-    returnFocusRef.current = document.activeElement;
+    const prevEl = document.activeElement;
+    returnFocusRef.current = prevEl;
+    if (returnFocusSelector) {
+      fallbackSelectorRef.current = returnFocusSelector;
+    } else if (prevEl?.closest?.('[data-popover-owner="display"]')) {
+      fallbackSelectorRef.current = '[data-display-trigger]';
+    } else if (prevEl?.closest?.('[data-popover-owner="acting"]')) {
+      fallbackSelectorRef.current = '[data-acting-trigger]';
+    } else {
+      fallbackSelectorRef.current = null;
+    }
 
     const focusTimer = setTimeout(() => {
       if (initialFocusRef?.current) {
@@ -35,11 +49,13 @@ export default function ModalDialog({
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
-        onClose();
+        onCloseRef.current?.();
         return;
       }
       if (e.key === 'Tab' && containerRef.current) {
-        const nodes = Array.from(containerRef.current.querySelectorAll(FOCUSABLE_SELECTOR));
+        const nodes = Array.from(containerRef.current.querySelectorAll(FOCUSABLE_SELECTOR)).filter(
+          n => n.offsetParent !== null || n.getClientRects().length > 0
+        );
         if (nodes.length === 0) {
           e.preventDefault();
           return;
@@ -60,11 +76,19 @@ export default function ModalDialog({
     return () => {
       clearTimeout(focusTimer);
       document.removeEventListener('keydown', handleKeyDown);
-      if (returnFocusRef.current && typeof returnFocusRef.current.focus === 'function') {
-        returnFocusRef.current.focus();
+      const target =
+        returnFocusRef.current &&
+        returnFocusRef.current !== document.body &&
+        returnFocusRef.current.isConnected
+          ? returnFocusRef.current
+          : fallbackSelectorRef.current
+            ? document.querySelector(fallbackSelectorRef.current)
+            : null;
+      if (target && typeof target.focus === 'function') {
+        target.focus();
       }
     };
-  }, [open, onClose, initialFocusRef]);
+  }, [open, initialFocusRef, returnFocusSelector]);
 
   if (!open) return null;
 

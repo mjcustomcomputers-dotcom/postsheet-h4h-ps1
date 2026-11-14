@@ -1,6 +1,10 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { isMotionFrozen } from '../ergonomics.js';
-import { BUILDER_DIRECTORY, parseUtcOffsetHours } from '../presets-and-catalog.js';
+import {
+  BUILDER_DIRECTORY,
+  parseUtcOffsetHours,
+  computePartialTaskPreview
+} from '../presets-and-catalog.js';
 import { SunIcon, GlobeIcon } from '../icons.jsx';
 
 const MIN_UTC = -12;
@@ -9,19 +13,19 @@ const UTC_SPAN = MAX_UTC - MIN_UTC; // 26 hours
 const PULSE_DURATION_MS = 850;
 
 const TICKS_FULL = [
-  { offset: -12, label: 'UTC-12' },
-  { offset: -6, label: 'UTC-6 (Hot Springs)' },
-  { offset: 0, label: 'UTC+0 (London)' },
-  { offset: 5.5, label: 'UTC+5:30 (Bengaluru)' },
-  { offset: 9, label: 'UTC+9 (Tokyo)' },
-  { offset: 14, label: 'UTC+14' }
+  { offset: -12, label: 'UTC-12', shortLabel: '-12' },
+  { offset: -6, label: 'UTC-6 (Hot Springs)', shortLabel: 'UTC-6' },
+  { offset: 0, label: 'UTC+0 (London)', shortLabel: 'UTC+0' },
+  { offset: 5.5, label: 'UTC+5:30 (Bengaluru)', shortLabel: 'UTC+5:30' },
+  { offset: 9, label: 'UTC+9 (Tokyo)', shortLabel: 'UTC+9' },
+  { offset: 14, label: 'UTC+14', shortLabel: '+14' }
 ];
 
 const TICKS_COMPACT = [
-  { offset: -6, label: 'UTC-6' },
-  { offset: 0, label: 'UTC+0' },
-  { offset: 5.5, label: 'UTC+5:30' },
-  { offset: 9, label: 'UTC+9' }
+  { offset: -6, label: 'UTC-6', shortLabel: '-6' },
+  { offset: 0, label: 'UTC+0', shortLabel: '+0' },
+  { offset: 5.5, label: 'UTC+5:30', shortLabel: '+5:30' },
+  { offset: 9, label: 'UTC+9', shortLabel: '+9' }
 ];
 
 function getPaletteForTheme(theme) {
@@ -97,22 +101,22 @@ function getPaletteForTheme(theme) {
       focusRing: '#84ECEC'
     };
   }
-  // Default Moonlight Dark & Calm Matte Dark palette
+  // Default Moonlight Dark & Calm Matte Dark palette (desaturated mineral sage)
   return {
-    skyNight: '#0C1219',
-    skyDayTop: 'rgba(140, 230, 90, 0.15)',
-    skyDayBot: 'rgba(126, 231, 210, 0.05)',
-    waveStroke: 'rgba(140, 230, 90, 0.60)',
-    gridLine: 'rgba(159, 182, 176, 0.14)',
-    tickInk: '#A3B8B2',
-    nodeCrew: '#8CE65A',
-    nodeCand: '#F3CF7A',
-    nodePool: '#7EE7D2',
-    labelInk: '#E4EEEB',
-    arcStroke: 'rgba(140, 230, 90, 0.68)',
-    fireflyCore: '#ECFCCB',
-    fireflyGlow: 'rgba(140, 230, 90, 0.44)',
-    focusRing: '#7EE7D2'
+    skyNight: '#0B1016',
+    skyDayTop: 'rgba(94, 156, 118, 0.14)',
+    skyDayBot: 'rgba(110, 178, 165, 0.05)',
+    waveStroke: 'rgba(104, 180, 137, 0.62)',
+    gridLine: 'rgba(148, 172, 166, 0.14)',
+    tickInk: '#9CB2AC',
+    nodeCrew: '#74BF93',
+    nodeCand: '#D9B66E',
+    nodePool: '#7DC9C4',
+    labelInk: '#E3ECE8',
+    arcStroke: 'rgba(104, 180, 137, 0.68)',
+    fireflyCore: '#D9EFE2',
+    fireflyGlow: 'rgba(104, 180, 137, 0.28)',
+    focusRing: '#79C9B8'
   };
 }
 
@@ -125,6 +129,8 @@ export default function SolarBatonHorizon({
   teamPeople = [],
   candidates = [],
   recommendations = [],
+  tasks = [],
+  plan = null,
   crewsCount = 0,
   pulseTrigger = 0,
   activeLinkId = null
@@ -160,28 +166,38 @@ export default function SolarBatonHorizon({
       const nodes = [];
       const half = Math.max(120, Math.round(horizonMin * 0.5));
 
-      teamPeople.forEach((p, idx) => {
-        const offset = parseUtcOffsetHours(p.timezone, p.startMin, horizonMin);
+      const biasSlots = [-12, 11, -22, 20, 0];
+      const pushWithSeparatedBias = item => {
+        let clusterCount = 0;
+        for (const existing of nodes) {
+          if (Math.abs(existing.offset - item.offset) <= 3) clusterCount += 1;
+        }
         nodes.push({
+          ...item,
+          rowBias: biasSlots[clusterCount % biasSlots.length]
+        });
+      };
+
+      teamPeople.forEach(p => {
+        const offset = parseUtcOffsetHours(p.timezone, p.startMin, horizonMin);
+        pushWithSeparatedBias({
           id: p.id,
           offset,
           kind: 'crew',
           startMin: Number(p.startMin || 0),
-          endMin: Number(p.endMin || half),
-          rowBias: idx % 2 === 0 ? -6 : 6
+          endMin: Number(p.endMin || half)
         });
       });
 
-      candidates.forEach((c, idx) => {
+      candidates.forEach(c => {
         const offset = parseUtcOffsetHours(c.timezone, c.startMin, horizonMin);
         const isRecommended = recIds.has(c.id) || Number(c.startMin || 0) >= half;
-        nodes.push({
+        pushWithSeparatedBias({
           id: c.id,
           offset,
           kind: isRecommended ? 'candidate-baton' : 'candidate',
           startMin: Number(c.startMin || 0),
-          endMin: Number(c.endMin || horizonMin),
-          rowBias: idx % 2 === 0 ? -5 : 7
+          endMin: Number(c.endMin || horizonMin)
         });
       });
 
@@ -324,10 +340,16 @@ export default function SolarBatonHorizon({
       ctx.lineWidth = 1.3;
       ctx.stroke();
 
-      // UTC Meridian Grid & Labels
+      // UTC Meridian Grid & Collision-Free Tick Labels
       ctx.font = compact
         ? '600 9.5px "JetBrains Mono", ui-monospace, SFMono-Regular, Consolas, monospace'
         : '600 10.5px "JetBrains Mono", ui-monospace, SFMono-Regular, Consolas, monospace';
+      const placedTicks = [];
+      const tickFits = (left, right) =>
+        left >= 4 &&
+        right <= width - 4 &&
+        placedTicks.every(box => right + 10 <= box.left || left >= box.right + 10);
+
       ticks.forEach((tk, idx) => {
         const x = xForUtc(tk.offset);
         ctx.beginPath();
@@ -338,11 +360,42 @@ export default function SolarBatonHorizon({
         ctx.stroke();
 
         ctx.fillStyle = palette.tickInk;
-        ctx.textAlign = !compact && idx === 0 ? 'left' : !compact && idx === ticks.length - 1 ? 'right' : 'center';
-        ctx.fillText(tk.label, x, height - 4);
+        const align = !compact && idx === 0 ? 'left' : !compact && idx === ticks.length - 1 ? 'right' : 'center';
+        const candidatesToTry = tk.shortLabel && tk.shortLabel !== tk.label ? [tk.label, tk.shortLabel] : [tk.label];
+        for (const textCandidate of candidatesToTry) {
+          const textW = ctx.measureText(textCandidate).width;
+          let drawX = x;
+          let left = x - textW * 0.5;
+          let right = x + textW * 0.5;
+          if (align === 'left') {
+            drawX = Math.max(4, x);
+            left = drawX;
+            right = drawX + textW;
+          } else if (align === 'right') {
+            drawX = Math.min(width - 4, x);
+            left = drawX - textW;
+            right = drawX;
+          } else {
+            if (left < 4) {
+              drawX += 4 - left;
+              left = 4;
+              right = left + textW;
+            } else if (right > width - 4) {
+              drawX -= right - (width - 4);
+              right = width - 4;
+              left = right - textW;
+            }
+          }
+          if (tickFits(left, right)) {
+            ctx.textAlign = align;
+            ctx.fillText(textCandidate, drawX, height - 4);
+            placedTicks.push({ left, right });
+            break;
+          }
+        }
       });
 
-      const baseNodeY = Math.round(height * 0.49);
+      const baseNodeY = Math.round(height * 0.45);
 
       // Handoff Arcs: stationary midpoint marker at rest; bounded 850ms travel only on interaction
       scene.arcs.forEach(arc => {
@@ -383,13 +436,14 @@ export default function SolarBatonHorizon({
         ctx.fill();
       });
 
-      // Crew & Candidate Nodes
+      // Crew & Candidate Nodes (draw dots first, then collision-free labels)
       ctx.font = compact
         ? '600 9.5px Inter, ui-sans-serif, system-ui, sans-serif'
         : '600 10.5px Inter, ui-sans-serif, system-ui, sans-serif';
+      const labelQueue = [];
       scene.nodes.forEach((n, idx) => {
         const x = xForUtc(n.offset);
-        const y = baseNodeY + n.rowBias;
+        const y = Math.max(12, Math.min(height - 24, baseNodeY + n.rowBias));
         const isLinked = Boolean(activeLinkId && n.id === activeLinkId);
         const isPulsedNode =
           typeof pulseProgress === 'number' &&
@@ -427,18 +481,102 @@ export default function SolarBatonHorizon({
           ctx.fill();
         }
 
-        ctx.beginPath();
-        ctx.arc(x, y, compact ? 3.5 : 4.0, 0, Math.PI * 2);
-        ctx.fillStyle = color;
-        ctx.fill();
+        if (n.kind === 'crew') {
+          // Solid Circle for confirmed crew member (CVD-invariant shape #1)
+          ctx.beginPath();
+          ctx.arc(x, y, compact ? 4.2 : 4.8, 0, Math.PI * 2);
+          ctx.fillStyle = color;
+          ctx.fill();
+        } else if (n.kind === 'candidate-baton') {
+          // Crisp Diamond for baton-handoff candidate (CVD-invariant shape #2)
+          const r = compact ? 5.4 : 6.2;
+          ctx.save();
+          ctx.beginPath();
+          ctx.moveTo(x, y - r);
+          ctx.lineTo(x + r, y);
+          ctx.lineTo(x, y + r);
+          ctx.lineTo(x - r, y);
+          ctx.closePath();
+          ctx.fillStyle = '#0d131a';
+          ctx.fill();
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 2.3;
+          ctx.stroke();
+          ctx.restore();
+        } else {
+          // Upward Triangle for open directory pool candidate (CVD-invariant shape #3)
+          const r = compact ? 5.4 : 6.0;
+          ctx.save();
+          ctx.beginPath();
+          ctx.moveTo(x, y - r);
+          ctx.lineTo(x + r * 0.92, y + r * 0.78);
+          ctx.lineTo(x - r * 0.92, y + r * 0.78);
+          ctx.closePath();
+          ctx.fillStyle = '#0d131a';
+          ctx.fill();
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 2.2;
+          ctx.stroke();
+          ctx.restore();
+        }
 
-        if (!compact ? width >= 500 || idx < 4 || isLinked : n.kind === 'crew' || idx < 3 || isLinked) {
-          ctx.fillStyle = palette.labelInk;
-          ctx.textAlign = n.offset > 7 ? 'right' : 'left';
-          const labelX = n.offset > 7 ? x - 6 : x + 6;
-          ctx.fillText(n.id, labelX, y + 3.2);
+        const shouldShowLabel = !compact
+          ? width >= 460 || idx < 4 || isLinked
+          : n.kind === 'crew' || idx < 3 || isLinked;
+        if (shouldShowLabel) {
+          labelQueue.push({
+            id: n.id,
+            x,
+            y,
+            offset: n.offset,
+            priority: isLinked ? 3 : n.kind === 'crew' ? 2 : 1
+          });
         }
       });
+
+      const placedLabelBoxes = [];
+      const labelH = compact ? 11 : 12;
+      const boxFits = (x0, y0, x1, y1) =>
+        x0 >= 4 &&
+        x1 <= width - 4 &&
+        y0 >= 4 &&
+        y1 <= height - 19 &&
+        placedLabelBoxes.every(b => x1 + 4 <= b.x0 || x0 >= b.x1 + 4 || y1 + 2 <= b.y0 || y0 >= b.y1 + 2);
+
+      labelQueue
+        .sort((a, b) => b.priority - a.priority)
+        .forEach(item => {
+          const w = ctx.measureText(item.id).width;
+          const preferLeft = item.offset > 7;
+          const slots = preferLeft
+            ? [
+                { align: 'right', lx: item.x - 6, baselineY: item.y + 3.2, x0: item.x - 6 - w },
+                { align: 'left', lx: item.x + 6, baselineY: item.y + 3.2, x0: item.x + 6 },
+                { align: 'right', lx: item.x - 5, baselineY: item.y - 8, x0: item.x - 5 - w },
+                { align: 'right', lx: item.x - 5, baselineY: item.y + 13, x0: item.x - 5 - w },
+                { align: 'left', lx: item.x + 5, baselineY: item.y - 8, x0: item.x + 5 },
+                { align: 'left', lx: item.x + 5, baselineY: item.y + 13, x0: item.x + 5 }
+              ]
+            : [
+                { align: 'left', lx: item.x + 6, baselineY: item.y + 3.2, x0: item.x + 6 },
+                { align: 'right', lx: item.x - 6, baselineY: item.y + 3.2, x0: item.x - 6 - w },
+                { align: 'left', lx: item.x + 5, baselineY: item.y - 8, x0: item.x + 5 },
+                { align: 'left', lx: item.x + 5, baselineY: item.y + 13, x0: item.x + 5 },
+                { align: 'right', lx: item.x - 5, baselineY: item.y - 8, x0: item.x - 5 - w },
+                { align: 'right', lx: item.x - 5, baselineY: item.y + 13, x0: item.x - 5 - w }
+              ];
+          for (const slot of slots) {
+            const top = slot.baselineY - labelH + 2;
+            const bot = slot.baselineY + 2;
+            if (boxFits(slot.x0, top, slot.x0 + w, bot)) {
+              ctx.fillStyle = palette.labelInk;
+              ctx.textAlign = slot.align;
+              ctx.fillText(item.id, slot.lx, slot.baselineY);
+              placedLabelBoxes.push({ x0: slot.x0, y0: top, x1: slot.x0 + w, y1: bot });
+              break;
+            }
+          }
+        });
     }
 
     syncDimensions();
@@ -482,10 +620,47 @@ export default function SolarBatonHorizon({
     };
   }, [scene, theme, frozen, compact, pulseTrigger, activeLinkId]);
 
+  const formatUtc = off => {
+    const val = Number(off || 0);
+    return `UTC${val >= 0 ? `+${val}` : val}`;
+  };
+  const crewNodes = scene.nodes.filter(n => n.kind === 'crew');
+  const matchNodes = scene.nodes.filter(n => n.kind !== 'crew');
+  const coveredUtc = Array.from(new Set(crewNodes.map(n => formatUtc(n.offset))));
+  const crewNames = crewNodes.map(n => `${n.id} (${formatUtc(n.offset)})`);
+  const matchNames = matchNodes.map(n => `${n.id} (${formatUtc(n.offset)})`);
+  const partialPreview = useMemo(
+    () =>
+      Array.isArray(tasks) && tasks.length > 0
+        ? computePartialTaskPreview(tasks, teamPeople, horizonMin, plan)
+        : new Map(),
+    [tasks, teamPeople, horizonMin, plan]
+  );
+  const witnessAssignments = Array.isArray(plan?.witness?.assignments)
+    ? plan.witness.assignments
+    : [];
+  const witnessMap = new Map(witnessAssignments.map(a => [a.taskId, a]));
+  const uncoveredTasks = Array.isArray(tasks)
+    ? tasks
+        .filter(t => !witnessMap.has(t.id) && !partialPreview.has(t.id))
+        .map(t => t.id || t.name)
+    : [];
+  const gapSentence = Array.isArray(tasks) && tasks.length > 0
+    ? uncoveredTasks.length > 0
+      ? `Uncovered task gap: ${uncoveredTasks.join(', ')}.`
+      : `All ${tasks.length} scheduled tasks covered.`
+    : '';
+
   const ariaSummary =
-    mode === 'architect'
-      ? `UTC-12 to UTC+14 time-zone handoff map showing ${scene.nodes.length} people and ${scene.arcs.length} cross-timezone handoffs.`
-      : `UTC-12 to UTC+14 time-zone map across ${BUILDER_DIRECTORY.length} builders and ${crewsCount} teams.`;
+    mode === 'architect' || crewNodes.length > 0
+      ? `UTC-12 to UTC+14 time-zone handoff map (${scene.arcs.length} handoffs). Covered UTC windows: ${
+          coveredUtc.length ? coveredUtc.join(', ') : 'none'
+        }. Assigned in-plan members (solid circle): ${
+          crewNames.length ? crewNames.join(', ') : 'none'
+        }. Available matches (hollow ring): ${
+          matchNames.length ? matchNames.slice(0, 6).join(', ') : 'none'
+        }. ${gapSentence}`.trim()
+      : `UTC-12 to UTC+14 time-zone map across ${BUILDER_DIRECTORY.length} builders and ${crewsCount} teams. Solid circle indicates in-plan member; hollow ring indicates available match.`;
 
   if (compact) {
     return (
@@ -496,8 +671,14 @@ export default function SolarBatonHorizon({
             <strong>Time-Zone Handoff Map</strong>
           </span>
           <span className="pill-row small-copy muted-copy">
-            <span className="horizon-legend-dot dot-crew" /> In plan
-            <span className="horizon-legend-dot dot-baton" /> Available match
+            <span>
+              <span className="horizon-legend-dot dot-crew" aria-hidden="true" /> In plan{' '}
+              <span className="sr-only">(solid circle)</span>
+            </span>
+            <span>
+              <span className="horizon-legend-dot dot-baton" aria-hidden="true" /> Available match{' '}
+              <span className="sr-only">(hollow ring)</span>
+            </span>
           </span>
         </div>
         <div className="solar-canvas-wrap solar-canvas-compact">
@@ -508,6 +689,7 @@ export default function SolarBatonHorizon({
             aria-label={ariaSummary}
           />
         </div>
+        <p className="sr-only">{ariaSummary}</p>
       </div>
     );
   }
@@ -528,8 +710,14 @@ export default function SolarBatonHorizon({
         </div>
 
         <div className="pill-row small-copy">
-          <span className="horizon-legend-dot dot-crew" /> <span>In team plan</span>
-          <span className="horizon-legend-dot dot-baton" /> <span>Handoff match</span>
+          <span>
+            <span className="horizon-legend-dot dot-crew" aria-hidden="true" />{' '}
+            <span>In team plan <span className="sr-only">(solid circle)</span></span>
+          </span>
+          <span>
+            <span className="horizon-legend-dot dot-baton" aria-hidden="true" />{' '}
+            <span>Handoff match <span className="sr-only">(hollow ring)</span></span>
+          </span>
           <span className="badge-pill">
             <GlobeIcon size={12} /> {frozen ? 'Static (Motion Off)' : 'Calm at Rest (850ms Handoff)'}
           </span>
@@ -544,6 +732,7 @@ export default function SolarBatonHorizon({
           aria-label={ariaSummary}
         />
       </div>
+      <p className="sr-only">{ariaSummary}</p>
     </div>
   );
 }

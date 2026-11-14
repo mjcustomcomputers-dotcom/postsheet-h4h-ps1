@@ -47,18 +47,13 @@ export function useFocusContext() {
 }
 
 export function UpperShortcutHoloMirror({
-  visible = true,
+  visible = false,
   activeView = 'discover',
   singleKeyShortcuts = true,
   onToggleSingleKeyShortcuts,
   onToggleMirror,
-  onOpenPalette,
   onOpenHelp,
-  onFocusFilter,
-  onNavigate,
-  onToggleActingMenu,
-  onToggleDisplayMenu,
-  onDownloadPlan
+  onFocusFilter
 }) {
   const focusContext = useFocusContext();
 
@@ -67,14 +62,13 @@ export function UpperShortcutHoloMirror({
   return (
     <div
       role="region"
-      aria-label="Peripheral keyboard and click shortcut mirror"
-      data-reactive-surface=""
+      aria-label="Expandable keyboard shortcut reference bar"
       className="holo-key-mirror no-print"
     >
       <div className="holo-mirror-left">
-        <span className="holo-mirror-badge" title="Peripheral keyboard and mouse shortcut bar">
+        <span className="holo-mirror-badge" title="Keyboard shortcut quick reference">
           <KeyboardIcon size={13} />
-          <span>Shortcut Mirror</span>
+          <span>Shortcuts</span>
         </span>
 
         {focusContext === 'typing' ? (
@@ -88,7 +82,7 @@ export function UpperShortcutHoloMirror({
               data-reactive-surface=""
               className="holo-pill holo-pill-guide"
               onClick={onOpenHelp}
-              title="Essential start: Open Purpose-First Guide and full shortcut reference (? or F1)"
+              title="Open Purpose-First Guide and full shortcut reference (? or F1)"
             >
               <HelpIcon size={14} />
               <span>Guide</span>
@@ -98,75 +92,29 @@ export function UpperShortcutHoloMirror({
             <button
               type="button"
               data-reactive-surface=""
-              className="holo-pill holo-pill-search"
-              onClick={onOpenPalette}
-              title="Open Command Search with mouse or keyboard (Ctrl+K or /)"
-            >
-              <SearchIcon size={13} />
-              <span>Command Search</span>
-              <kbd>{singleKeyShortcuts ? '/ or Ctrl+K' : 'Ctrl+K'}</kbd>
-            </button>
-
-            <button
-              type="button"
               className="holo-pill"
               onClick={onFocusFilter}
-              title="Jump to Find teammates and focus the skill and name filter"
+              title="Focus the Find teammates filter input"
             >
               <span>Filter people</span>
               <kbd>{singleKeyShortcuts ? 'f' : 'Alt+1'}</kbd>
             </button>
 
-            <div className="holo-step-group" role="group" aria-label="Quick step jump">
-              {[
-                { id: 'discover', n: '1', label: 'Find' },
-                { id: 'architect', n: '2', label: 'Plan' },
-                { id: 'authority', n: '3', label: 'Team' },
-                { id: 'arena', n: '4', label: 'Race' }
-              ].map(st => (
-                <button
-                  key={st.id}
-                  type="button"
-                  aria-pressed={activeView === st.id}
-                  className={`holo-step-chip ${activeView === st.id ? 'active' : ''}`}
-                  onClick={() => onNavigate?.(st.id)}
-                  title={`Step ${st.n}: ${st.label} (${singleKeyShortcuts ? `${st.n} or Alt+${st.n}` : `Alt+${st.n}`})`}
-                >
-                  <kbd>{singleKeyShortcuts ? st.n : `Alt+${st.n}`}</kbd>
-                  <span>{st.label}</span>
-                </button>
-              ))}
-            </div>
-
-            <button
-              type="button"
-              className="holo-pill holo-pill-subtle"
-              onClick={onToggleActingMenu}
-              title="Switch active demo profile or account"
-            >
-              <span>Profile</span>
-              {singleKeyShortcuts && <kbd>p</kbd>}
-            </button>
-
-            <button
-              type="button"
-              className="holo-pill holo-pill-subtle"
-              onClick={onToggleDisplayMenu}
-              title="Open Display, Contrast, and Scale settings"
-            >
-              <span>Display</span>
-              <kbd>{singleKeyShortcuts ? 'd' : 'Ctrl+Shift+A'}</kbd>
-            </button>
-
-            <button
-              type="button"
-              className="holo-pill holo-pill-subtle"
-              onClick={onDownloadPlan}
-              title="Download white-paper Team Plan HTML file"
-            >
-              <span>Export</span>
-              {singleKeyShortcuts && <kbd>e</kbd>}
-            </button>
+            <span className="holo-ref-chip" aria-label="Shortcut reference">
+              <kbd>{singleKeyShortcuts ? '1..4' : 'Alt+1..4'}</kbd> Steps ({activeView})
+            </span>
+            <span className="holo-ref-chip">
+              <kbd>{singleKeyShortcuts ? '/' : 'Ctrl+K'}</kbd> Search
+            </span>
+            <span className="holo-ref-chip">
+              <kbd>{singleKeyShortcuts ? 'd' : 'Ctrl+Shift+A'}</kbd> Display
+            </span>
+            {singleKeyShortcuts && (
+              <>
+                <span className="holo-ref-chip"><kbd>p</kbd> Profile</span>
+                <span className="holo-ref-chip"><kbd>e</kbd> Export</span>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -174,6 +122,7 @@ export function UpperShortcutHoloMirror({
       <div className="holo-mirror-right">
         <button
           type="button"
+          data-reactive-surface=""
           aria-pressed={singleKeyShortcuts}
           className="holo-meta-btn"
           onClick={onToggleSingleKeyShortcuts}
@@ -183,9 +132,10 @@ export function UpperShortcutHoloMirror({
         </button>
         <button
           type="button"
+          data-reactive-surface=""
           className="holo-meta-btn"
           onClick={onToggleMirror}
-          title="Hide upper shortcut mirror (restore anytime in Display & A11y)"
+          title="Collapse shortcut bar (reopen anytime via Shortcuts pill or Display & A11y)"
         >
           Hide bar
         </button>
@@ -200,7 +150,7 @@ export default function KeyboardLightRibbon({
   authorityHealth,
   queuedClaim,
   singleKeyShortcuts,
-  upperKeyMirror = true,
+  upperKeyMirror = false,
   onToggleSingleKeyShortcuts,
   onToggleUpperKeyMirror,
   onJumpToManageTeam,
@@ -245,23 +195,23 @@ export default function KeyboardLightRibbon({
             <span className="keycap-hint"><kbd>←</kbd><kbd>→</kbd> Switch tab</span>
             <span className="keycap-hint"><kbd>Enter</kbd> Open</span>
             <span className="keycap-hint"><kbd>{singleKeyShortcuts ? '1..4' : 'Alt+1..4'}</kbd> Jump step</span>
-            <button type="button" className="keycap-btn" onClick={onOpenPalette}>
+            <button type="button" data-reactive-surface="" className="keycap-btn" onClick={onOpenPalette}>
               <kbd>{singleKeyShortcuts ? '/' : 'Ctrl+K'}</kbd> Search
             </button>
-            <button type="button" className="keycap-btn" onClick={onOpenHelp}>
+            <button type="button" data-reactive-surface="" className="keycap-btn" onClick={onOpenHelp}>
               <kbd>{singleKeyShortcuts ? '?' : 'F1'}</kbd> Guide
             </button>
           </>
         ) : (
           <>
             <span className="keycap-hint"><kbd>{singleKeyShortcuts ? '1..4' : 'Alt+1..4'}</kbd> Steps</span>
-            <button type="button" className="keycap-btn" onClick={onOpenPalette}>
+            <button type="button" data-reactive-surface="" className="keycap-btn" onClick={onOpenPalette}>
               <kbd>{singleKeyShortcuts ? '/' : 'Ctrl+K'}</kbd> Search
             </button>
-            <button type="button" className="keycap-btn" onClick={onFocusFilter}>
+            <button type="button" data-reactive-surface="" className="keycap-btn" onClick={onFocusFilter}>
               <kbd>{singleKeyShortcuts ? 'f' : 'Alt+1'}</kbd> Filter
             </button>
-            <button type="button" className="keycap-btn" onClick={onOpenHelp}>
+            <button type="button" data-reactive-surface="" className="keycap-btn" onClick={onOpenHelp}>
               <kbd>{singleKeyShortcuts ? '?' : 'F1'}</kbd> Guide
             </button>
           </>
@@ -272,6 +222,7 @@ export default function KeyboardLightRibbon({
       <div className="ide-status-right">
         <button
           type="button"
+          data-reactive-surface=""
           className="ide-network-status"
           onClick={onJumpToManageTeam}
           title="Open 3. Manage your team to inspect server, peer relay, and saved requests"
@@ -295,16 +246,18 @@ export default function KeyboardLightRibbon({
         {onToggleUpperKeyMirror && !upperKeyMirror && (
           <button
             type="button"
+            data-reactive-surface=""
             className="keycap-toggle-btn"
             onClick={onToggleUpperKeyMirror}
-            title="Show translucent shortcut mirror bar near top of screen"
+            title="Show expandable keyboard shortcut reference strip"
           >
-            Show top shortcut bar
+            Shortcuts (?)
           </button>
         )}
 
         <button
           type="button"
+          data-reactive-surface=""
           aria-pressed={singleKeyShortcuts}
           className="keycap-toggle-btn"
           onClick={onToggleSingleKeyShortcuts}

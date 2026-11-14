@@ -86,9 +86,18 @@ export default function SeatAuthorityView({
   const [customSkillsDraft, setCustomSkillsDraft] = useState(['backend', 'frontend', 'integrate']);
 
   useEffect(() => {
+    if (!issuedInvite?.expiresAt || issuedInvite?.claimedBy) return undefined;
+    if (typeof document !== 'undefined') {
+      const root = document.documentElement;
+      if (root.getAttribute('data-calm-firewall') === 'on' || root.getAttribute('data-motion') === 'off') {
+        setNowMs(Date.now());
+        return undefined;
+      }
+    }
+    if (Date.now() >= issuedInvite.expiresAt) return undefined;
     const t = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(t);
-  }, []);
+  }, [issuedInvite?.expiresAt, issuedInvite?.claimedBy]);
 
   useEffect(() => {
     if (!selectedTeam && teamId) {
@@ -289,7 +298,8 @@ export default function SeatAuthorityView({
 
           <button
             type="button"
-            className="btn btn-primary btn-compact"
+            data-reactive-surface=""
+            className={`btn btn-compact ${isSelectedTeamCurrent ? 'btn-secondary' : 'btn-primary'}`}
             disabled={joining || forwardingPeer}
             onClick={onAutoSetupRelayDemo}
           >
@@ -322,6 +332,7 @@ export default function SeatAuthorityView({
             <div className="stack-actions">
               <button
                 type="button"
+                data-reactive-surface=""
                 aria-pressed={wanOffline}
                 className={`btn btn-compact ${wanOffline ? 'btn-warn-solid' : 'btn-secondary'}`}
                 onClick={onToggleWanOffline}
@@ -330,7 +341,8 @@ export default function SeatAuthorityView({
               </button>
               <button
                 type="button"
-                className={`btn btn-compact ${activeStep === 1 ? 'btn-primary' : 'btn-secondary'}`}
+                data-reactive-surface=""
+                className={`btn btn-compact ${isSelectedTeamCurrent && activeStep === 1 ? 'btn-primary' : 'btn-secondary'}`}
                 disabled={joining || forwardingPeer}
                 onClick={() => onJoinSeat({ fromWalkthroughStep1: true })}
               >
@@ -340,7 +352,7 @@ export default function SeatAuthorityView({
             </div>
 
             {queuedClaim && !relayedReceipt && (
-              <div className="outbox-receipt" role="status">
+              <div className="outbox-receipt">
                 <strong>Saved on this device. Waiting to send.</strong>
                 <div className="small-copy muted-copy">
                   Not joined on server yet ({queuedClaim.actorId} -&gt; {queuedClaim.teamId}).
@@ -351,7 +363,7 @@ export default function SeatAuthorityView({
               </div>
             )}
             {(relayedReceipt || replayReceipt) && (
-              <div className="small-copy muted-copy top-gap-xs" role="status">
+              <div className="small-copy muted-copy top-gap-xs">
                 ✓ Request was saved locally before forwarding.
               </div>
             )}
@@ -379,6 +391,7 @@ export default function SeatAuthorityView({
             <div className="stack-actions">
               <button
                 type="button"
+                data-reactive-surface=""
                 className={`btn btn-compact ${activeStep === 2 ? 'btn-primary' : 'btn-secondary'}`}
                 disabled={joining || forwardingPeer}
                 onClick={onForwardViaPeer}
@@ -388,7 +401,7 @@ export default function SeatAuthorityView({
             </div>
 
             {relayedReceipt && (
-              <div className="subcard tone-ok small-top" role="status">
+              <div className="subcard tone-ok small-top">
                 <strong>Sent through Mateo. Confirmed by server.</strong>
                 <div className="small-copy">
                   Spot confirmed for <code>{relayedReceipt.actorId}</code> on <code>{relayedReceipt.teamId}</code>.
@@ -424,6 +437,7 @@ export default function SeatAuthorityView({
             <div className="stack-actions">
               <button
                 type="button"
+                data-reactive-surface=""
                 className={`btn btn-compact ${activeStep === 3 ? 'btn-primary' : 'btn-secondary'}`}
                 disabled={
                   joining ||
@@ -437,7 +451,7 @@ export default function SeatAuthorityView({
             </div>
 
             {replayReceipt && (
-              <div className="subcard tone-ok small-top" role="status">
+              <div className="subcard tone-ok small-top">
                 <strong>The server returned the original result for this request.</strong>
                 <div className="small-copy">
                   Zero duplicate spots added; saved local request cleaned up automatically.
@@ -495,37 +509,46 @@ export default function SeatAuthorityView({
               </div>
             )}
 
-            <label className="field-label">
-              <span>Team ID (in <code>{eventId}</code>)</span>
+            <div className="field-label">
+              <label htmlFor="seat-authority-team-id-input">
+                <span>Team ID (in <code>{eventId}</code>)</span>
+              </label>
               <div className="inline-form">
                 <input
+                  id="seat-authority-team-id-input"
                   type="text"
                   value={teamId}
                   onChange={e => onChangeTeamId(e.target.value.replace(/[^A-Za-z0-9_.:@-]/g, ''))}
                   placeholder="e.g. crew-alpha"
                 />
                 {pickerTeams.length > 0 && (
-                  <select
-                    aria-label="Choose an existing team from the current page"
-                    value=""
-                    onChange={e => {
-                      if (e.target.value) {
-                        onChangeTeamId(e.target.value);
-                        onInspectTeam(e.target.value);
-                      }
-                    }}
-                    className="compact-select"
-                  >
-                    <option value="">Choose from board...</option>
-                    {pickerTeams.map(t => (
-                      <option key={t.team_id} value={t.team_id}>
-                        {t.team_id} ({t.members}/{t.max_size} spots)
-                      </option>
-                    ))}
-                  </select>
+                  <>
+                    <label htmlFor="seat-authority-board-picker" className="sr-only">
+                      Choose from board
+                    </label>
+                    <select
+                      id="seat-authority-board-picker"
+                      title="Choose an existing team from the current page"
+                      value=""
+                      onChange={e => {
+                        if (e.target.value) {
+                          onChangeTeamId(e.target.value);
+                          onInspectTeam(e.target.value);
+                        }
+                      }}
+                      className="compact-select"
+                    >
+                      <option value="">Choose from board...</option>
+                      {pickerTeams.map(t => (
+                        <option key={t.team_id} value={t.team_id}>
+                          {t.team_id} ({t.members}/{t.max_size} spots)
+                        </option>
+                      ))}
+                    </select>
+                  </>
                 )}
               </div>
-            </label>
+            </div>
 
             <div className="subcard">
               <label className="field-label">
@@ -771,8 +794,15 @@ export default function SeatAuthorityView({
               )}
             </div>
 
-            {/* Confirmed Team Members & Leadership Transfer */}
-            <div className="roster-box">
+            {/* Confirmed Team Members & Leadership Transfer (Firefly Lead + Vacant-Lead Scent) */}
+            <div
+              className={`roster-box ${
+                !selectedTeam ||
+                !(selectedTeam.leader || (selectedTeam.members || []).some(m => m.isLeader))
+                  ? 'is-leaderless'
+                  : ''
+              }`}
+            >
               <div className="row-between wrap-gap">
                 <h4>
                   Confirmed Team Members:{' '}
@@ -784,12 +814,20 @@ export default function SeatAuthorityView({
                     <span className="muted-copy">Click "Refresh {teamId}" to view members</span>
                   )}
                 </h4>
-                <span className="status-chip chip-ok">Confirmed by server</span>
+                {selectedTeam &&
+                (selectedTeam.leader || (selectedTeam.members || []).some(m => m.isLeader)) ? (
+                  <span className="status-chip chip-ok">Confirmed by server</span>
+                ) : (
+                  <span className="badge-pill vacant-lead-badge">◇ No Server Lead loaded</span>
+                )}
               </div>
 
-              {selectedTeam && (
+              {selectedTeam ? (
                 <div className="roster-list top-gap-xs">
                   {selectedTeam.members.map(m => {
+                    const isLead = Boolean(
+                      m.isLeader || (selectedTeam.leader && m.userId === selectedTeam.leader)
+                    );
                     const isLinked =
                       activeLinkId && normalizeBuilderId(activeLinkId) === normalizeBuilderId(m.userId);
                     return (
@@ -798,16 +836,23 @@ export default function SeatAuthorityView({
                         data-link-id={m.userId}
                         onMouseEnter={() => onLinkHover?.(m.userId)}
                         onMouseLeave={() => onLinkHover?.(null)}
-                        className={`roster-row ${isLinked ? 'is-linked-ridge' : ''}`}
+                        className={`roster-row ${isLead ? 'is-leader-row' : ''} ${
+                          isLinked ? 'is-linked-ridge' : ''
+                        }`}
                       >
                         <div className="pill-row">
+                          {isLead && <span className="firefly-lead-spark" aria-hidden="true" />}
                           <UserIcon size={15} />
                           <strong>{m.userId}</strong>
-                          <span className={`status-chip ${m.isLeader ? 'chip-ok' : 'chip-neutral'}`}>
-                            {m.isLeader ? '★ Team Lead' : 'Confirmed Member'}
+                          <span
+                            className={`badge-pill ${
+                              isLead ? 'lead-firefly-badge' : 'member-calm-badge'
+                            }`}
+                          >
+                            {isLead ? '★ Team Lead' : 'Confirmed Member'}
                           </span>
                         </div>
-                        {!m.isLeader && canDemoActAsLeader && (
+                        {!isLead && canDemoActAsLeader && (
                           <button
                             type="button"
                             className="btn btn-secondary btn-compact"
@@ -820,23 +865,36 @@ export default function SeatAuthorityView({
                     );
                   })}
                 </div>
+              ) : (
+                <div className="member-chips-grid top-gap-xs">
+                  <div className="member-chip no-leader-chip">
+                    <span>◇ No server team loaded yet - refresh or create team to anchor Team Lead</span>
+                    <span className="badge-pill vacant-lead-badge">◇ Needs Lead</span>
+                  </div>
+                </div>
               )}
 
               <div className="inline-form top-gap-sm">
                 {eligibleTransferMembers.length > 0 && (
-                  <select
-                    aria-label="Choose eligible member to become team lead"
-                    value={eligibleTransferMembers.some(m => m.userId === transferTarget) ? transferTarget : ''}
-                    onChange={e => setTransferTarget(e.target.value)}
-                    className="compact-select"
-                  >
-                    <option value="">Choose member ({eligibleTransferMembers.length})...</option>
-                    {eligibleTransferMembers.map(m => (
-                      <option key={m.userId} value={m.userId}>
-                        {m.userId}
-                      </option>
-                    ))}
-                  </select>
+                  <>
+                    <label htmlFor="seat-authority-transfer-picker" className="sr-only">
+                      Choose eligible member to become team lead
+                    </label>
+                    <select
+                      id="seat-authority-transfer-picker"
+                      title="Choose eligible member to become team lead"
+                      value={eligibleTransferMembers.some(m => m.userId === transferTarget) ? transferTarget : ''}
+                      onChange={e => setTransferTarget(e.target.value)}
+                      className="compact-select"
+                    >
+                      <option value="">Choose member ({eligibleTransferMembers.length})...</option>
+                      {eligibleTransferMembers.map(m => (
+                        <option key={m.userId} value={m.userId}>
+                          {m.userId}
+                        </option>
+                      ))}
+                    </select>
+                  </>
                 )}
                 <input
                   type="text"

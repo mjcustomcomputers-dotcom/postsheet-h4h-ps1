@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import SolarBatonHorizon from '../components/SolarBatonHorizon.jsx';
+import { TeamAuthorityRoster } from '../components/TeamAuthorityRoster.jsx';
 import {
   SKILLS_CATALOG,
   BUILDER_DIRECTORY,
@@ -106,11 +107,15 @@ export default function DiscoverView({
   totalTeams,
   boardLatencyMs,
   sseConnected,
+  ssePaused = false,
+  onToggleSsePaused,
+  onAnnounceStatus,
   pageIndex,
   pageSize,
   onPageChange,
   onPageSizeChange,
   onRefreshBoard,
+  actorId = '',
   selectedTeam,
   onInspectTeam,
   onCloseInspect,
@@ -151,6 +156,7 @@ export default function DiscoverView({
     'Action preview: "Try in plan" tests schedule fit locally (preview only). "Invite / Join team" manages real server spots.'
   );
   const searchInputRef = useRef(null);
+  const prevFilterSigRef = useRef(null);
 
   useEffect(() => {
     if (!externalFilterRequest || !externalFilterRequest.seq) return;
@@ -393,6 +399,57 @@ export default function DiscoverView({
   );
 
   const crewsToDisplay = directoryTab === 'featured' ? featuredCrews : filteredCrews;
+  const selectedHasLeader = Boolean(
+    selectedTeam &&
+      (selectedTeam.leader || (selectedTeam.members || []).some(m => m.isLeader))
+  );
+  const selectedOpenSpots = selectedTeam
+    ? Math.max(0, (selectedTeam.maxSize || 5) - (selectedTeam.members?.length || 0))
+    : 0;
+  const firstOpenCrew = useMemo(
+    () =>
+      crewsToDisplay.find(c => c.openSeats > 0) ||
+      featuredCrews.find(c => c.openSeats > 0) ||
+      crewsToDisplay[0] ||
+      null,
+    [crewsToDisplay, featuredCrews]
+  );
+
+  const filterSig = `${directoryTab}|${searchQuery.trim()}|${selectedSkill}|${openOnly}`;
+  useEffect(() => {
+    if (prevFilterSigRef.current === null) {
+      prevFilterSigRef.current = filterSig;
+      return undefined;
+    }
+    if (prevFilterSigRef.current === filterSig) return undefined;
+    prevFilterSigRef.current = filterSig;
+    const timer = setTimeout(() => {
+      const msg =
+        directoryTab === 'builders'
+          ? `Showing ${filteredBuilders.length} matching people.`
+          : directoryTab === 'crews'
+            ? `Showing ${filteredCrews.length} teams on page.`
+            : `Overview: ${filteredBuilders.length} matching people and ${filteredCrews.length} teams.`;
+      onAnnounceStatus?.(msg);
+    }, 180);
+    return () => clearTimeout(timer);
+  }, [filterSig, directoryTab, filteredBuilders.length, filteredCrews.length, onAnnounceStatus]);
+
+  function handleDirectoryTabKeyDown(e) {
+    const tabIds = ['featured', 'builders', 'crews'];
+    const idx = tabIds.indexOf(directoryTab);
+    let nextIdx = -1;
+    if (e.key === 'ArrowRight') nextIdx = (idx + 1) % tabIds.length;
+    else if (e.key === 'ArrowLeft') nextIdx = (idx - 1 + tabIds.length) % tabIds.length;
+    else if (e.key === 'Home') nextIdx = 0;
+    else if (e.key === 'End') nextIdx = tabIds.length - 1;
+    if (nextIdx < 0) return;
+    e.preventDefault();
+    const nextTabId = tabIds[nextIdx];
+    setDirectoryTab(nextTabId);
+    const tabs = Array.from(e.currentTarget.querySelectorAll('[role="tab"]'));
+    requestAnimationFrame(() => tabs[nextIdx]?.focus());
+  }
 
   return (
     <section aria-labelledby="discover-heading" className="view-section discover-studio-section">
@@ -410,9 +467,19 @@ export default function DiscoverView({
               <span className="kpi-inline-pill" title={`Server-recorded teams in ${eventId}`}>
                 <strong>{totalTeams !== null ? `${totalTeams.toLocaleString()}` : board.length}</strong> teams
               </span>
-              <span className={`kpi-inline-pill ${sseConnected ? 'kpi-live' : ''}`} title="Live team updates">
-                {sseConnected ? '● Live updates' : 'Standby'}
-              </span>
+              <button
+                type="button"
+                className={`kpi-inline-pill kpi-live-btn ${!ssePaused && sseConnected ? 'kpi-live' : ''}`}
+                aria-pressed={ssePaused}
+                onClick={onToggleSsePaused}
+                title={
+                  ssePaused
+                    ? 'Live updates paused. Press to resume real-time updates.'
+                    : 'Real-time server updates active. Press to pause live stream and polling.'
+                }
+              >
+                {ssePaused ? 'Paused (Resume)' : sseConnected ? '● Live updates' : 'Auto-sync on'}
+              </button>
             </div>
             <p className="discover-subcopy">
               Preview how a person fits your task schedule before inviting anyone, then confirm real team spots on the server.
@@ -423,6 +490,7 @@ export default function DiscoverView({
           <div className="lens-switcher" role="group" aria-label="Compare purpose-first view against profile-only directory">
             <button
               type="button"
+              data-reactive-surface=""
               aria-pressed={!legacyMode}
               className={`lens-btn ${!legacyMode ? 'active' : ''}`}
               onClick={() => {
@@ -434,6 +502,7 @@ export default function DiscoverView({
             </button>
             <button
               type="button"
+              data-reactive-surface=""
               aria-pressed={legacyMode}
               className={`lens-btn lens-btn-warn ${legacyMode ? 'active' : ''}`}
               onClick={() => {
@@ -461,24 +530,16 @@ export default function DiscoverView({
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               placeholder="Filter name, city, skill, or team (f)..."
-              aria-label="Search people and teams"
+              aria-label="Filter people and teams by name, city, skill, or team"
             />
           </div>
 
-          {onOpenPalette && (
-            <button
-              type="button"
-              data-reactive-surface=""
-              className="btn btn-secondary btn-compact discover-cmd-btn"
-              onClick={onOpenPalette}
-              title="Open full Command Search across teammates, scenarios, and actions (click, /, or Ctrl+K)"
-            >
-              <SearchIcon size={14} />
-              <span>Command Search</span>
-            </button>
-          )}
-
-          <div className="tab-strip compact-tab-strip" role="tablist" aria-label="Show people or teams">
+          <div
+            className="tab-strip compact-tab-strip"
+            role="tablist"
+            aria-label="Show people or teams"
+            onKeyDown={handleDirectoryTabKeyDown}
+          >
             {[
               { id: 'featured', label: 'Overview' },
               { id: 'builders', label: `People (${filteredBuilders.length})` },
@@ -490,8 +551,10 @@ export default function DiscoverView({
               <button
                 key={tab.id}
                 type="button"
+                data-reactive-surface=""
                 role="tab"
                 aria-selected={directoryTab === tab.id}
+                tabIndex={directoryTab === tab.id ? 0 : -1}
                 className={`tab-pill ${directoryTab === tab.id ? 'active' : ''}`}
                 onClick={() => setDirectoryTab(tab.id)}
               >
@@ -503,6 +566,7 @@ export default function DiscoverView({
           <div className="pill-row skill-strip" role="group" aria-label="Filter by skill">
             <button
               type="button"
+              data-reactive-surface=""
               aria-pressed={selectedSkill === 'all'}
               className={`chip-toggle chip-compact ${selectedSkill === 'all' ? 'active' : ''}`}
               onClick={() => setSelectedSkill('all')}
@@ -513,6 +577,7 @@ export default function DiscoverView({
               <button
                 key={sk.id}
                 type="button"
+                data-reactive-surface=""
                 aria-pressed={selectedSkill === sk.id}
                 className={`chip-toggle chip-compact ${selectedSkill === sk.id ? 'active' : ''}`}
                 onClick={() => setSelectedSkill(selectedSkill === sk.id ? 'all' : sk.id)}
@@ -525,6 +590,7 @@ export default function DiscoverView({
           <div className="pill-row filter-right-controls">
             <button
               type="button"
+              data-reactive-surface=""
               role="switch"
               aria-checked={openOnly}
               className={`open-seats-switch ${openOnly ? 'active' : ''}`}
@@ -553,7 +619,7 @@ export default function DiscoverView({
         </div>
 
         {/* Calm non-covering Action Consequence Preview Bar (CRR View 1) */}
-        <div className="action-consequence-bar small-copy" role="status" aria-live="polite">
+        <div className="action-consequence-bar small-copy">
           {actionHint}
         </div>
 
@@ -619,7 +685,7 @@ export default function DiscoverView({
       <div className={`discover-split-studio ${isPanoramic3 ? 'discover-panorama-single' : ''}`}>
         <div className="discover-cards-column">
           {legacyMode && (
-            <div className="legacy-mode-banner" role="status">
+            <div className="legacy-mode-banner" role="note">
               <AlertTriangleIcon size={16} />
               <div>
                 <strong>Profile-Only Comparison Active:</strong> Traditional directories show only city and flat skill tags, hiding time-zone handoff windows and calling 5/5 teams "Complete" even when one person is double-booked. Switch back to <strong>Purpose-First View</strong> to see real schedule fit.
@@ -627,16 +693,23 @@ export default function DiscoverView({
             </div>
           )}
 
-          {/* Inline Selected Team Server Roster */}
-          {selectedTeam && (
+          {/* Inline Selected Team Server Roster (Firefly Lead vs Peripheral Vacant-Lead Shade) */}
+          {selectedTeam ? (
             <div
-              className="surface-card inspector-banner"
+              className={`surface-card inspector-banner ${
+                selectedHasLeader ? 'has-firefly-lead' : 'is-leaderless'
+              }`}
+              data-leader-state={selectedHasLeader ? 'firefly-lead' : 'vacant-lead'}
               role="region"
               aria-label={`Confirmed server members for ${selectedTeam.teamId}`}
             >
               <div className="row-between wrap-gap">
                 <div>
-                  <span className="eyebrow-tag">CONFIRMED BY SERVER · {eventId}</span>
+                  <span className="eyebrow-tag">
+                    {selectedHasLeader
+                      ? `CONFIRMED BY SERVER · ${eventId}`
+                      : `NO TEAM LEAD ASSIGNED · ${eventId}`}
+                  </span>
                   <h3 className="card-subtitle">
                     Team <code>{selectedTeam.teamId}</code> · {selectedTeam.members.length} / {selectedTeam.maxSize} spots filled
                   </h3>
@@ -644,26 +717,74 @@ export default function DiscoverView({
                 <div className="pill-row">
                   <button
                     type="button"
+                    data-reactive-surface=""
                     className="btn btn-primary btn-compact"
                     onClick={() => onRequestSeatForTeam(selectedTeam.teamId)}
                   >
                     <ShieldCheckIcon size={14} /> Invite / Join team
                   </button>
-                  <button type="button" className="btn btn-ghost btn-compact" onClick={onCloseInspect}>
+                  <button type="button" data-reactive-surface="" className="btn btn-ghost btn-compact" onClick={onCloseInspect}>
                     Close
                   </button>
                 </div>
               </div>
 
-              <div className="member-chips-grid">
-                {selectedTeam.members.map(m => (
-                  <div key={m.userId} className={`member-chip ${m.isLeader ? 'leader-chip' : ''}`}>
-                    <UserIcon size={14} />
-                    <strong>{m.userId}</strong>
-                    <span className="badge-pill">{m.isLeader ? '★ Lead' : 'Member'}</span>
-                  </div>
-                ))}
+              <TeamAuthorityRoster
+                members={selectedTeam.members || []}
+                leaderId={selectedTeam.leader || ''}
+                currentActorId={actorId}
+                openSpots={selectedOpenSpots}
+                canClaimLead={!selectedHasLeader && Boolean(onLockPlanAndMintInvite)}
+                onClaimLead={onLockPlanAndMintInvite}
+              />
+            </div>
+          ) : (
+            <div
+              className="surface-card inspector-banner is-leaderless"
+              data-leader-state="vacant-preview"
+              role="region"
+              aria-label="Server team lead status"
+            >
+              <div className="row-between wrap-gap">
+                <div>
+                  <span className="eyebrow-tag">NO SERVER TEAM LEAD ACTIVE · {eventId}</span>
+                  <h3 className="card-subtitle">
+                    Local preview only · Pick an open team or create one as Team Lead
+                  </h3>
+                </div>
+                <div className="pill-row">
+                  {firstOpenCrew && (
+                    <button
+                      type="button"
+                      data-reactive-surface=""
+                      className="btn btn-secondary btn-compact"
+                      onClick={() => onInspectTeam(firstOpenCrew.teamId)}
+                    >
+                      <EyeIcon size={14} /> Inspect {firstOpenCrew.teamId}
+                    </button>
+                  )}
+                  {onLockPlanAndMintInvite && (
+                    <button
+                      type="button"
+                      data-reactive-surface=""
+                      className="btn btn-primary btn-compact"
+                      disabled={lockingPlan}
+                      onClick={onLockPlanAndMintInvite}
+                    >
+                      <ShieldCheckIcon size={14} />{' '}
+                      {lockingPlan ? 'Creating...' : 'Create team as Lead'}
+                    </button>
+                  )}
+                </div>
               </div>
+
+              <TeamAuthorityRoster
+                members={[]}
+                currentActorId={actorId}
+                previewCount={teamPeople.length}
+                canClaimLead={Boolean(onLockPlanAndMintInvite)}
+                onClaimLead={onLockPlanAndMintInvite}
+              />
             </div>
           )}
 
@@ -716,7 +837,9 @@ export default function DiscoverView({
                         onFocus={() => onLinkHover?.(b.id)}
                         className={`crew-card builder-card ${inCrew ? 'card-in-crew' : ''} ${
                           (restores || advancesPartial) && !inCrew && !legacyMode ? 'card-top-match' : ''
-                        } ${isLinked ? 'is-linked-ridge' : ''}`}
+                        } ${upgradesCond && !inCrew && !legacyMode ? 'card-cond-match' : ''} ${
+                          isLinked ? 'is-linked-ridge' : ''
+                        }`}
                         aria-label={`Teammate ${b.displayName || b.id}`}
                       >
                         <div className="builder-card-head">
@@ -745,8 +868,11 @@ export default function DiscoverView({
                                   ✓ In plan
                                 </span>
                               ) : restores ? (
-                                <span className="status-chip chip-ok" title="Completes all uncovered tasks in your active plan">
-                                  ★ Completes {totalTasks}/{totalTasks} plan
+                                <span
+                                  className="status-chip chip-ok firefly-completes-chip"
+                                  title="Completes all uncovered tasks in your active plan"
+                                >
+                                  <span className="firefly-lead-spark" aria-hidden="true" /> ★ Completes {totalTasks}/{totalTasks} plan
                                 </span>
                               ) : upgradesCond ? (
                                 <span className="status-chip chip-warn" title="Covers missing task window with 1 quick skill check">
@@ -820,8 +946,20 @@ export default function DiscoverView({
                         <div className="card-actions-row">
                           <button
                             type="button"
+                            data-reactive-surface=""
                             aria-pressed={inCrew}
-                            className={`btn btn-compact ${inCrew ? 'btn-in-crew' : 'btn-primary'}`}
+                            className={`btn btn-compact ${
+                              inCrew
+                                ? 'btn-in-crew'
+                                : (restores || advancesPartial || upgradesCond) &&
+                                    filteredBuilders.find(cand => {
+                                      if (isBuilderInActiveCrew(cand, teamPeople)) return false;
+                                      const cr = recById.get(cand.plannerId) || recById.get(cand.id);
+                                      return Boolean(cr?.restoresFeasibility || cr?.advancesPartialPlan || cr?.upgradesToConditional);
+                                    })?.id === b.id
+                                  ? 'btn-primary'
+                                  : 'btn-secondary'
+                            }`}
                             onMouseEnter={() =>
                               setActionHint(
                                 inCrew
@@ -845,6 +983,7 @@ export default function DiscoverView({
                           </button>
                           <button
                             type="button"
+                            data-reactive-surface=""
                             className="btn btn-secondary btn-compact"
                             onMouseEnter={() =>
                               setActionHint(`Inspect ${b.displayName || b.id}'s hours and skill details in Step 2 (Plan the work).`)
@@ -1013,15 +1152,29 @@ export default function DiscoverView({
                         onMouseEnter={() => onLinkHover?.(crew.teamId)}
                         onMouseLeave={() => onLinkHover?.(null)}
                         onFocus={() => onLinkHover?.(crew.teamId)}
-                        className={`crew-card ${isLinked ? 'is-linked-ridge' : ''}`}
+                        className={`crew-card ${isLinked ? 'is-linked-ridge' : ''} ${
+                          crew.openSeats === 0 && !legacyMode ? 'card-team-full' : ''
+                        }`}
                         aria-label={`Team ${crew.teamId}`}
                       >
                         <div className="crew-card-top">
                           <div>
                             <h4 className="crew-id">{crew.teamId}</h4>
-                            <span className="leader-tag">
-                              ★ Lead: <code>{crew.leader}</code> · {crew.secondaryContext}
-                            </span>
+                            <div className="pill-row">
+                              <span className={`crew-lead-pill ${crew.leader ? '' : 'is-vacant'}`}>
+                                {crew.leader ? (
+                                  <>
+                                    <span className="firefly-lead-spark" aria-hidden="true" />
+                                    <span>★ Lead:</span> <code>{crew.leader}</code>
+                                  </>
+                                ) : (
+                                  '◇ No Lead assigned'
+                                )}
+                              </span>
+                              {crew.secondaryContext && (
+                                <span className="leader-tag">· {crew.secondaryContext}</span>
+                              )}
+                            </div>
                           </div>
                           {!legacyMode && (
                             <div className="pill-row">
@@ -1110,6 +1263,7 @@ export default function DiscoverView({
                         <div className="card-actions-row">
                           <button
                             type="button"
+                            data-reactive-surface=""
                             className="btn btn-secondary btn-compact"
                             onMouseEnter={() =>
                               setActionHint(`View details: load server-confirmed member list for ${crew.teamId}.`)
@@ -1123,6 +1277,7 @@ export default function DiscoverView({
                           </button>
                           <button
                             type="button"
+                            data-reactive-surface=""
                             className="btn btn-secondary btn-compact"
                             onMouseEnter={() =>
                               setActionHint(`Try in plan: preview ${crew.teamId}'s tasks and hours in Step 2 (preview only).`)
@@ -1136,7 +1291,8 @@ export default function DiscoverView({
                           </button>
                           <button
                             type="button"
-                            className={`btn btn-compact ${crew.openSeats > 0 ? 'btn-primary' : 'btn-ghost'}`}
+                            data-reactive-surface=""
+                            className={`btn btn-compact ${crew.openSeats > 0 ? 'btn-secondary' : 'btn-ghost'}`}
                             onMouseEnter={() =>
                               setActionHint(
                                 crew.openSeats > 0
@@ -1192,7 +1348,6 @@ export default function DiscoverView({
 
                 <div
                   className={`dock-verdict-banner verdict-${plainVerdict.tone}`}
-                  role="status"
                 >
                   <div className="row-between">
                     <span className="dock-verdict-title">
@@ -1280,6 +1435,8 @@ export default function DiscoverView({
                 teamPeople={teamPeople}
                 candidates={candidates}
                 recommendations={recs?.recommendations || []}
+                tasks={tasks}
+                plan={plan}
                 pulseTrigger={pulseTrigger}
                 activeLinkId={activeLinkId}
               />

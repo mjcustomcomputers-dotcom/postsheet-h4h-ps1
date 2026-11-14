@@ -1,0 +1,15 @@
+.git
+node_modules
+web/node_modules
+web/dist
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
+.env
+.env.*
+*.key
+*.pem
+*.mp4
+logs
+evidence

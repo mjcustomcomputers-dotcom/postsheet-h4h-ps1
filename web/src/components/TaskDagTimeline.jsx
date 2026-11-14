@@ -132,8 +132,18 @@ function DagSvgDiagram({ rows, horizonMin, maxTime, planRan, markerId }) {
   const rowIndexById = new Map(rows.map((r, idx) => [r.taskId, idx]));
   const ticks = [0, 0.25, 0.5, 0.75, 1].map(frac => Math.round(maxTime * frac));
 
+  const patWarnId = `${markerId}-pat-warn`;
+  const patErrId = `${markerId}-pat-err`;
+  const patPreviewId = `${markerId}-pat-preview`;
+
   return (
-    <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="dag-svg">
+    <svg
+      viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+      className="dag-svg"
+      role="img"
+      aria-label={`Task dependency schedule diagram for ${rows.length} tasks across ${horizonMin} minutes`}
+    >
+      <title>{`Task schedule diagram (${rows.length} tasks, ${horizonMin}m window)`}</title>
       <defs>
         <marker
           id={markerId}
@@ -146,6 +156,15 @@ function DagSvgDiagram({ rows, horizonMin, maxTime, planRan, markerId }) {
         >
           <path d="M 0 1 L 8 5 L 0 9 z" fill="var(--dag-edge)" />
         </marker>
+        <pattern id={patWarnId} width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <line x1="0" y1="0" x2="0" y2="8" stroke="var(--tone-warn-ink)" strokeWidth="2" strokeOpacity="0.32" />
+        </pattern>
+        <pattern id={patErrId} width="8" height="8" patternUnits="userSpaceOnUse">
+          <path d="M 0 0 L 8 8 M 8 0 L 0 8" stroke="var(--tone-err-ink)" strokeWidth="1.4" strokeOpacity="0.34" />
+        </pattern>
+        <pattern id={patPreviewId} width="6" height="6" patternUnits="userSpaceOnUse">
+          <circle cx="2" cy="2" r="1" fill="var(--accent-primary)" fillOpacity="0.28" />
+        </pattern>
       </defs>
 
       {ticks.map((tVal, i) => {
@@ -233,19 +252,29 @@ function DagSvgDiagram({ rows, horizonMin, maxTime, planRan, markerId }) {
 
         let fillVar = 'var(--dag-bar-preview)';
         let strokeVar = 'var(--accent-primary)';
+        let patternOverlayId = patPreviewId;
+        let dashSpec = '4 2';
         if (planRan) {
           if (isAssigned && isReadyOnly && !isGuarded) {
             fillVar = 'var(--dag-bar-preview)';
             strokeVar = 'var(--accent-secondary)';
+            patternOverlayId = patPreviewId;
+            dashSpec = '3 2';
           } else if (isAssigned && !isGuarded) {
             fillVar = 'var(--dag-bar-ok)';
             strokeVar = 'var(--tone-ok-ink)';
+            patternOverlayId = null;
+            dashSpec = undefined;
           } else if (isAssigned && isGuarded) {
             fillVar = 'var(--dag-bar-warn)';
             strokeVar = 'var(--tone-warn-ink)';
+            patternOverlayId = patWarnId;
+            dashSpec = '5 2';
           } else {
             fillVar = 'var(--dag-bar-err)';
             strokeVar = 'var(--tone-err-ink)';
+            patternOverlayId = patErrId;
+            dashSpec = '2 2';
           }
         }
 
@@ -287,7 +316,19 @@ function DagSvgDiagram({ rows, horizonMin, maxTime, planRan, markerId }) {
               fill={fillVar}
               stroke={strokeVar}
               strokeWidth="1.75"
+              strokeDasharray={dashSpec}
             />
+            {patternOverlayId && (
+              <rect
+                x={execX}
+                y={barY}
+                width={execW}
+                height={barH}
+                rx="6"
+                fill={`url(#${patternOverlayId})`}
+                pointerEvents="none"
+              />
+            )}
 
             <text x={execX + 8} y={barY + 17} className="svg-bar-label">
               {r.assignment

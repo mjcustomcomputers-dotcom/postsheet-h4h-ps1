@@ -287,7 +287,7 @@ export const MISSION_SCENARIOS = {
       { id: 'sandbox-prereq', title: 'Cloud & A11y Runner Prerequisite', skill: 'devops', durationMin: 45, lagMin: 0, after: [] },
       { id: 'authority-api', title: 'SQLite Serialized Seat API', skill: 'backend', durationMin: 105, lagMin: 0, after: ['sandbox-prereq'] },
       { id: 'client-views', title: 'Calm-FOV Crew Views', skill: 'frontend', durationMin: 120, lagMin: 0, after: ['sandbox-prereq'] },
-      { id: 'gate-suite', title: '176-Check Gate & Race Oracle', skill: 'integrate', durationMin: 60, lagMin: 0, after: ['authority-api', 'client-views'] }
+      { id: 'gate-suite', title: '183-Check Gate & Race Oracle', skill: 'integrate', durationMin: 60, lagMin: 0, after: ['authority-api', 'client-views'] }
     ],
     teamPeople: [
       {
@@ -399,7 +399,7 @@ export const BUILDER_DIRECTORY = [
     secondaryContext: 'Civic & Accessibility Lab',
     legacyAffiliation: 'Hot Springs · Design & HCI Lab',
     legacyHiddenFailure: 'Legacy profiles hide that his T+00:00..04:00 window ends before downstream E2E integration can start.',
-    bio: 'Builds WCAG 2.2 AAA interfaces, keyboard focus traps, and spatial DAG visualizers.'
+    bio: 'Builds WCAG 2.2 AAA interfaces, trap-free keyboard flows, and spatial DAG visualizers.'
   },
   {
     id: 'mateo',
@@ -831,7 +831,7 @@ export const WALKTHROUGH_STEPS = [
   },
   {
     time: '3:45 - 5:00',
-    title: '5. 50-person last-spot test & 176-check verification proof',
+    title: '5. 50-person last-spot test & 183-check verification proof',
     detail:
       'Open "4. Test the last spot" and click "Run 50-person last-spot test" to watch 50 simultaneous requests hit 1 open spot: 1 joined, 49 turned away cleanly at 2/2, with oversize=0, orphanLeader=0, and eventMismatch=0.',
     targetView: 'arena',

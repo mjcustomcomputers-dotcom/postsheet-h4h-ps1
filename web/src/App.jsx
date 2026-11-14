@@ -37,6 +37,8 @@ import CrewCharterExportModal, { triggerTeamPlanDownload } from './components/Cr
 import EpistemicStencil from './components/EpistemicStencil.jsx';
 import SolarBatonHorizon from './components/SolarBatonHorizon.jsx';
 import KeyboardLightRibbon, { UpperShortcutHoloMirror } from './components/KeyboardLightRibbon.jsx';
+import AffordalumeCgiStage from './components/AffordalumeCgiStage.jsx';
+import TaskComprehensionBanner from './components/TaskComprehensionBanner.jsx';
 import DiscoverView from './views/DiscoverView.jsx';
 import MissionArchitectView from './views/MissionArchitectView.jsx';
 import SeatAuthorityView from './views/SeatAuthorityView.jsx';
@@ -60,7 +62,8 @@ import {
   FileTextIcon,
   PlusIcon,
   CheckCircleIcon,
-  AlertTriangleIcon
+  AlertTriangleIcon,
+  KeyboardIcon
 } from './icons.jsx';
 
 const DEMO_PERSONA_CLIENT_RE =
@@ -291,6 +294,7 @@ export default function App() {
   const [eventMaxSize, setEventMaxSize] = useState(5);
   const [boardLatencyMs, setBoardLatencyMs] = useState(null);
   const [sseConnected, setSseConnected] = useState(false);
+  const [ssePaused, setSsePaused] = useState(false);
   const [pageIndex, setPageIndex] = useState(0);
   const [pageSize, setPageSize] = useState(24);
   const [selectedTeam, setSelectedTeam] = useState(null);
@@ -367,6 +371,9 @@ export default function App() {
   const tabRefs = useRef({});
   const proxRafRef = useRef(null);
   const lastSurfaceRef = useRef(null);
+  const pointerPxRef = useRef({ x: 720, y: 360 });
+  const rulerBandRef = useRef(null);
+  const foregroundInertRef = useRef(null);
 
   const triggerHorizonPulse = useCallback(() => {
     setHorizonPulse(c => c + 1);
@@ -418,9 +425,16 @@ export default function App() {
   // Scoped rAF pointer proximity handler (0 React re-renders, 0 idle frames, disabled when motion frozen)
   const handleShellPointerMove = useCallback(
     e => {
-      if (isMotionFrozen(ergonomics.motion) || ergonomics.crrMode === 'flat') return;
       const clientX = e.clientX;
       const clientY = e.clientY;
+      pointerPxRef.current = { x: clientX, y: clientY };
+      if (ergonomics.readingRuler && rulerBandRef.current) {
+        rulerBandRef.current.style.setProperty('--ruler-y', `${Math.round(clientY)}px`);
+      }
+      if (isMotionFrozen(ergonomics.motion) || ergonomics.crrMode === 'flat') return;
+      if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+        return;
+      }
       const target = e.target;
       if (proxRafRef.current) return;
       proxRafRef.current = requestAnimationFrame(() => {
@@ -435,8 +449,40 @@ export default function App() {
         lastSurfaceRef.current = surface;
       });
     },
-    [ergonomics.motion, ergonomics.crrMode]
+    [ergonomics.motion, ergonomics.crrMode, ergonomics.readingRuler]
   );
+
+  // Keyboard focus tracking for Reading Ruler and Affordalume surface spotlight parity
+  const handleShellFocusIn = useCallback(
+    e => {
+      const target = e.target;
+      if (!target || typeof target.getBoundingClientRect !== 'function') return;
+      const r = target.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return;
+      const cx = Math.round(r.left + r.width * 0.5);
+      const cy = Math.round(r.top + r.height * 0.5);
+      pointerPxRef.current = { x: cx, y: cy };
+      if (ergonomics.readingRuler && rulerBandRef.current) {
+        rulerBandRef.current.style.setProperty('--ruler-y', `${cy}px`);
+      }
+      if (!isMotionFrozen(ergonomics.motion) && ergonomics.crrMode !== 'flat') {
+        const surface = target.closest?.('[data-reactive-surface]');
+        if (surface) {
+          const sr = surface.getBoundingClientRect();
+          surface.style.setProperty('--rx', `${Math.round(cx - sr.left)}px`);
+          surface.style.setProperty('--ry', `${Math.round(cy - sr.top)}px`);
+        }
+      }
+    },
+    [ergonomics.motion, ergonomics.crrMode, ergonomics.readingRuler]
+  );
+
+  const anyModalOpen = Boolean(whyOpen || authModalOpen || studioOpen || paletteOpen || charterOpen);
+  useEffect(() => {
+    const el = foregroundInertRef.current;
+    if (!el) return;
+    el.inert = anyModalOpen;
+  }, [anyModalOpen]);
 
   // Preserve scroll position when switching Column 3 between Activity Summary & Engineering Proof (CRR-10)
   function handleSwitchCol3Tab(nextTab) {
@@ -797,13 +843,14 @@ export default function App() {
 
   useEffect(() => {
     refreshBoard();
+    if (ssePaused) return undefined;
     const timer = setInterval(() => refreshBoard(), 6000);
     return () => clearInterval(timer);
-  }, [refreshBoard]);
+  }, [refreshBoard, ssePaused]);
 
   // SSE Live Revision Stream
   useEffect(() => {
-    if (wanOffline || !/^[A-Za-z0-9_.:@-]{1,128}$/.test(eventId)) {
+    if (ssePaused || wanOffline || !/^[A-Za-z0-9_.:@-]{1,128}$/.test(eventId)) {
       setSseConnected(false);
       return undefined;
     }
@@ -1290,7 +1337,11 @@ export default function App() {
 
       const localPreview = computePartialTaskPreview(useTasks, useTeam, local.horizonMin, local.planRes);
       const plain = describePlainPlanVerdict(local.planRes, useTasks, localPreview);
-      setStatusMessage(`${plain.headline} · ${local.recRes.recommendations?.length || 0} suggested people.`);
+      setStatusMessage(
+        overrides.toastMessage
+          ? overrides.toastMessage
+          : `${plain.headline} · ${local.recRes.recommendations?.length || 0} suggested people.`
+      );
 
       if (overrides.toastMessage) {
         notifyToast(overrides.toastMessage, plain.tone === 'ok' ? 'ok' : 'info');
@@ -1896,6 +1947,7 @@ export default function App() {
       ? `Removed ${label} from plan preview -> ${plain.headline}`
       : `Tried ${label} in plan (preview only) -> ${plain.headline}`;
 
+    setStatusMessage(toastMsg);
     runSolveAndRecommend({
       teamPeople: nextTeam,
       candidates: nextCands,
@@ -3777,10 +3829,20 @@ export default function App() {
       { id: 'sc-auto', group: 'Display & Scale', label: 'Scale: Auto (60% Desktop / 100% Mobile)', keywords: 'display auto scale 60 100', run: () => setErgonomics(s => ({ ...s, scaleLocked: false, scale: '60' })) },
       { id: 'sc-60', group: 'Display & Scale', label: 'Scale: 60% Panorama', keywords: 'display 60 panorama compact', run: () => setErgonomics(s => ({ ...s, scaleLocked: true, scale: '60' })) },
       { id: 'sc-100', group: 'Display & Scale', label: 'Scale: 100% Standard', keywords: 'display 100 standard large', run: () => setErgonomics(s => ({ ...s, scaleLocked: true, scale: '100' })) },
-      { id: 'th-moon', group: 'Display & Scale', label: 'Contrast: Moonlight Dark', keywords: 'display dark moonlight default', run: () => setErgonomics(s => ({ ...s, theme: 'h4h-glass' })) },
-      { id: 'th-hc', group: 'Display & Scale', label: 'Contrast: High Contrast', keywords: 'display high contrast yellow white', run: () => setErgonomics(s => ({ ...s, theme: 'aaa-contrast' })) },
-      { id: 'th-light', group: 'Display & Scale', label: 'Contrast: Moonlit Pearl (Light)', keywords: 'display light pearl white', run: () => setErgonomics(s => ({ ...s, theme: 'warm-paper' })) },
+      { id: 'th-moon', group: 'Display & Scale', label: 'Contrast: Moonlight Dark', keywords: 'display dark moonlight default', run: () => setErgonomics(s => ({ ...s, theme: 'h4h-glass', blueGlareShield: 'matte-balanced', lightSurface: 'moonlit-pearl' })) },
+      { id: 'th-hc', group: 'Display & Scale', label: 'Contrast: High Contrast', keywords: 'display high contrast yellow white', run: () => setErgonomics(s => ({ ...s, theme: 'aaa-contrast', blueGlareShield: 'matte-balanced', lightSurface: 'moonlit-pearl' })) },
+      { id: 'th-light', group: 'Display & Scale', label: 'Contrast: Moonlit Pearl (Matte Light)', keywords: 'display light matte pearl paper daylight alabaster', run: () => setErgonomics(s => ({ ...s, theme: 'warm-paper', lightSurface: 'moonlit-pearl', blueGlareShield: 'matte-balanced' })) },
+      { id: 'bg-shield', group: 'Display & Scale', label: 'Blue-Glare Shield (-34% Blue Safety Switch)', keywords: 'display blue glare safety switch shield melanopic headlight led', run: () => setErgonomics(s => ({ ...s, blueGlareShield: s.blueGlareShield === 'shield-max' ? 'matte-balanced' : 'shield-max', lightSurface: s.blueGlareShield === 'shield-max' ? 'moonlit-pearl' : 'blue-glare-shield' })) },
+      { id: 'bg-sunlight', group: 'Display & Scale', label: 'Daylight Sun (Outdoor >10k lux)', keywords: 'display sunlight outdoor daylight high lux matte', run: () => setErgonomics(s => ({ ...s, theme: 'warm-paper', lightSurface: 'daylight-sun', blueGlareShield: 'sunlight-day' })) },
       { id: 'mirror-toggle', group: 'Display & Scale', label: 'Toggle Upper Peripheral Shortcut Mirror', keywords: 'display shortcut mirror bar holo keyboard', run: () => setErgonomics(s => ({ ...s, upperKeyMirror: s.upperKeyMirror === false })) },
+      { id: 'fl-emerald', group: 'Flashlight & Clarity', label: 'Flashlight Shade: Moonlight Sage (Default)', keywords: 'flashlight emerald sage green matte', run: () => setErgonomics(s => ({ ...s, flashlightTint: 'emerald', crrMode: 'crr' })) },
+      { id: 'fl-amber', group: 'Flashlight & Clarity', label: 'Flashlight Shade: Purkinje Night Amber (Low Blue Glare)', keywords: 'flashlight amber migraine night glare warm', run: () => setErgonomics(s => ({ ...s, flashlightTint: 'amber', crrMode: 'crr' })) },
+      { id: 'fl-cyan', group: 'Flashlight & Clarity', label: 'Flashlight Shade: Synchronicity Cyan', keywords: 'flashlight cyan blue', run: () => setErgonomics(s => ({ ...s, flashlightTint: 'cyan', crrMode: 'crr' })) },
+      { id: 'fl-violet', group: 'Flashlight & Clarity', label: 'Flashlight Shade: Royal Violet', keywords: 'flashlight violet purple', run: () => setErgonomics(s => ({ ...s, flashlightTint: 'violet', crrMode: 'crr' })) },
+      { id: 'toggle-guide', group: 'Flashlight & Clarity', label: 'Toggle Plain-Language Task Clarity Guide (COGA)', keywords: 'comprehension guide plain language coga step', run: () => setErgonomics(s => ({ ...s, taskGuide: s.taskGuide === false })) },
+      { id: 'toggle-1412', group: 'Flashlight & Clarity', label: 'Toggle Dyslexia Text Spacing (WCAG 1.4.12)', keywords: 'dyslexia spacing wcag 1.4.12 reading', run: () => setErgonomics(s => ({ ...s, textSpacing: s.textSpacing === 'wcag-1412' ? 'standard' : 'wcag-1412' })) },
+      { id: 'toggle-ruler', group: 'Flashlight & Clarity', label: 'Toggle Focus Reading Ruler Band', keywords: 'reading ruler dyslexia adhd line', run: () => setErgonomics(s => ({ ...s, readingRuler: !s.readingRuler })) },
+      { id: 'toggle-cvd', group: 'Flashlight & Clarity', label: 'Toggle Color-Blindness Safe + Hatch Patterns', keywords: 'color blind cvd daltonism hatch monochrome', run: () => setErgonomics(s => ({ ...s, cvdMode: s.cvdMode === 'cvd-safe' ? 'none' : 'cvd-safe' })) },
       { id: 'open-studio', group: 'Display & Scale', label: 'Open Extended Display & Shortcut Studio', shortcut: 'Ctrl+Shift+A', keywords: 'display accessibility studio', run: () => setStudioOpen(true) },
       { id: 'open-why', group: 'Help', label: 'Purpose-First Guide & Keyboard Shortcuts', shortcut: '? / F1', keywords: 'help guide shortcuts', run: () => setWhyOpen(true) }
     ],
@@ -3914,17 +3976,73 @@ export default function App() {
   const col3HasUnresolved = Boolean(wanOffline || queuedClaim);
 
   return (
-    <div className="app-shell" onPointerMove={handleShellPointerMove}>
+    <div
+      className="app-shell"
+      onPointerMove={handleShellPointerMove}
+      onFocusCapture={handleShellFocusIn}
+    >
+      {/* Inline Strict-CSP CVD Simulation Filters (Machado 2009 sRGB Matrices) */}
+      <svg className="sr-cvd-defs no-print" aria-hidden="true" focusable="false">
+        <defs>
+          <filter id="cvd-protan" colorInterpolationFilters="sRGB">
+            <feColorMatrix
+              type="matrix"
+              values="0.567 0.433 0 0 0  0.558 0.442 0 0 0  0 0.242 0.758 0 0  0 0 0 1 0"
+            />
+          </filter>
+          <filter id="cvd-deutan" colorInterpolationFilters="sRGB">
+            <feColorMatrix
+              type="matrix"
+              values="0.625 0.375 0 0 0  0.700 0.300 0 0 0  0 0.300 0.700 0 0  0 0 0 1 0"
+            />
+          </filter>
+          <filter id="cvd-tritan" colorInterpolationFilters="sRGB">
+            <feColorMatrix
+              type="matrix"
+              values="0.950 0.050 0 0 0  0 0.433 0.567 0 0  0 0.475 0.525 0 0  0 0 0 1 0"
+            />
+          </filter>
+          <filter id="cvd-achrom" colorInterpolationFilters="sRGB">
+            <feColorMatrix
+              type="matrix"
+              values="0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0 0 0 1 0"
+            />
+          </filter>
+        </defs>
+      </svg>
+
+      {/* Demand-Driven WebGL2 Cinema 3-Point Matte Stage (0.0 FPS at rest, <=0.92 luminance clamp) */}
+      <AffordalumeCgiStage
+        theme={ergonomics.theme}
+        lightSurface={ergonomics.lightSurface || 'moonlit-pearl'}
+        motion={ergonomics.motion}
+        crrMode={ergonomics.crrMode}
+        stageDirector={ergonomics.stageDirector || 'cinema-guided'}
+        blueGlareShield={ergonomics.blueGlareShield || 'matte-balanced'}
+        flashlightTint={ergonomics.flashlightTint}
+        flashlightPower={ergonomics.flashlightPower}
+        activeView={activeView}
+        planComplete={plainVerdict.tone === 'ok'}
+        pointerPxRef={pointerPxRef}
+      />
+
+      {/* Optional Dyslexia / ADHD Line-Tracking Reading Ruler Band */}
+      <div ref={rulerBandRef} aria-hidden="true" className="reading-ruler-band no-print" />
+
+      <div
+        ref={foregroundInertRef}
+        className="app-foreground-inert-wrap"
+        data-inert-active={anyModalOpen ? 'true' : undefined}
+      >
       <a href="#main-workspace" className="skip-link no-print">
-        Skip to main content
+        Skip to main workspace
       </a>
 
       {/* High-Visibility Center-Top Toast Pill (Theme-Aware --bg-toast-solid) */}
       {toast && (
         <div
           key={toast.key}
-          role="status"
-          aria-live="polite"
+          aria-live="off"
           className={`center-toast-banner toast-${toast.tone || 'info'} no-print`}
         >
           <span className="center-toast-icon" aria-hidden="true">
@@ -3981,6 +4099,7 @@ export default function App() {
                   ref={el => { tabRefs.current[tab.id] = el; }}
                   id={`tab-${tab.id}`}
                   type="button"
+                  data-reactive-surface=""
                   role="tab"
                   aria-selected={selected}
                   aria-controls={`panel-${tab.id}`}
@@ -3999,24 +4118,42 @@ export default function App() {
           </div>
         </nav>
 
-        {/* 3. Visible Mouse/Touch Command Search + 3 Core Controls on the Right */}
+        {/* 3. Visible Mouse/Touch Command Search + Shortcuts Toggle + 3 Core Controls */}
         <div className="header-right-cluster ide-three-controls">
-          {/* Visible Mouse/Touch Command Search Entry Point */}
           <button
             type="button"
             data-reactive-surface=""
             className="btn btn-secondary ide-header-btn header-search-trigger"
             onClick={() => setPaletteOpen(true)}
+            aria-label={`Search ${ergonomics.singleKeyShortcuts ? '/' : 'Ctrl+K'} - Open global Command Search`}
             title="Open Command Search with mouse or keyboard (Ctrl+K or /)"
           >
             <SearchIcon size={14} />
             <span>Search</span>
             <kbd className="header-search-kbd">{ergonomics.singleKeyShortcuts ? '/' : 'Ctrl+K'}</kbd>
           </button>
+          <button
+            type="button"
+            data-reactive-surface=""
+            aria-pressed={ergonomics.upperKeyMirror === true}
+            aria-expanded={ergonomics.upperKeyMirror === true}
+            className={`btn btn-secondary ide-header-btn header-shortcuts-trigger ${
+              ergonomics.upperKeyMirror === true ? 'is-open' : ''
+            }`}
+            onClick={() =>
+              setErgonomics(s => ({ ...s, upperKeyMirror: s.upperKeyMirror !== true }))
+            }
+            title="Show or collapse expandable keyboard shortcut strip"
+          >
+            <KeyboardIcon size={14} />
+            <span>Shortcuts</span>
+            <kbd className="header-search-kbd">?</kbd>
+          </button>
           {/* Control 1: Acting as: <Name> ▾ */}
           <div className="ide-popover-anchor">
             <button
               type="button"
+              data-reactive-surface=""
               data-acting-trigger="true"
               aria-haspopup="dialog"
               aria-expanded={actingMenuOpen}
@@ -4045,10 +4182,34 @@ export default function App() {
             />
           </div>
 
+          {/* Synthetic Blue-Glare Safety Switch (1-Click 450-480nm LED Blue-Spike Clamp) */}
+          <button
+            type="button"
+            data-reactive-surface=""
+            data-blue-glare-switch="true"
+            aria-pressed={ergonomics.blueGlareShield === 'shield-max'}
+            className={`btn btn-secondary ide-header-btn ${ergonomics.blueGlareShield === 'shield-max' ? 'header-shortcuts-trigger is-open' : ''}`}
+            onClick={() =>
+              setErgonomics(s => {
+                const nextShield = s.blueGlareShield === 'shield-max' ? 'matte-balanced' : 'shield-max';
+                return {
+                  ...s,
+                  blueGlareShield: nextShield,
+                  lightSurface: nextShield === 'shield-max' ? 'blue-glare-shield' : 'moonlit-pearl'
+                };
+              })
+            }
+            title="1-click Synthetic Blue-Glare Safety Switch: clamps 450nm LED blue spike (-34% to -45% linear blue)"
+          >
+            <ShieldCheckIcon size={13} />
+            <span>Blue Shield{ergonomics.blueGlareShield === 'shield-max' ? ': ON' : ''}</span>
+          </button>
+
           {/* Control 2: Display & A11y: <Active Scale> ▾ */}
           <div className="ide-popover-anchor">
             <button
               type="button"
+              data-reactive-surface=""
               data-display-trigger="true"
               aria-haspopup="dialog"
               aria-expanded={displayPopoverOpen}
@@ -4072,10 +4233,11 @@ export default function App() {
             />
           </div>
 
-          {/* Control 3: Download Plan (Immediate 1-click #FFFFFF white-paper HTML download) */}
+          {/* Control 3: Download Plan (utility secondary in header) */}
           <button
             type="button"
-            className="btn btn-primary ide-header-btn"
+            data-reactive-surface=""
+            className="btn btn-secondary ide-header-btn"
             onClick={handleDirectPlanDownload}
             title="Download #FFFFFF white-paper Team Plan HTML file immediately"
           >
@@ -4085,30 +4247,19 @@ export default function App() {
         </div>
       </header>
 
-      {/* Upper Peripheral Translucent Hologram Shortcut Mirror */}
+      {/* Expandable Peripheral Shortcut Reference Bar (Collapsed by default) */}
       <UpperShortcutHoloMirror
-        visible={ergonomics.upperKeyMirror !== false}
+        visible={ergonomics.upperKeyMirror === true}
         activeView={activeView}
         singleKeyShortcuts={ergonomics.singleKeyShortcuts}
         onToggleSingleKeyShortcuts={() =>
           setErgonomics(s => ({ ...s, singleKeyShortcuts: !s.singleKeyShortcuts }))
         }
         onToggleMirror={() =>
-          setErgonomics(s => ({ ...s, upperKeyMirror: s.upperKeyMirror === false }))
+          setErgonomics(s => ({ ...s, upperKeyMirror: s.upperKeyMirror !== true }))
         }
-        onOpenPalette={() => setPaletteOpen(true)}
         onOpenHelp={() => setWhyOpen(true)}
         onFocusFilter={() => requestDiscoverFilter({ focus: true })}
-        onNavigate={view => setActiveView(view)}
-        onToggleActingMenu={() => {
-          setDisplayPopoverOpen(false);
-          setActingMenuOpen(v => !v);
-        }}
-        onToggleDisplayMenu={() => {
-          setActingMenuOpen(false);
-          setDisplayPopoverOpen(v => !v);
-        }}
-        onDownloadPlan={handleDirectPlanDownload}
       />
 
       {/* Mobile (<768px) Pinned Mini-Panorama Summary Strip */}
@@ -4206,7 +4357,7 @@ export default function App() {
 
       {/* Simulated Offline Mode Banner (when browsing Steps 1, 2, or 4 while Step 3 Offline Walkthrough is active) */}
       {wanOffline && activeView !== 'authority' && (
-        <div role="status" className="offline-server-banner simulated-wan-banner no-print">
+        <div role="note" className="offline-server-banner simulated-wan-banner no-print">
           <div className="offline-server-copy">
             <OutboxIcon size={17} />
             <div>
@@ -4235,15 +4386,44 @@ export default function App() {
         </div>
       )}
 
-      {/* Main Full-Bleed Workspace (44fr / 28fr / 28fr on >=1100px Desktop Panorama) */}
+      {/* Framed Panoramic Cockpit (44fr / 28fr / 28fr on >=1100px Desktop Panorama) */}
       <div className={`workspace-layout no-print ${layoutClass}`}>
         <main
           id="main-workspace"
           tabIndex={-1}
-          role="tabpanel"
-          aria-labelledby={`tab-${activeView}`}
-          className="main-surface"
+          className="main-surface active-stage-plinth"
         >
+          <TaskComprehensionBanner
+            visible={ergonomics.taskGuide !== false}
+            activeView={activeView}
+            actorId={actorId}
+            teamId={selectedTeam?.teamId || teamId}
+            selectedTeamSummary={
+              selectedTeam
+                ? `${selectedTeam.members?.length || 0}/${selectedTeam.maxSize || 4} spots`
+                : ''
+            }
+            planReadyText={`${plainVerdict.coveredCount}/${plainVerdict.totalCount} tasks ready`}
+            planComplete={plainVerdict.tone === 'ok'}
+            topReliefHint={
+              topRecBuilder && !topRecInCrew && plainVerdict.tone !== 'ok'
+                ? `Try ${topRecShortName} (${topRecShortTz})`
+                : ''
+            }
+            onTriggerReliefHint={
+              topRecBuilder && !topRecInCrew && plainVerdict.tone !== 'ok'
+                ? () => handleToggleBuilderInCrew(topRecBuilder)
+                : null
+            }
+            onNavigateView={setActiveView}
+            onToggleGuide={() => setErgonomics(s => ({ ...s, taskGuide: s.taskGuide === false }))}
+          />
+          <div
+            id={`panel-${activeView}`}
+            role="tabpanel"
+            aria-labelledby={`tab-${activeView}`}
+            className="active-tabpanel-body"
+          >
           {activeView === 'discover' && (
             <DiscoverView
               theme={ergonomics.theme}
@@ -4261,6 +4441,20 @@ export default function App() {
               totalTeams={totalTeams}
               boardLatencyMs={boardLatencyMs}
               sseConnected={sseConnected}
+              ssePaused={ssePaused}
+              onToggleSsePaused={() => {
+                setSsePaused(prev => {
+                  const next = !prev;
+                  setStatusMessage(
+                    next
+                      ? 'Paused live updates. Press Resume to reconnect stream.'
+                      : 'Resumed live updates.'
+                  );
+                  if (!next) setTimeout(() => refreshBoard(), 0);
+                  return next;
+                });
+              }}
+              onAnnounceStatus={setStatusMessage}
               pageIndex={pageIndex}
               pageSize={pageSize}
               onPageChange={setPageIndex}
@@ -4269,6 +4463,7 @@ export default function App() {
                 setPageIndex(0);
               }}
               onRefreshBoard={() => refreshBoard(true)}
+              actorId={actorId}
               selectedTeam={selectedTeam}
               onInspectTeam={inspectTeam}
               onCloseInspect={() => setSelectedTeam(null)}
@@ -4407,13 +4602,16 @@ export default function App() {
               onExecuteWalkthroughStep={handleExecuteWalkthroughStep}
             />
           )}
+          </div>
         </main>
 
         {/* COLUMN 2 (PANORAMA): Team Plan & Schedule */}
         {isPanoramaActive && !isMobileViewport && (
           <aside className="panorama-pane" aria-label="Team Plan and Schedule">
             <div
-              className={`surface-card sticky-dock ${col2HasUnresolved ? 'has-unresolved-contour' : ''}`}
+              className={`surface-card sticky-dock peripheral-station ${
+                col2HasUnresolved ? 'has-unresolved-contour' : 'has-purpose-harmony'
+              }`}
             >
               <div className="row-between wrap-gap">
                 <span className="eyebrow-tag">
@@ -4431,6 +4629,7 @@ export default function App() {
                     <button
                       key={sc.id}
                       type="button"
+                      data-reactive-surface=""
                       aria-pressed={activeScenarioKey === sc.id}
                       className={`mini-preset-chip ${activeScenarioKey === sc.id ? 'active' : ''}`}
                       onClick={() => selectScenario(sc.id)}
@@ -4447,7 +4646,6 @@ export default function App() {
               {/* Honest Plain-Language Plan Banner (Never green at 2/3!) */}
               <div
                 className={`subcard top-gap-xs ${plainVerdict.tone === 'ok' ? 'tone-ok' : 'tone-warn'}`}
-                role="status"
               >
                 <div className="pill-row">
                   {plainVerdict.tone === 'ok' ? (
@@ -4499,6 +4697,8 @@ export default function App() {
                 {topRecBuilder && !topRecInCrew && plan?.status !== 'FEASIBLE_WITNESS' && (
                   <button
                     type="button"
+                    data-reactive-surface=""
+                    data-purpose-beacon="relief"
                     data-link-id={topRecBuilder.id}
                     onMouseEnter={() => setActiveLinkId(topRecBuilder.id)}
                     onMouseLeave={() => setActiveLinkId(null)}
@@ -4539,6 +4739,8 @@ export default function App() {
                   teamPeople={teamPeople}
                   candidates={candidates}
                   recommendations={recs?.recommendations || []}
+                  tasks={tasks}
+                  plan={plan}
                   pulseTrigger={horizonPulse}
                   activeLinkId={activeLinkId}
                 />
@@ -4564,15 +4766,21 @@ export default function App() {
                       (assigneeId && normHover === normalizeBuilderId(assigneeId)) ||
                       (!prevAsg && hoverCoversTask));
 
+                  const activeAsg = asg || prevAsg;
+                  const dagStateClass = !activeAsg
+                    ? 'mini-dag-uncovered'
+                    : activeAsg.evidence === 'unknown'
+                      ? 'mini-dag-conditional'
+                      : 'mini-dag-covered';
+
                   return (
                     <div
                       key={t.id}
+                      data-reactive-surface=""
                       data-link-id={t.id}
                       onMouseEnter={() => setActiveLinkId(assigneeId || t.id)}
                       onMouseLeave={() => setActiveLinkId(null)}
-                      className={`mini-dag-row ${isLinked ? 'is-linked-ridge' : ''} ${
-                        !prevAsg ? 'mini-dag-uncovered' : ''
-                      }`}
+                      className={`mini-dag-row ${isLinked ? 'is-linked-ridge' : ''} ${dagStateClass}`}
                     >
                       <div className="row-between small-copy">
                         <strong>
@@ -4584,10 +4792,10 @@ export default function App() {
                       </div>
                       <div className="small-copy muted-copy">
                         {asg
-                          ? `${asg.evidence === 'unknown' ? 'Unverified: ' : '✓ '}${asg.personId} (${asg.startMin}..${asg.endMin}m)`
+                          ? `${asg.evidence === 'unknown' ? '? Unverified: ' : '✓ '}${asg.personId} (${asg.startMin}..${asg.endMin}m)`
                           : prevAsg
-                            ? `${prevAsg.evidence === 'unknown' ? 'Unverified: ' : '✓ '}${prevAsg.personId} (Preview ${prevAsg.startMin}..${prevAsg.endMin}m)`
-                            : `Uncovered - needs ${t.skill}`}
+                            ? `${prevAsg.evidence === 'unknown' ? '? Unverified: ' : '✓ '}${prevAsg.personId} (Preview ${prevAsg.startMin}..${prevAsg.endMin}m)`
+                            : `◇ Uncovered - needs ${t.skill}`}
                       </div>
                     </div>
                   );
@@ -4599,7 +4807,9 @@ export default function App() {
                 {plan?.status === 'FEASIBLE_WITNESS' ? (
                   <button
                     type="button"
-                    className="btn btn-primary btn-compact"
+                    data-reactive-surface=""
+                    data-purpose-beacon="ready"
+                    className="btn btn-secondary btn-compact"
                     disabled={lockingPlan}
                     onClick={handleLockPlanAndMintInvite}
                   >
@@ -4609,7 +4819,9 @@ export default function App() {
                 ) : topRecBuilder && !topRecInCrew ? (
                   <button
                     type="button"
-                    className="btn btn-primary btn-compact"
+                    data-reactive-surface=""
+                    data-purpose-beacon="relief"
+                    className="btn btn-secondary btn-compact"
                     onClick={() => handleToggleBuilderInCrew(topRecBuilder)}
                   >
                     <PlusIcon size={14} /> Try {topRecShortName} in plan
@@ -4617,7 +4829,8 @@ export default function App() {
                 ) : plan?.status !== 'FEASIBLE_WITNESS' && plan?.frontier?.voiQuestion ? (
                   <button
                     type="button"
-                    className="btn btn-primary btn-compact"
+                    data-reactive-surface=""
+                    className="btn btn-secondary btn-compact"
                     onClick={() =>
                       handleVerifyPersonSkill(
                         plan.frontier.voiQuestion.personId,
@@ -4630,6 +4843,7 @@ export default function App() {
                 ) : (
                   <button
                     type="button"
+                    data-reactive-surface=""
                     className="btn btn-secondary btn-compact"
                     onClick={() => setActiveView('architect')}
                   >
@@ -4639,6 +4853,7 @@ export default function App() {
 
                 <button
                   type="button"
+                  data-reactive-surface=""
                   className="btn btn-ghost btn-compact"
                   onClick={() => setCharterOpen(true)}
                   title="Open dark-comfort preview and print/PDF options"
@@ -4654,12 +4869,13 @@ export default function App() {
         {isPanoramaActive && !isMobileViewport && (
           <aside className="panorama-pane" aria-label="Team Spots and Server Result">
             <div
-              className={`surface-card sticky-dock ${col3HasUnresolved ? 'has-unresolved-contour' : ''}`}
+              className={`surface-card sticky-dock peripheral-station ${col3HasUnresolved ? 'has-unresolved-contour' : ''}`}
             >
               {/* 3-Coordinate Network Continuity Header */}
               <div className="row-between wrap-gap">
                 <button
                   type="button"
+                  data-reactive-surface=""
                   className="col3-network-strip small-copy"
                   onClick={handleOpenOfflineWalkthrough}
                   title="Open Step 3: Offline Join Walkthrough & Mateo teammate relay"
@@ -4697,43 +4913,81 @@ export default function App() {
                 Active team: <code>{selectedTeam?.teamId || teamId}</code> · Acting as: <strong>{humanActorName}</strong>
               </div>
 
-              {/* Live Active Server Team Card (Always Synchronized with Accepted Invites) */}
-              {selectedTeam && (
-                <div className="active-server-team-card top-gap-xs" aria-live="polite">
+              {/* Live Active Server Team Card (Always Synchronized with Accepted Invites & Firefly Lead) */}
+              {selectedTeam ? (() => {
+                const hasServerLead = Boolean(
+                  selectedTeam.leader || (selectedTeam.members || []).some(m => m.isLeader)
+                );
+                const openCol3Spots = Math.max(
+                  0,
+                  (selectedTeam.maxSize || 5) - (selectedTeam.members?.length || 0)
+                );
+                return (
+                  <div
+                    className={`active-server-team-card top-gap-xs ${
+                      hasServerLead ? '' : 'is-leaderless'
+                    }`}
+                  >
+                    <div className="row-between wrap-gap">
+                      <span className="tiny-copy">
+                        <strong>Confirmed team:</strong> <code>{selectedTeam.teamId}</code>
+                      </span>
+                      <span
+                        className={`status-chip ${
+                          selectedTeam.members.length >= selectedTeam.maxSize ? 'chip-warn' : 'chip-ok'
+                        }`}
+                      >
+                        {selectedTeam.members.length}/{selectedTeam.maxSize} spots
+                      </span>
+                    </div>
+                    <div className="active-team-members-row top-gap-xs">
+                      {!hasServerLead && (
+                        <span className="active-member-pill badge-pill vacant-lead-badge">
+                          ◇ No Lead
+                        </span>
+                      )}
+                      {selectedTeam.members.map(m => {
+                        const isLead = m.userId === selectedTeam.leader || m.isLeader;
+                        return (
+                          <span
+                            key={m.userId}
+                            className={`active-member-pill ${isLead ? 'is-lead' : ''}`}
+                            title={m.userId}
+                          >
+                            {isLead ? '★ ' : '✓ '}
+                            {formatHumanActorName(m.userId, true)}
+                          </span>
+                        );
+                      })}
+                      {openCol3Spots > 0 && (
+                        <span
+                          className="active-member-pill is-open-spot"
+                          title="Open server spots ready for invite"
+                        >
+                          ◌ +{openCol3Spots} open
+                        </span>
+                      )}
+                    </div>
+                    {issuedInvite && issuedInvite.teamId === selectedTeam.teamId && (
+                      <div className="tiny-copy muted-copy top-gap-xs">
+                        {issuedInvite.claimedBy
+                          ? `Invite accepted by ${formatHumanActorName(issuedInvite.claimedBy, true)}`
+                          : '1 single-use invite open'}
+                      </div>
+                    )}
+                  </div>
+                );
+              })() : (
+                <div className="active-server-team-card is-leaderless top-gap-xs">
                   <div className="row-between wrap-gap">
                     <span className="tiny-copy">
-                      <strong>Confirmed team:</strong> <code>{selectedTeam.teamId}</code>
+                      <strong>Server team:</strong> None selected
                     </span>
-                    <span
-                      className={`status-chip ${
-                        selectedTeam.members.length >= selectedTeam.maxSize ? 'chip-warn' : 'chip-ok'
-                      }`}
-                    >
-                      {selectedTeam.members.length}/{selectedTeam.maxSize} spots
-                    </span>
+                    <span className="badge-pill vacant-lead-badge">◇ No Lead</span>
                   </div>
-                  <div className="active-team-members-row top-gap-xs">
-                    {selectedTeam.members.map(m => {
-                      const isLead = m.userId === selectedTeam.leader || m.isLeader;
-                      return (
-                        <span
-                          key={m.userId}
-                          className={`active-member-pill ${isLead ? 'is-lead' : ''}`}
-                          title={m.userId}
-                        >
-                          {isLead ? '★ ' : '✓ '}
-                          {formatHumanActorName(m.userId, true)}
-                        </span>
-                      );
-                    })}
+                  <div className="tiny-copy top-gap-xs">
+                    Pick an open team below or create one as Team Lead.
                   </div>
-                  {issuedInvite && issuedInvite.teamId === selectedTeam.teamId && (
-                    <div className="tiny-copy muted-copy top-gap-xs">
-                      {issuedInvite.claimedBy
-                        ? `Invite accepted by ${formatHumanActorName(issuedInvite.claimedBy, true)}`
-                        : '1 single-use invite open'}
-                    </div>
-                  )}
                 </div>
               )}
 
@@ -4746,6 +5000,7 @@ export default function App() {
                     <button
                       key={t.team_id}
                       type="button"
+                      data-reactive-surface=""
                       data-link-id={t.team_id}
                       onMouseEnter={() => setActiveLinkId(t.team_id)}
                       onMouseLeave={() => setActiveLinkId(null)}
@@ -4769,11 +5024,26 @@ export default function App() {
                 className="tab-strip compact-tab-strip top-gap-sm"
                 role="tablist"
                 aria-label="Server activity or engineering proof"
+                onKeyDown={e => {
+                  const tabIds = ['summary', 'proof'];
+                  const idx = tabIds.indexOf(col3Tab);
+                  let nextIdx = -1;
+                  if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') nextIdx = idx === 0 ? 1 : 0;
+                  else if (e.key === 'Home') nextIdx = 0;
+                  else if (e.key === 'End') nextIdx = 1;
+                  if (nextIdx < 0) return;
+                  e.preventDefault();
+                  handleSwitchCol3Tab(tabIds[nextIdx]);
+                  const tabs = Array.from(e.currentTarget.querySelectorAll('[role="tab"]'));
+                  requestAnimationFrame(() => tabs[nextIdx]?.focus());
+                }}
               >
                 <button
                   type="button"
+                  data-reactive-surface=""
                   role="tab"
                   aria-selected={col3Tab === 'summary'}
+                  tabIndex={col3Tab === 'summary' ? 0 : -1}
                   className={`tab-pill ${col3Tab === 'summary' ? 'active' : ''}`}
                   onClick={() => handleSwitchCol3Tab('summary')}
                 >
@@ -4781,8 +5051,10 @@ export default function App() {
                 </button>
                 <button
                   type="button"
+                  data-reactive-surface=""
                   role="tab"
                   aria-selected={col3Tab === 'proof'}
+                  tabIndex={col3Tab === 'proof' ? 0 : -1}
                   className={`tab-pill ${col3Tab === 'proof' ? 'active' : ''}`}
                   onClick={() => handleSwitchCol3Tab('proof')}
                 >
@@ -4915,7 +5187,7 @@ export default function App() {
           <aside className="split-companion-pane" aria-label="Team Plan and Server Companion">
             <div className="surface-card sticky-dock">
               <span className="eyebrow-tag">COMPANION SUMMARY</span>
-              <h3 className="card-subtitle">Plan &amp; Server Status</h3>
+              <h2 className="card-subtitle">Plan &amp; Server Status</h2>
 
               <div className={`subcard top-gap-xs ${plainVerdict.tone === 'ok' ? 'tone-ok' : 'tone-warn'}`}>
                 <strong>{plainVerdict.headline}</strong>
@@ -4939,18 +5211,19 @@ export default function App() {
         authorityHealth={authorityHealth}
         queuedClaim={queuedClaim}
         singleKeyShortcuts={ergonomics.singleKeyShortcuts}
-        upperKeyMirror={ergonomics.upperKeyMirror !== false}
+        upperKeyMirror={ergonomics.upperKeyMirror === true}
         onToggleSingleKeyShortcuts={() =>
           setErgonomics(s => ({ ...s, singleKeyShortcuts: !s.singleKeyShortcuts }))
         }
         onToggleUpperKeyMirror={() =>
-          setErgonomics(s => ({ ...s, upperKeyMirror: s.upperKeyMirror === false }))
+          setErgonomics(s => ({ ...s, upperKeyMirror: s.upperKeyMirror !== true }))
         }
         onJumpToManageTeam={() => setActiveView('authority')}
         onOpenPalette={() => setPaletteOpen(true)}
         onOpenHelp={() => setWhyOpen(true)}
         onFocusFilter={() => requestDiscoverFilter({ focus: true })}
       />
+      </div>
 
       {/* Accessible Modals & Drawers */}
       <WhyPurposeFirstModal

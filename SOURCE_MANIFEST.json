@@ -1,12 +1,17 @@
 {
   "project": "Post Sheet | Ability & Purpose Crew Network (H4H-PS1)",
-  "generatedAt": "2026-11-11T17:33:02.438Z",
-  "fileCount": 82,
+  "generatedAt": "2026-11-15T00:03:54.376Z",
+  "fileCount": 89,
   "files": [
     {
+      "path": ".dockerignore",
+      "bytes": 128,
+      "sha256": "ba2e3f09f652530eb6ddcb8dbe042b5f9bf50bb6339ed9d0bd553f1eb217d18d"
+    },
+    {
       "path": ".github/workflows/ci.yml",
-      "bytes": 2962,
-      "sha256": "0dab3026bef5c6ccea19749ce5ec5cdc97838940c1ec5dea2363c11656793c03"
+      "bytes": 3018,
+      "sha256": "95644798d9c70595f1f7ebfe2130f8c51402ce59a8575184e7cf6d35627ad951"
     },
     {
       "path": ".gitignore",
@@ -15,8 +20,8 @@
     },
     {
       "path": "DESIGN.md",
-      "bytes": 4506,
-      "sha256": "89bab45a3915899bf4715998afc27b4941d413ade4ec8e116be50734113940c9"
+      "bytes": 6043,
+      "sha256": "e9a143ff7b3955a88f6b1713d0fa7755fdcc46fc7bfa7f20ce317571de86017e"
     },
     {
       "path": "Dockerfile",
@@ -30,13 +35,13 @@
     },
     {
       "path": "PREEXISTING_WORK.md",
-      "bytes": 3310,
-      "sha256": "56d2f6d152bc96a6899de31ca75d325b4364c061fee3c0762adc20a0afd15264"
+      "bytes": 3513,
+      "sha256": "22dffc9feca5e098c44c80b9d959330b182a4e0879d90248d481792c3a83ada0"
     },
     {
       "path": "README.md",
-      "bytes": 35846,
-      "sha256": "222f024b926c367e63951f29d1dbe65757df4af387521fdbbbc33f95f6ade78c"
+      "bytes": 36838,
+      "sha256": "1e8502b923844a2c4a46c35d627998fe96f41b6540c2c87b73b398380768e474"
     },
     {
       "path": "SECURITY.md",
@@ -50,8 +55,8 @@
     },
     {
       "path": "docs/DECISION_AND_EXPERIMENT_LEDGER.md",
-      "bytes": 22520,
-      "sha256": "7cd0d71a3138618ac4a1e388e8abbf606fb5ca242ffe8fb95aca77c652d35734"
+      "bytes": 24158,
+      "sha256": "98978863e7f9eb1ee44b032418fe633896371e1a26b10d5dec18643da238c7f3"
     },
     {
       "path": "docs/ENGINE_SOLVER_ADVERSARIAL_REVIEW.md",
@@ -102,6 +107,11 @@
       "path": "docs/local-receipts/KB-R9-RELAY-20261110T232020Z-297086.txt",
       "bytes": 529,
       "sha256": "9bd744ef62d7e1841ace75279e2d9faa211e79e47da5e672eda7a80aca2bd054"
+    },
+    {
+      "path": "docs/postsheet-h4h-ps1-walkthrough.srt",
+      "bytes": 3285,
+      "sha256": "f3a752c7c70df4288d8f22713cc674bc44f36d41e8a22ced13300ed5c5594fa1"
     },
     {
       "path": "infrastructure/IPFS-SOURCE-LINEAGE.md",
@@ -244,6 +254,11 @@
       "sha256": "8a8392105f13e2a0baa764b3646e962acfa3f92f0757fcf6beada81dbe3603bd"
     },
     {
+      "path": "tests/comprehension-and-firewall.test.mjs",
+      "bytes": 14685,
+      "sha256": "732911aaef9893f59594858d196cdaea46ba32f4c9bc7fd8a3d16bd7efee36b1"
+    },
+    {
       "path": "tests/peer-envelope.test.mjs",
       "bytes": 2841,
       "sha256": "fdfbef0f02ad341b7c4947ea272a4cf3f421261585404374439a29d262fced0a"
@@ -315,8 +330,8 @@
     },
     {
       "path": "web/src/App.jsx",
-      "bytes": 197548,
-      "sha256": "3e8874d33dcb4ce01e933bba4667f1a52100258fc86216fd7c9f4775debab684"
+      "bytes": 212118,
+      "sha256": "2cfccf594bfd1742cb45de489ac038f277c5431fcf66d4591c51f71b0be9200e"
     },
     {
       "path": "web/src/charter-whitepaper.js",
@@ -329,44 +344,64 @@
       "sha256": "d6cd0ccad591d10e3a635ece673c9785c9664aed4fc9e765d3c7cc93e429b21e"
     },
     {
+      "path": "web/src/cognitive-firewall.js",
+      "bytes": 30691,
+      "sha256": "8eb4094281e05e0e869e396497534a5f3e7ae4cb4afa905ede14e00ad6ec4cbf"
+    },
+    {
+      "path": "web/src/components/AffordalumeCgiStage.jsx",
+      "bytes": 16925,
+      "sha256": "6562c1112b95e57b15b35c8992835b71bd754b277533007f32cb7d0f9a92fd35"
+    },
+    {
       "path": "web/src/components/CrewCharterExportModal.jsx",
-      "bytes": 10082,
-      "sha256": "c4b12c2a010e07cf9ca6c813ebdfe23f94304b1fc57a394dc4385bb99e16f148"
+      "bytes": 10070,
+      "sha256": "d7fe0f82ca9edaf3a2c0ff46f179473dd4cb8050457a7ecfbf03231a31639cac"
     },
     {
       "path": "web/src/components/EpistemicStencil.jsx",
-      "bytes": 1311,
-      "sha256": "211571645c66f863f132a5893d79a4057f71493e42bc06c9f8ed13de1ac47699"
+      "bytes": 1466,
+      "sha256": "049aa9b003388a4c3ac8bcc8a2e6118e11f621172bfeea6fca147afa793daf76"
     },
     {
       "path": "web/src/components/KeyboardLightRibbon.jsx",
-      "bytes": 10972,
-      "sha256": "2bc2ea4e4394af256ad417836dfe3c5d03d85df51feaf95d96b50c30dc6d75eb"
+      "bytes": 9418,
+      "sha256": "875f0327b714bee10c64e8f7d50aea91cf04872cb36026590b244391f64e6182"
     },
     {
       "path": "web/src/components/ModalDialog.jsx",
-      "bytes": 3161,
-      "sha256": "adb8b95f5c6c71167e0eb64b7252c7f8fb44a1fd3abf81c8fcd3f837289e508f"
+      "bytes": 4121,
+      "sha256": "58dfbfa32c58784fa27479ca03d5ce03b06df96fa47946d30a3237ac77d6a716"
     },
     {
       "path": "web/src/components/Overlays.jsx",
-      "bytes": 35611,
-      "sha256": "d1f3542cf366b4dd6d34ef772d63eaf343baee79f5d26f9a7b706e017fa39b88"
+      "bytes": 51536,
+      "sha256": "4b6064ca4a89ce216199cebcacb6cf18cc2bbdea1004e8dd159d27afe4325dea"
     },
     {
       "path": "web/src/components/SolarBatonHorizon.jsx",
-      "bytes": 19259,
-      "sha256": "ff393b1c6fbe9b275d1c0ad26797df60c8191bb0bffabcb8d3e5cdcb0b0a5fa6"
+      "bytes": 27065,
+      "sha256": "981cf6b7042eddd52939c2cd0ec377efba515e3bdb859593c3f3b99e843b3a25"
+    },
+    {
+      "path": "web/src/components/TaskComprehensionBanner.jsx",
+      "bytes": 7100,
+      "sha256": "c8e7766e388a8db0757d5e075906532eed529c5f8bca9d35bcb3510adbf26944"
     },
     {
       "path": "web/src/components/TaskDagTimeline.jsx",
-      "bytes": 20607,
-      "sha256": "ad52e06bc5713176e36dd474942b59d74b3980b857d0608b05b449098e80ab41"
+      "bytes": 22352,
+      "sha256": "79ec3c629d72717046af5e48df9df04c6b3344ad9830b8dc1d42991d98e6fb0b"
+    },
+    {
+      "path": "web/src/components/TeamAuthorityRoster.jsx",
+      "bytes": 3316,
+      "sha256": "441f505b98a567d25d8bbbf373720a65ae6d80dc11d50751de528df5df80c62b"
     },
     {
       "path": "web/src/ergonomics.js",
-      "bytes": 8142,
-      "sha256": "49130803fcf7bced25ada387ba37f953bdd0725e40a3a6267bdbc69a2f313ede"
+      "bytes": 26240,
+      "sha256": "190d4dacca2e1245fded77230e6b66e39eaa3c4dc4a21f71836271c5b482dbb4"
     },
     {
       "path": "web/src/icons.jsx",
@@ -380,33 +415,33 @@
     },
     {
       "path": "web/src/presets-and-catalog.js",
-      "bytes": 49893,
-      "sha256": "92f463ff0eb823ddc6adc686719ee7c6df135ee6539a36328d94cbe54cddf2e5"
+      "bytes": 49897,
+      "sha256": "61bdc10515ffde4c7e3bcd7574506594802e6a47b600f502ccf656b031f5413f"
     },
     {
       "path": "web/src/style.css",
-      "bytes": 94482,
-      "sha256": "a6c6a16c23c73ae68940377e4e0c1cdfb89230797cccb5aba6f2108865822329"
+      "bytes": 137140,
+      "sha256": "7e721d1d46f3f05b0ab491dc0062655e099cf9e45f9a810735c849d7434c8826"
     },
     {
       "path": "web/src/views/DiscoverView.jsx",
-      "bytes": 60792,
-      "sha256": "adf6a0cab3bbc133a724c5a732ff863072c335b424234bed12a8fe1f8f0a7706"
+      "bytes": 67840,
+      "sha256": "c943f7b8e5e25e23a246f9274329e2ffd0239f090c3d0515f552be33a599b294"
     },
     {
       "path": "web/src/views/MissionArchitectView.jsx",
-      "bytes": 44467,
-      "sha256": "fce16c6f2bccb4244dea4bd68fd296d65aba8bb839f05b1a6025634217c9961c"
+      "bytes": 45774,
+      "sha256": "aeab122dc3a844c9a3f3a1bc4fa687e1fa005efaf29d04a05dd0d1d7eb8b9519"
     },
     {
       "path": "web/src/views/ProofArenaView.jsx",
-      "bytes": 14514,
-      "sha256": "50d7c7305c3eb7d626ba785ea59332f8908d36da024d0e13c5cad9f13faa68dd"
+      "bytes": 23320,
+      "sha256": "cefa79f86661f2adb28d67659d5ab3b7abd1743f2c703bcdb61278e7ce07597d"
     },
     {
       "path": "web/src/views/SeatAuthorityView.jsx",
-      "bytes": 42424,
-      "sha256": "06afe6ff39e0c7609f9b0168a8d10831a012c1a9134775ec2b60eac4a867b8a8"
+      "bytes": 45212,
+      "sha256": "0d14efc3571b296d6c223b777c21454496f6fd8ce6af4a36dd274a990fa1b1f2"
     },
     {
       "path": "web/vite.config.mjs",

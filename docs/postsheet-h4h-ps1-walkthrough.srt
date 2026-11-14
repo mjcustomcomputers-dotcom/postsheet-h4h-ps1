@@ -1,0 +1,79 @@
+1
+00:00:00,000 --> 00:00:12,580
+Melvin Jackson (Post Sheet, Hot Springs, AR): Race-proof, goal-conditioned team formation engine built for Hack4Hack PS1.
+
+2
+00:00:12,580 --> 00:00:25,160
+Starts from real project tasks, human UTC windows, and skills rather than filtering only by static resume badges or cities.
+
+3
+00:00:25,160 --> 00:00:37,657
+Engineered for low visual glare and calm focus: Affordalume matte WebGL2 task shading rests at 0 idle GPU frames per second.
+
+4
+00:00:37,657 --> 00:00:50,155
+100% opaque Display & A11y controls provide Moonlight Dark, High Contrast, Moonlit Pearl, and WCAG 2.2 AA / Section 508 keyboard parity.
+
+5
+00:00:50,155 --> 00:01:00,933
+Aurora and Kai work hours 0..4 in Hot Springs (UTC-6). Standard overlap matchers reject Priya in Bengaluru (UTC+5:30) due to 0m overlap.
+
+6
+00:01:00,933 --> 00:01:11,711
+Before adding Priya, the 8-hour project plan is incomplete (2 of 3 tasks covered; Integration still unassigned).
+
+7
+00:01:11,711 --> 00:01:21,132
+Adding Priya triggers the Lawler/Jackson backward critical-path scheduler: UTC-6 finishes API and UI right as UTC+5:30 starts Integration.
+
+8
+00:01:21,132 --> 00:01:30,552
+Result: All 3 of 3 tasks line up cleanly and finish 2.5 hours ahead of the deadline with 0 simultaneous overlap needed.
+
+9
+00:01:30,552 --> 00:01:43,762
+Full-roster illusion: Aurora and Kai hold backend, database, and frontend tags, yet two simultaneous 2h tasks overload Aurora (|N(K)| < |K|).
+
+10
+00:01:43,762 --> 00:01:56,972
+Zero-displacement repair adds Mateo on database to clear the parallel bottleneck without replacing committed teammates.
+
+11
+00:01:56,972 --> 00:02:10,390
+Missing portfolios are never scored as zero ability: skills use 4-valued states (supported, refuted, conflicting, unknown).
+
+12
+00:02:10,390 --> 00:02:23,807
+Asks 0 questions when another teammate covers the critical path; otherwise Shannon mutual information picks the 1 highest-gain check.
+
+13
+00:02:23,807 --> 00:02:37,864
+Six SQLite WAL tables (events, teams, membership, SHA-256 invites, operations, audit) enforce seat bounds inside BEGIN IMMEDIATE.
+
+14
+00:02:37,864 --> 00:02:51,921
+Server clocks govern invite expiry, leader departure promotes earliest joined_at member, and final departure auto-deletes the team.
+
+15
+00:02:51,921 --> 00:03:03,578
+Disconnected claimant saves an invite-scoped SHA-256 opId locally and mints a 10-minute scoped HMAC warrant (h4h-ps1-relay-warrant).
+
+16
+00:03:03,578 --> 00:03:15,235
+Uplinked teammate Mateo relays the claim to Layer A; direct reconnect replays the original receipt (replayed: true, 0 duplicate spots).
+
+17
+00:03:15,235 --> 00:03:28,552
+50 concurrent HTTP claimants hit 1 final seat on live SQLite WAL -> 1 HTTP 200 winner, 49 clean HTTP 409 rejections (team 2/2).
+
+18
+00:03:28,552 --> 00:03:41,870
+Verified by 183 automated checks: 124 Node suite subtests across 11 files + 59 Kernel Gates including a 12-query Python SQLite oracle.
+
+19
+00:03:41,870 --> 00:03:57,747
+10,000 users / 2,000 teams seeded in 13.4s; 100-client /board p95 = 36.68 ms (5.4x under 200 ms SLA). Single-writer WAL prevents split-brain.
+
+20
+00:03:57,747 --> 00:04:13,624
+With 1 more week: per-event Durable Object / SQLite sharding, Litestream S3 WAL streaming + hash-chained audits, and WebAuthn relay warrants.

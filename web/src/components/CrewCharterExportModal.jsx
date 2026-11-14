@@ -163,10 +163,10 @@ export default function CrewCharterExportModal({
       {/* Dark-comfort screen preview wrapper OUTSIDE docRef */}
       <div className="document-preview charter-print-target">
         <article ref={docRef} className="charter-sheet">
-          <header className="charter-header">
+          <div className="charter-header">
             <div>
               <div className="charter-eyebrow">POST SHEET · TEAM PLAN &amp; SERVER MEMBERSHIP SUMMARY</div>
-              <h1 className="charter-h1">Team {effectiveTeamId} · Plan &amp; Schedule</h1>
+              <h2 className="charter-h1">Team {effectiveTeamId} · Plan &amp; Schedule</h2>
               <div className="charter-meta">
                 Receipt ID: {model.receiptCode} · Event: {eventId} · Horizon: {horizonHours}h ({model.horizonMin}m)
               </div>
@@ -175,7 +175,7 @@ export default function CrewCharterExportModal({
               <EpistemicStencil kind={model.selectedTeam ? 'SQLITE_AUTHORITY' : 'PLAN_PREVIEW'} compact />
               {plan?.frontier?.wildcards?.length > 0 && <EpistemicStencil kind="VOI_PROVISIONAL" compact />}
             </div>
-          </header>
+          </div>
 
           <section className="charter-section">
             <h3>1. Goal &amp; Plan Readiness</h3>
@@ -265,9 +265,9 @@ export default function CrewCharterExportModal({
             </section>
           )}
 
-          <footer className="charter-footer">
+          <div className="charter-footer">
             Server membership changes run inside atomic SQLite BEGIN IMMEDIATE transactions. Preview plans and peer-relayed messages never grant membership without server confirmation.
-          </footer>
+          </div>
         </article>
       </div>
 

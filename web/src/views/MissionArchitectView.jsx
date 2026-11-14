@@ -56,7 +56,8 @@ function ContributorListEditor({
   onLinkHover,
   onTriggerPulse,
   onChange,
-  addDefaultLabel = 'Add person'
+  addDefaultLabel = 'Add person',
+  isPlanRoster = false
 }) {
   function updatePerson(idx, patch, toastMsg) {
     const next = people.map((p, i) => (i === idx ? { ...p, ...patch } : p));
@@ -105,7 +106,11 @@ function ContributorListEditor({
   }
 
   return (
-    <div className="surface-card">
+    <div
+      className={`surface-card contributor-editor-card ${
+        isPlanRoster && people.length === 0 ? 'is-leaderless' : ''
+      }`}
+    >
       <div className="row-between wrap-gap">
         <div>
           <h3 className="card-subtitle">{title}</h3>
@@ -115,6 +120,15 @@ function ContributorListEditor({
           <PlusIcon size={15} /> {addDefaultLabel}
         </button>
       </div>
+
+      {isPlanRoster && people.length === 0 && (
+        <div className="member-chips-grid top-gap-xs">
+          <div className="member-chip no-leader-chip">
+            <span>◇ Plan roster empty - add at least 1 person to anchor Plan Lead</span>
+            <span className="badge-pill vacant-lead-badge">◇ No Plan Lead</span>
+          </div>
+        </div>
+      )}
 
       <div className="skill-legend-bar" aria-label="Skill state legend">
         <span>Click any skill tag to change state:</span>
@@ -132,6 +146,7 @@ function ContributorListEditor({
           );
           const isLinked =
             activeLinkId && normalizeBuilderId(activeLinkId) === normalizeBuilderId(person.id);
+          const isPlanLead = Boolean(isPlanRoster && idx === 0);
 
           return (
             <div
@@ -141,8 +156,16 @@ function ContributorListEditor({
               onMouseEnter={() => onLinkHover?.(person.id)}
               onMouseLeave={() => onLinkHover?.(null)}
               onFocus={() => onLinkHover?.(person.id)}
-              className={`contributor-card ${isLinked ? 'is-linked-ridge' : ''}`}
+              className={`contributor-card ${isPlanLead ? 'is-plan-lead' : ''} ${
+                isLinked ? 'is-linked-ridge' : ''
+              }`}
             >
+              {isPlanLead && (
+                <div className="pill-row">
+                  <span className="firefly-lead-spark" aria-hidden="true" />
+                  <span className="badge-pill lead-firefly-badge">★ Plan Lead</span>
+                </div>
+              )}
               <div className="contributor-header-row">
                 <label className="field-label compact-grow">
                   <span>Name / ID</span>
@@ -194,15 +217,16 @@ function ContributorListEditor({
                   const st = person.skills?.[sk.id] || 'none';
                   const stText =
                     st === 'supported' ? 'Verified' : st === 'unknown' ? 'Unverified' : 'Not listed';
+                  const stPrefix = st === 'supported' ? '✓ ' : st === 'unknown' ? '? ' : '- ';
                   return (
                     <button
                       key={sk.id}
                       type="button"
                       className={`skill-state-btn state-${st}`}
                       onClick={() => cycleSkill(idx, sk.id)}
-                      aria-label={`${person.id} ${sk.short}: ${stText}. Click to change.`}
+                      aria-label={`${stPrefix}${sk.short} (${person.id}: ${stText}, click to change)`}
                     >
-                      {st === 'supported' ? '✓ ' : st === 'unknown' ? '? ' : '- '}
+                      {stPrefix}
                       {sk.short}
                     </button>
                   );
@@ -484,6 +508,8 @@ export default function MissionArchitectView({
         teamPeople={teamPeople}
         candidates={candidates}
         recommendations={recs?.recommendations || []}
+        tasks={tasks}
+        plan={plan}
         pulseTrigger={pulseTrigger}
         activeLinkId={activeLinkId}
       />
@@ -509,6 +535,7 @@ export default function MissionArchitectView({
             </button>
             <button
               type="button"
+              data-reactive-surface=""
               className="btn btn-secondary btn-compact"
               aria-expanded={showDsl}
               onClick={openDslInspector}
@@ -517,6 +544,7 @@ export default function MissionArchitectView({
             </button>
             <button
               type="button"
+              data-reactive-surface=""
               className="btn btn-primary btn-compact"
               disabled={solving}
               onClick={() => {
@@ -885,7 +913,12 @@ export default function MissionArchitectView({
                       </div>
                       <button
                         type="button"
-                        className={`btn btn-compact ${r.restoresFeasibility || r.advancesPartialPlan ? 'btn-primary' : 'btn-secondary'}`}
+                        data-reactive-surface=""
+                        className={`btn btn-compact ${
+                          rankIdx === 0 && (r.restoresFeasibility || r.advancesPartialPlan)
+                            ? 'btn-primary'
+                            : 'btn-secondary'
+                        }`}
                         onClick={() => {
                           onTriggerPulse?.();
                           onAddCandidateToTeam(r.candidateId);
@@ -1110,6 +1143,7 @@ export default function MissionArchitectView({
           onTriggerPulse={onTriggerPulse}
           onChange={handleTeamPeopleEdit}
           addDefaultLabel="Add teammate"
+          isPlanRoster={true}
         />
 
         <ContributorListEditor
