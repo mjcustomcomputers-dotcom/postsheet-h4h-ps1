@@ -346,9 +346,12 @@ function isLoopbackIp(ip) {
 
 function getClientIp(req) {
   const sockIp = String(req.socket?.remoteAddress || '127.0.0.1').trim();
-  if (process.env.PS1_TRUST_PROXY === '1') {
-    const cfIp = typeof req.headers['cf-connecting-ip'] === 'string' ? req.headers['cf-connecting-ip'].trim() : '';
-    if (cfIp && SAFE_IP_RE.test(cfIp)) return cfIp;
+  const trustMode = String(process.env.PS1_TRUST_PROXY || '').trim().toLowerCase();
+  if (trustMode === '1' || trustMode === 'true' || trustMode === 'cloudflare') {
+    if (trustMode === 'cloudflare') {
+      const cfIp = typeof req.headers['cf-connecting-ip'] === 'string' ? req.headers['cf-connecting-ip'].trim() : '';
+      if (cfIp && SAFE_IP_RE.test(cfIp)) return cfIp;
+    }
     const xff = typeof req.headers['x-forwarded-for'] === 'string' ? req.headers['x-forwarded-for'] : '';
     if (xff && xff.length <= 512) {
       const parts = xff
@@ -383,15 +386,34 @@ export function startServer({
     const refillPerMs = capacityPerMin / 60000;
     if (!b) {
       if (rateBuckets.size >= 4096) {
-        const oldestKey = rateBuckets.keys().next().value;
-        rateBuckets.delete(oldestKey);
+        for (const [k, entry] of rateBuckets) {
+          if (now - entry.last >= 60000) {
+            rateBuckets.delete(k);
+            if (rateBuckets.size < 3584) break;
+          }
+        }
       }
-      b = { tokens: capacityPerMin, last: now };
+      if (rateBuckets.size >= 4096) {
+        let victimKey = null;
+        for (const [k, entry] of rateBuckets) {
+          const entryRefill = (entry.cap || capacityPerMin) / 60000;
+          const refilled = entry.tokens + Math.max(0, now - entry.last) * entryRefill;
+          if (refilled >= 1) {
+            victimKey = k;
+            break;
+          }
+        }
+        rateBuckets.delete(victimKey ?? rateBuckets.keys().next().value);
+      }
+      b = { tokens: capacityPerMin, last: now, cap: capacityPerMin };
       rateBuckets.set(bucketKey, b);
     } else {
       const elapsed = Math.max(0, now - b.last);
       b.tokens = Math.min(capacityPerMin, b.tokens + elapsed * refillPerMs);
       b.last = now;
+      b.cap = capacityPerMin;
+      rateBuckets.delete(bucketKey);
+      rateBuckets.set(bucketKey, b);
     }
     if (b.tokens < 1) return false;
     b.tokens -= 1;
@@ -676,12 +698,16 @@ export function startServer({
         return;
       }
       if (route === '/api/recommendations') {
+        const teamPeople = payload.teamPeople === undefined ? [] : payload.teamPeople;
+        const candidates = payload.candidates === undefined ? [] : payload.candidates;
+        if (!Array.isArray(teamPeople) || teamPeople.length > 24) throw Error('INVALID_PERSON_SCOPE');
+        if (!Array.isArray(candidates) || candidates.length > 64) throw Error('INVALID_CANDIDATE_SCOPE');
         respond(
           200,
           recommendComplementary({
             goal: payload.goal,
-            teamPeople: payload.teamPeople || [],
-            candidates: payload.candidates || [],
+            teamPeople,
+            candidates,
             planFn: planGoal
           })
         );

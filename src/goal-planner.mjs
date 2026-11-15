@@ -44,7 +44,7 @@ function validate(goal, people, maxNodes) {
   }
 }
 
-export function planGoal({ goal, people, maxNodes = 5000 }) {
+export function planGoal({ goal, people, maxNodes = 5000, includeDiagnostics = true }) {
   validate(goal, people, maxNodes);
   const sched = computeTaskScheduleMeta(goal);
   const tasks = sched.orderedTasks;
@@ -137,7 +137,7 @@ export function planGoal({ goal, people, maxNodes = 5000 }) {
   }
 
   dfs();
-  const enrich = maxNodes >= 50;
+  const enrich = Boolean(includeDiagnostics) && maxNodes >= 50;
   const frontier = enrich
     ? evaluateWildcardFrontier({
         goal,

@@ -837,7 +837,10 @@ export function diagnoseAndRepair({ goal, people, committedIds = [], alreadyFeas
 }
 
 export function recommendComplementary({ goal, teamPeople, candidates, planFn }) {
-  const baseline = planFn({ goal, people: teamPeople, maxNodes: 2500 });
+  if (candidates !== undefined && (!Array.isArray(candidates) || candidates.length > 64)) {
+    throw Error('INVALID_CANDIDATE_SCOPE');
+  }
+  const baseline = planFn({ goal, people: teamPeople, maxNodes: 2500, includeDiagnostics: false });
   const baselineFeasible = baseline.status === 'FEASIBLE_WITNESS';
   const baselineFinish = baseline.witness
     ? Math.max(...baseline.witness.assignments.map(a => a.endMin))
@@ -865,7 +868,7 @@ export function recommendComplementary({ goal, teamPeople, candidates, planFn })
   for (const cand of candidates || []) {
     if (cand.consent !== true || teamIds.has(cand.id)) continue;
     const combined = [...teamPeople, cand];
-    const nextPlan = planFn({ goal, people: combined, maxNodes: 2500 });
+    const nextPlan = planFn({ goal, people: combined, maxNodes: 2500, includeDiagnostics: false });
     const restoresFeasibility = !baselineFeasible && nextPlan.status === 'FEASIBLE_WITNESS';
     const upgradesToConditional = baseline.status === 'SEARCH_INCOMPLETE' && nextPlan.status === 'CONDITIONAL_WITNESS';
 

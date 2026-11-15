@@ -372,33 +372,49 @@ export class SynchronicityExtension {
     validId(actorId, 'ACTOR');
     validId(opId, 'OPERATION');
     if (typeof text !== 'string' || !text.trim() || text.length > 4000) throw Error('INVALID_NOTE');
+    const normEpoch = epoch === undefined ? 1 : Number(epoch);
+    if (!Number.isSafeInteger(normEpoch) || normEpoch < 1 || normEpoch > 1_000_000) throw Error('INVALID_EPOCH');
+    const trimmedText = text.trim();
     const eventKey = this.deriveEventAesKey(eventId);
     const kp = this.actorKeyPair(actorId);
     const pubPem = kp.pubPem || kp.publicKey.export({ type: 'spki', format: 'pem' });
-    const env = sealPeerArtifact({
-      eventId,
-      actorId,
-      opId,
-      scope: 'team-notes',
-      plaintext: text.trim(),
-      key: eventKey,
-      privateKey: kp.privateKey,
-      publicKey: kp.publicKey,
-      createdAt: now,
-      ttlMs: 3600000
-    });
     const receiptId = sha256(JSON.stringify([eventId, actorId, opId]));
-    const existing = this.db.prepare('SELECT envelope_json FROM ps1_peer_notes WHERE receipt_id=?').get(receiptId);
+    const existing = this.db
+      .prepare('SELECT envelope_json, epoch FROM ps1_peer_notes WHERE receipt_id=?')
+      .get(receiptId);
     if (existing) {
+      const existingEnv = JSON.parse(existing.envelope_json);
+      const openedExisting = openPeerArtifact(existingEnv, {
+        key: eventKey,
+        expectedEvent: eventId,
+        expectedScope: 'team-notes',
+        authorizedActor: (act, pem, sc) => act === actorId && pem === pubPem && sc === 'team-notes',
+        now: existingEnv.createdAt + 1
+      });
+      if (openedExisting.plaintext.toString('utf8') !== trimmedText || existing.epoch !== normEpoch) {
+        throw Error('IDEMPOTENCY_KEY_REUSED');
+      }
       return {
         receiptId,
         opId,
         actorId,
         replayed: true,
         transportStatus: 'PEER_ARTIFACT_ONLY',
-        digest: JSON.parse(existing.envelope_json).digest
+        digest: existingEnv.digest
       };
     }
+    const env = sealPeerArtifact({
+      eventId,
+      actorId,
+      opId,
+      scope: 'team-notes',
+      plaintext: trimmedText,
+      key: eventKey,
+      privateKey: kp.privateKey,
+      publicKey: kp.publicKey,
+      createdAt: now,
+      ttlMs: 3600000
+    });
     const opened = openPeerArtifact(env, {
       key: eventKey,
       expectedEvent: eventId,
@@ -410,7 +426,7 @@ export class SynchronicityExtension {
       .prepare(
         'INSERT INTO ps1_peer_notes(receipt_id,scope_ev,actor_id,op_id,envelope_json,note_text,epoch,created_at) VALUES(?,?,?,?,?,?,?,?)'
       )
-      .run(receiptId, eventId, actorId, opId, JSON.stringify(env), SEALED_NOTE_SENTINEL, Number(epoch) || 1, now);
+      .run(receiptId, eventId, actorId, opId, JSON.stringify(env), SEALED_NOTE_SENTINEL, normEpoch, now);
     return { receiptId, opId, actorId, replayed: false, transportStatus: opened.transportStatus, digest: env.digest };
   }
 

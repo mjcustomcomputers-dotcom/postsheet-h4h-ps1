@@ -265,6 +265,38 @@ test('SEC03 | ps1_peer_notes stores ZERO plaintext on disk & verifies per-event 
       assert.equal(notesRes.body.notes[0].note, canarySecretNote);
       assert.equal(notesRes.body.notes[0].transportStatus, 'PEER_ARTIFACT_ONLY');
 
+      // Exact idempotent replay of same (eventId, actorId, opId, text, epoch) -> 201 replayed: true
+      const exactReplay = await jsonCall(
+        base2,
+        'POST',
+        '/api/peer/notes',
+        { eventId: 'ev-alpha', opId: 'sec03-note-1', text: canarySecretNote, epoch: 1 },
+        tokAurora
+      );
+      assert.equal(exactReplay.status, 201);
+      assert.equal(exactReplay.body.replayed, true);
+
+      // Conflicting reuse of (eventId, actorId, opId) with mutated text or epoch -> 409 IDEMPOTENCY_KEY_REUSED
+      const tamperedText = await jsonCall(
+        base2,
+        'POST',
+        '/api/peer/notes',
+        { eventId: 'ev-alpha', opId: 'sec03-note-1', text: 'TAMPERED_NOTE_BODY', epoch: 1 },
+        tokAurora
+      );
+      assert.equal(tamperedText.status, 409);
+      assert.equal(tamperedText.body.error, 'IDEMPOTENCY_KEY_REUSED');
+
+      const badEpoch = await jsonCall(
+        base2,
+        'POST',
+        '/api/peer/notes',
+        { eventId: 'ev-alpha', opId: 'sec03-bad-epoch', text: 'valid note', epoch: -5 },
+        tokAurora
+      );
+      assert.equal(badEpoch.status, 400);
+      assert.equal(badEpoch.body.error, 'INVALID_EPOCH');
+
       // Cross-event HKDF isolation: transplanting envelope into ev-beta must fail closed
       const kAlpha = app2.ext.deriveEventAesKey('ev-alpha');
       const kBeta = app2.ext.deriveEventAesKey('ev-beta');
@@ -578,8 +610,103 @@ test('SEC08 | Spoofed X-Forwarded-For is ignored when PS1_TRUST_PROXY is unset; 
     assert.equal(statuses.slice(0, 20).every(s => s === 401), true);
     assert.equal(statuses[20], 429, 'Expected 21st request to be rate-limited despite spoofed X-Forwarded-For');
     assert.equal(retryAfterHeader, '10');
+
+    // 3. Pre-fill rateBuckets to 4,096 capacity with single-shot decoy IPs, then verify PS1_TRUST_PROXY=1
+    // ignores forged CF-Connecting-IP & left-side XFF hops AND survives 500 full-table eviction scans
+    process.env.PS1_TRUST_PROXY = '1';
+    for (let batch = 0; batch < 41; batch++) {
+      const batchRes = await Promise.all(
+        Array.from({ length: 100 }, (_, k) => {
+          const i = batch * 100 + k;
+          const oct2 = Math.floor(i / 250) + 1;
+          const oct3 = (i % 250) + 1;
+          return jsonCall(
+            base,
+            'POST',
+            '/api/auth/demo',
+            { actorId: 'leader-aurora', eventId: 'seed-event' },
+            null,
+            { 'x-forwarded-for': `10.${oct2}.${oct3}.1` }
+          );
+        })
+      );
+      assert.equal(batchRes.every(r => r.status === 200), true);
+    }
+
+    const paasStatuses = [];
+    for (let i = 1; i <= 21; i++) {
+      const r = await jsonCall(
+        base,
+        'POST',
+        '/api/auth/login',
+        { username: 'nobody', password: '' },
+        null,
+        {
+          'cf-connecting-ip': `198.51.100.${i}`,
+          'x-forwarded-for': `192.0.2.${i}, 203.0.113.99`
+        }
+      );
+      paasStatuses.push(r.status);
+    }
+    assert.equal(paasStatuses.slice(0, 20).every(s => s === 401), true);
+    assert.equal(
+      paasStatuses[20],
+      429,
+      'PS1_TRUST_PROXY=1 must ignore forged CF-Connecting-IP and lock onto rightmost XFF hop'
+    );
+
+    // 4. Fire 500 additional new decoy IPs while table is at 4,096 cap (500 eviction scans in <150ms << 3000ms refill)
+    for (let batch = 0; batch < 5; batch++) {
+      const burst = await Promise.all(
+        Array.from({ length: 100 }, (_, k) => {
+          const i = batch * 100 + k;
+          const oct2 = Math.floor(i / 250) + 50;
+          const oct3 = (i % 250) + 1;
+          return jsonCall(
+            base,
+            'POST',
+            '/api/auth/demo',
+            { actorId: 'leader-aurora', eventId: 'seed-event' },
+            null,
+            { 'x-forwarded-for': `10.${oct2}.${oct3}.2` }
+          );
+        })
+      );
+      assert.equal(burst.every(r => r.status === 200), true);
+    }
+    const stillBlocked = await jsonCall(
+      base,
+      'POST',
+      '/api/auth/login',
+      { username: 'nobody', password: '' },
+      null,
+      { 'x-forwarded-for': '203.0.113.99' }
+    );
+    assert.equal(
+      stillBlocked.status,
+      429,
+      'Exhausted 429 rate bucket must survive 500 full-table decoy IP eviction scans'
+    );
+
+    // 5. Explicit Cloudflare mode (PS1_TRUST_PROXY=cloudflare) honors CF-Connecting-IP
+    process.env.PS1_TRUST_PROXY = 'cloudflare';
+    const cfStatuses = [];
+    for (let i = 1; i <= 21; i++) {
+      const r = await jsonCall(
+        base,
+        'POST',
+        '/api/auth/login',
+        { username: 'nobody', password: '' },
+        null,
+        { 'cf-connecting-ip': '198.51.100.200', 'x-forwarded-for': `172.16.0.${i}` }
+      );
+      cfStatuses.push(r.status);
+    }
+    assert.equal(cfStatuses.slice(0, 20).every(s => s === 401), true);
+    assert.equal(cfStatuses[20], 429);
   } finally {
     if (prevTrust !== undefined) process.env.PS1_TRUST_PROXY = prevTrust;
+    else delete process.env.PS1_TRUST_PROXY;
     await app.close();
   }
 });
@@ -658,6 +785,7 @@ test('SEC10 | Defensive SQLite pragmas, bounded 512-key LRU, revoked-token pruni
     assert.ok(dockerfile.includes('chmod -R a-w /app'));
     assert.ok(dockerfile.includes('HEALTHCHECK'));
     assert.ok(dockerfile.includes('PS1_DEMO_AUTH=1'));
+    assert.ok(dockerfile.includes('.ps1_boot_secret'));
     assert.equal((dockerfile.match(/^FROM\s+/gm) || []).length, 2, 'Dockerfile must have exact 2-stage builder -> runtime');
     assert.equal((dockerfile.match(/^CMD\s+/gm) || []).length, 1, 'Dockerfile must have a single CMD block');
 
@@ -870,11 +998,36 @@ test('SEC12 | Malformed URL crash immunity, CL.TE framing guard, TRACE/OPTIONS 4
     const badEv = await jsonCall(base, 'POST', '/api/events', { eventId: '..', maxSize: 4 }, tok);
     assert.equal(badEv.status, 400);
 
-    // 5. /api/peer/glue O(N^2) array flooding capped at <= 128 records
+    // 5. /api/peer/glue O(N^2) array flooding capped at <= 128 records & /api/recommendations capped at <= 64 candidates
     const flood = Array.from({ length: 130 }, (_, i) => ({ id: `r-${i}` }));
     const glueFlood = await jsonCall(base, 'POST', '/api/peer/glue', { localRecords: flood, peerRecords: [] }, tok);
     assert.equal(glueFlood.status, 400);
     assert.equal(glueFlood.body.error, 'INVALID_RECORDS_SCOPE');
+
+    const candFlood = Array.from({ length: 65 }, (_, i) => ({
+      id: `cand-${i}`,
+      consent: true,
+      abilities: { backend: { support: true, refute: false } },
+      windows: [{ start: 0, end: 120 }]
+    }));
+    const recFlood = await jsonCall(
+      base,
+      'POST',
+      '/api/recommendations',
+      {
+        goal: {
+          id: 'g1',
+          startMin: 0,
+          deadlineMin: 180,
+          tasks: [{ id: 't1', skill: 'backend', durationMin: 60, after: [] }]
+        },
+        teamPeople: [],
+        candidates: candFlood
+      },
+      tok
+    );
+    assert.equal(recFlood.status, 400);
+    assert.equal(recFlood.body.error, 'INVALID_CANDIDATE_SCOPE');
   } finally {
     await app.close();
   }
