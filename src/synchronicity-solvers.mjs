@@ -28,6 +28,22 @@ export function mergeIntervals(intervals) {
   return out;
 }
 
+function containsMergedWindow(windows, start, end) {
+  let lo = 0;
+  let hi = windows.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >>> 1;
+    const w = windows[mid];
+    if (w.start <= start) {
+      if (end <= w.end) return true;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return false;
+}
+
 export function candidateEventStarts(person, ready, duration, latest, assignments) {
   const windows = mergeIntervals(person.windows || []);
   const busy = assignments
@@ -49,7 +65,7 @@ export function candidateEventStarts(person, ready, duration, latest, assignment
   for (const s of [...rawPoints].sort((a, b) => a - b)) {
     const e = s + duration;
     if (e > latest) continue;
-    if (!windows.some(w => s >= w.start && e <= w.end)) continue;
+    if (!containsMergedWindow(windows, s, e)) continue;
     if (busy.some(b => s < b.endMin && e > b.startMin)) continue;
     valid.push(s);
   }

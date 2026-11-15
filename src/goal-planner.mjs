@@ -28,13 +28,24 @@ function validate(goal, people, maxNodes) {
     ids.add(task.id);
   }
   for (const t of goal.tasks) {
-    for (const dep of t.after || []) {
+    const afterList = t.after || [];
+    if (afterList.length > 8 || new Set(afterList).size !== afterList.length) throw Error('INVALID_DEPENDENCY');
+    for (const dep of afterList) {
       if (!ids.has(dep) || dep === t.id) throw Error('INVALID_DEPENDENCY');
     }
   }
   const persons = new Set();
   for (const p of people) {
-    if (!identifier(p.id) || persons.has(p.id) || !p.abilities || typeof p.abilities !== 'object' || !Array.isArray(p.windows)) {
+    if (
+      !identifier(p.id) ||
+      persons.has(p.id) ||
+      !p.abilities ||
+      typeof p.abilities !== 'object' ||
+      Array.isArray(p.abilities) ||
+      Object.keys(p.abilities).length > 64 ||
+      !Array.isArray(p.windows) ||
+      p.windows.length > 64
+    ) {
       throw Error('INVALID_PERSON');
     }
     persons.add(p.id);

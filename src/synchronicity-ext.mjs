@@ -26,6 +26,7 @@ const sha256 = s => createHash('sha256').update(s).digest('hex');
 const SCRYPT_OPTS = { N: 16384, r: 8, p: 1, maxmem: 33554432 };
 const SEALED_NOTE_SENTINEL = '[SEALED_AES256_GCM]';
 const MAX_TOKEN_TTL_MS = 7_200_000;
+const MAX_REVOKED_TOKENS = 8192;
 
 export class SynchronicityExtension {
   constructor(authority, secret) {
@@ -304,9 +305,18 @@ export class SynchronicityExtension {
   }
 
   revokeToken(rawToken, now = Date.now()) {
-    if (typeof rawToken !== 'string' || !rawToken) return;
+    if (typeof rawToken !== 'string' || !rawToken || rawToken.length > 2048) return;
     this.ensureSchema();
     this.db.prepare('DELETE FROM ps1_revoked_tokens WHERE revoked_at < ?').run(now - MAX_TOKEN_TTL_MS);
+    const cnt = this.db.prepare('SELECT COUNT(*) AS n FROM ps1_revoked_tokens').get()?.n || 0;
+    if (cnt >= MAX_REVOKED_TOKENS) {
+      const drop = cnt - MAX_REVOKED_TOKENS + 1;
+      this.db
+        .prepare(
+          'DELETE FROM ps1_revoked_tokens WHERE token_hash IN (SELECT token_hash FROM ps1_revoked_tokens ORDER BY revoked_at ASC LIMIT ?)'
+        )
+        .run(drop);
+    }
     this.db
       .prepare('INSERT OR IGNORE INTO ps1_revoked_tokens(token_hash,revoked_at) VALUES(?,?)')
       .run(sha256(rawToken), now);

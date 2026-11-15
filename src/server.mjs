@@ -21,9 +21,15 @@ export const DEMO_PERSONA_RE =
   /^(leader-aurora|builder-kai|builder-priya|relay-mateo|race-leader|(aurora|priya|kai|mateo|lead|mem|claimant)-[A-Za-z0-9_-]{1,28})$/;
 const DEMO_AUTO_EVENT_RE = /^(seed-event|h4h-open-crews|race-[A-Za-z0-9_-]{1,40})$/;
 const FORBIDDEN_JSON_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+const B64URL_RE = /^[A-Za-z0-9_-]+$/;
+const MAX_SSE_BUFFER_BYTES = 65536;
 
 const b64 = o => Buffer.from(JSON.stringify(o)).toString('base64url');
 const sign = (p, secret) => createHmac('sha256', secret).update(p).digest('base64url');
+
+function isCanonicalB64Url(seg) {
+  return typeof seg === 'string' && seg.length > 0 && B64URL_RE.test(seg) && Buffer.from(seg, 'base64url').toString('base64url') === seg;
+}
 
 export function issueToken(actor, secret, ttlSec = 3600, roles = ['member']) {
   if (!isSafeId(actor)) throw Error('INVALID_ACTOR');
@@ -35,7 +41,7 @@ export function issueToken(actor, secret, ttlSec = 3600, roles = ['member']) {
 export function verifyToken(token, secret) {
   if (typeof token !== 'string' || token.length > 2048) throw Error('UNAUTHORIZED');
   const parts = token.split('.');
-  if (parts.length !== 2) throw Error('UNAUTHORIZED');
+  if (parts.length !== 2 || !isCanonicalB64Url(parts[0]) || !B64URL_RE.test(parts[1])) throw Error('UNAUTHORIZED');
   const expected = Buffer.from(sign(parts[0], secret));
   const got = Buffer.from(parts[1]);
   if (expected.length !== got.length || !timingSafeEqual(expected, got)) throw Error('UNAUTHORIZED');
@@ -80,7 +86,7 @@ export function issueRelayWarrant({ sub, eventId, teamId, opId, codeHash }, secr
 export function verifyRelayWarrant(token, secret) {
   if (typeof token !== 'string' || token.length > 2048) throw Error('UNAUTHORIZED');
   const parts = token.split('.');
-  if (parts.length !== 2) throw Error('UNAUTHORIZED');
+  if (parts.length !== 2 || !isCanonicalB64Url(parts[0]) || !B64URL_RE.test(parts[1])) throw Error('UNAUTHORIZED');
   const expected = Buffer.from(sign(parts[0], secret));
   const got = Buffer.from(parts[1]);
   if (expected.length !== got.length || !timingSafeEqual(expected, got)) throw Error('UNAUTHORIZED');
@@ -298,10 +304,40 @@ function hasForbiddenProtoKeys(node, depth = 0) {
   return false;
 }
 
+function hasInvalidFraming(req) {
+  const te = req.headers['transfer-encoding'];
+  const cl = req.headers['content-length'];
+  if (te !== undefined && cl !== undefined) return true;
+  if (te !== undefined) {
+    if (typeof te !== 'string' || te.trim().toLowerCase() !== 'chunked') return true;
+    if (req.httpVersionMajor < 1 || (req.httpVersionMajor === 1 && req.httpVersionMinor === 0)) return true;
+  }
+  if (cl !== undefined) {
+    if (typeof cl !== 'string' || !/^\d{1,8}$/.test(cl.trim())) return true;
+  }
+  return false;
+}
+
+function shouldCloseRejectedSocket(req) {
+  if (req.headers['transfer-encoding'] !== undefined) return true;
+  const rawCl = req.headers['content-length'];
+  if (rawCl === undefined) return false;
+  const cl = Number(rawCl);
+  return !Number.isSafeInteger(cl) || cl > 4096;
+}
+
+function discardOrMarkClose(req) {
+  if (shouldCloseRejectedSocket(req)) {
+    req._forceClose = true;
+  } else {
+    req.resume();
+  }
+}
+
 function readJson(req, limitBytes = 16384) {
   const ct = String(req.headers['content-type'] || '').trim().toLowerCase();
   if (!ct.startsWith('application/json')) {
-    req.resume();
+    discardOrMarkClose(req);
     return Promise.reject(Error('UNSUPPORTED_MEDIA_TYPE'));
   }
   return new Promise((resolveBody, reject) => {
@@ -425,10 +461,35 @@ export function startServer({
       'event: board\ndata: ' +
       JSON.stringify({ eventId: evId, type: 'ROSTER_REVISION', revision: Date.now() }) +
       '\n\n';
-    for (const client of streamClients) {
-      if (client.eventId === evId && !client.res.destroyed) client.res.write(data);
+    for (const client of Array.from(streamClients)) {
+      if (client.res.destroyed || client.res.writableLength > MAX_SSE_BUFFER_BYTES) {
+        client.cleanup();
+        if (!client.res.destroyed) client.res.destroy();
+        continue;
+      }
+      if (client.eventId === evId) client.res.write(data);
     }
   };
+
+  function evictOldestHoarderStream() {
+    let targetIp = null;
+    let maxStreams = 1;
+    for (const [ipKey, count] of sseByIp) {
+      if (count > maxStreams) {
+        maxStreams = count;
+        targetIp = ipKey;
+      }
+    }
+    if (!targetIp) return false;
+    for (const client of streamClients) {
+      if (client.ip === targetIp) {
+        client.cleanup();
+        if (!client.res.destroyed) client.res.end();
+        return true;
+      }
+    }
+    return false;
+  }
 
   function requireBearer(req) {
     const bearer = /^Bearer (.+)$/.exec(req.headers.authorization || '');
@@ -454,7 +515,13 @@ export function startServer({
 
     function respond(status, data, extraHeaders = {}) {
       if (res.destroyed) return;
-      res.writeHead(status, withDynamicSecurityHeaders(apiHeaders, extraHeaders));
+      const mergedExtra = req._forceClose ? { connection: 'close', ...extraHeaders } : extraHeaders;
+      if (req._forceClose) {
+        res.once('finish', () => {
+          if (!req.destroyed) req.destroy();
+        });
+      }
+      res.writeHead(status, withDynamicSecurityHeaders(apiHeaders, mergedExtra));
       if (method === 'HEAD') {
         res.end();
       } else {
@@ -463,13 +530,13 @@ export function startServer({
     }
 
     try {
-      if (req.headers['transfer-encoding'] !== undefined && req.headers['content-length'] !== undefined) {
-        req.resume();
+      if (hasInvalidFraming(req)) {
+        req._forceClose = true;
         throw Error('AMBIGUOUS_FRAMING');
       }
 
       if (method !== 'GET' && method !== 'HEAD' && method !== 'POST') {
-        req.resume();
+        discardOrMarkClose(req);
         throw Error('METHOD_NOT_ALLOWED');
       }
 
@@ -531,16 +598,24 @@ export function startServer({
       const streamMatch = route.match(/^\/api\/events\/([A-Za-z0-9_.:@-]{1,128})\/stream$/);
       if (method === 'GET' && streamMatch) {
         if (!isSafeId(streamMatch[1])) throw Error('INVALID_EVENT');
-        if (streamClients.size >= 100) {
-          respond(503, { error: 'STREAM_CAPACITY' });
-          return;
-        }
         const ipStreams = sseByIp.get(clientIp) || 0;
         if (!isLoopbackIp(clientIp) && ipStreams >= 6) {
           respond(429, { error: 'TOO_MANY_REQUESTS' }, { 'retry-after': '10' });
           return;
         }
-        sseByIp.set(clientIp, ipStreams + 1);
+        const bypassSseRate =
+          process.env.PS1_RATE_LIMIT === '0' || (!enforceRateLimit && port === 0 && isLoopbackIp(clientIp));
+        if (!bypassSseRate && !consumeRateToken(`sse:${clientIp}`, 60)) {
+          respond(429, { error: 'TOO_MANY_REQUESTS' }, { 'retry-after': '10' });
+          return;
+        }
+        if (streamClients.size >= 100) {
+          if (ipStreams > 0 || !evictOldestHoarderStream()) {
+            respond(503, { error: 'STREAM_CAPACITY' });
+            return;
+          }
+        }
+        sseByIp.set(clientIp, (sseByIp.get(clientIp) || 0) + 1);
         res.writeHead(
           200,
           withDynamicSecurityHeaders(apiHeaders, {
@@ -551,13 +626,19 @@ export function startServer({
         );
         res.write(': connected\n\n');
         const keepalive = setInterval(() => {
-          if (!res.destroyed) res.write(': keepalive\n\n');
+          if (res.destroyed || res.writableLength > MAX_SSE_BUFFER_BYTES) {
+            client.cleanup();
+            if (!res.destroyed) res.destroy();
+            return;
+          }
+          res.write(': keepalive\n\n');
         }, 25000);
         keepalive.unref?.();
 
         let cleaned = false;
         const client = {
           eventId: streamMatch[1],
+          ip: clientIp,
           res,
           cleanup() {
             if (cleaned) return;
@@ -622,7 +703,7 @@ export function startServer({
           limitPerMin = 10;
         }
         if (!consumeRateToken(`${bucketGroup}:${clientIp}`, limitPerMin)) {
-          req.resume();
+          discardOrMarkClose(req);
           respond(429, { error: 'TOO_MANY_REQUESTS' }, { 'retry-after': '10' });
           return;
         }

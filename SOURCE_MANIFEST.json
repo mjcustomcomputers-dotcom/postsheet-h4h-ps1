@@ -45,8 +45,8 @@
     },
     {
       "path": "SECURITY.md",
-      "bytes": 7568,
-      "sha256": "1dd9231ca9e2e05d36a1ba6d8a6a3f4e76e9115f91cde8968feac096f50a4db7"
+      "bytes": 8249,
+      "sha256": "d89eaf9e4c9f47e897c227e6127ad675b754c041f9c2b23f59f9e442b60977f1"
     },
     {
       "path": "docker-compose.hardened.yml",
@@ -55,8 +55,8 @@
     },
     {
       "path": "docs/DECISION_AND_EXPERIMENT_LEDGER.md",
-      "bytes": 25975,
-      "sha256": "a6f1a82adeb5ca2701d125be5557d7d2cecf5137eae7bbf08fc3d2cc8003940c"
+      "bytes": 27483,
+      "sha256": "f2c1fbe13d9901e80af8dec490995d22ccd9c083f76b05a7f373bd1a2eb57739"
     },
     {
       "path": "docs/ENGINE_SOLVER_ADVERSARIAL_REVIEW.md",
@@ -205,8 +205,8 @@
     },
     {
       "path": "src/goal-planner.mjs",
-      "bytes": 7341,
-      "sha256": "7cc3a2bf049f0da3f4e40f19992aa5693d12f775c26e40fcf6cb750a03b23be8"
+      "bytes": 7636,
+      "sha256": "600a1278d218b6814d33e4c583f2ffcc51f6b4de019a2126e5b35c53c9e82511"
     },
     {
       "path": "src/peer-envelope.mjs",
@@ -230,18 +230,18 @@
     },
     {
       "path": "src/server.mjs",
-      "bytes": 33576,
-      "sha256": "88f16dd04bc0f4b9ced593838a2e887da648585a87bb1a29d7d8ae7ad6b4666e"
+      "bytes": 36368,
+      "sha256": "5f9e22da985e0438877357cefb57d3dc931efd83779c93ec14dad4af30e44797"
     },
     {
       "path": "src/synchronicity-ext.mjs",
-      "bytes": 18811,
-      "sha256": "997397d7b1bf086dcb11137c515fe801f70af22fed783fa4f2e5edda86658a65"
+      "bytes": 19258,
+      "sha256": "e3b0ebd29f08a0164e8f7b16e913eebaad05533c742ae63f53db2cd1be28f20e"
     },
     {
       "path": "src/synchronicity-solvers.mjs",
-      "bytes": 38251,
-      "sha256": "b114405bb5955e641b58fcd24886a8fd70d52fcd0a7ae27fa91eee4f16918153"
+      "bytes": 38568,
+      "sha256": "475a09f147bc6ef110824b9ab72e9adce4da4e24e76a1c47d8b9f84cd2933b5a"
     },
     {
       "path": "tests/api-adversarial.test.mjs",
@@ -285,8 +285,8 @@
     },
     {
       "path": "tests/security-hardening.test.mjs",
-      "bytes": 41899,
-      "sha256": "8da10cba4e2ea02f44c3a1ee3acc077258bb4767cd8a370b830fe05e0497648a"
+      "bytes": 46341,
+      "sha256": "f706bc95fa3be638096d594443ddd26d5c8f36168c629027364d9e51b95079ee"
     },
     {
       "path": "tests/solver-adversarial-r6.test.mjs",

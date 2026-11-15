@@ -763,7 +763,7 @@ test('SEC10 | Defensive SQLite pragmas, bounded 512-key LRU, revoked-token pruni
     assert.equal(JSON.parse(recent[0].detail).idx, 35);
     assert.equal(JSON.parse(recent[99].detail).idx, 134);
 
-    // 3. Verify revoked-token pruning (> 7,200,000 ms pruned automatically)
+    // 3. Verify revoked-token pruning (> 7,200,000 ms pruned automatically) and 8,192-row ceiling
     const now = Date.now();
     app.ext.revokeToken('expired-tok-old', now - 7_500_000);
     assert.equal(app.ext.isRevoked('expired-tok-old'), true);
@@ -1028,6 +1028,133 @@ test('SEC12 | Malformed URL crash immunity, CL.TE framing guard, TRACE/OPTIONS 4
     );
     assert.equal(recFlood.status, 400);
     assert.equal(recFlood.body.error, 'INVALID_CANDIDATE_SCOPE');
+
+    // 6. RFC 9112 duplicate Content-Length & non-chunked Transfer-Encoding rejected with 400 + Connection: close
+    const dupCl = await rawTcpHttp(addr.port, [
+      'POST /api/auth/login HTTP/1.1',
+      'Host: localhost',
+      'Content-Type: application/json',
+      'Content-Length: 2, 2',
+      'Connection: close'
+    ]);
+    assert.equal(dupCl.status, 400);
+    assert.match(dupCl.head, /connection:\s*close/i);
+
+    const nonChunkedTe = await rawTcpHttp(addr.port, [
+      'POST /api/auth/login HTTP/1.1',
+      'Host: localhost',
+      'Content-Type: application/json',
+      'Transfer-Encoding: gzip',
+      'Connection: close'
+    ]);
+    assert.equal(nonChunkedTe.status, 400);
+    assert.match(nonChunkedTe.head, /connection:\s*close/i);
+
+    // 7. Sub-payload window/ability/dependency fan-out caps block 32 KiB quadratic amplification
+    const manyWindows = Array.from({ length: 65 }, (_, i) => ({ start: i * 2, end: i * 2 + 1 }));
+    const winFlood = await jsonCall(
+      base,
+      'POST',
+      '/api/plan',
+      {
+        goal: {
+          id: 'g-win',
+          startMin: 0,
+          deadlineMin: 300,
+          tasks: [{ id: 't1', skill: 'backend', durationMin: 10, after: [] }]
+        },
+        people: [
+          {
+            id: 'p1',
+            consent: true,
+            abilities: { backend: { support: true, refute: false } },
+            windows: manyWindows
+          }
+        ]
+      },
+      tok
+    );
+    assert.equal(winFlood.status, 400);
+    assert.equal(winFlood.body.error, 'INVALID_PERSON');
+
+    const dupDep = await jsonCall(
+      base,
+      'POST',
+      '/api/plan',
+      {
+        goal: {
+          id: 'g-dep',
+          startMin: 0,
+          deadlineMin: 300,
+          tasks: [
+            { id: 't1', skill: 'backend', durationMin: 10, after: [] },
+            { id: 't2', skill: 'backend', durationMin: 10, after: ['t1', 't1'] }
+          ]
+        },
+        people: [
+          {
+            id: 'p1',
+            consent: true,
+            abilities: { backend: { support: true, refute: false } },
+            windows: [{ start: 0, end: 200 }]
+          }
+        ]
+      },
+      tok
+    );
+    assert.equal(dupDep.status, 400);
+    assert.equal(dupDep.body.error, 'INVALID_DEPENDENCY');
+
+    // 8. Oversized rejected Content-Type closes socket immediately instead of polite stream draining
+    const rejectedLarge = await rawTcpHttp(addr.port, [
+      'POST /api/auth/login HTTP/1.1',
+      'Host: localhost',
+      'Content-Type: text/plain',
+      'Content-Length: 1048576',
+      'Connection: keep-alive'
+    ]);
+    assert.equal(rejectedLarge.status, 415);
+    assert.match(rejectedLarge.head, /connection:\s*close/i);
+
+    // 9. Fair max-min SSE eviction prevents multi-stream hoarders from 503-starving a new single-stream viewer
+    const prevTrustSse = process.env.PS1_TRUST_PROXY;
+    process.env.PS1_TRUST_PROXY = '1';
+    const openSockets = [];
+    try {
+      for (let ipIdx = 1; ipIdx <= 20; ipIdx++) {
+        for (let c = 0; c < 5; c++) {
+          await new Promise((resOpen, rejOpen) => {
+            const s = createConnection({ host: '127.0.0.1', port: addr.port }, () => {
+              s.write(
+                `GET /api/events/seed-event/stream HTTP/1.1\r\nHost: localhost\r\nX-Forwarded-For: 198.18.0.${ipIdx}\r\n\r\n`
+              );
+            });
+            openSockets.push(s);
+            s.once('data', buf => {
+              assert.match(buf.toString('utf8'), /^HTTP\/1\.1 200/);
+              resOpen();
+            });
+            s.once('error', rejOpen);
+          });
+        }
+      }
+      // 101st viewer from a brand-new IP (0 active streams) evicts 1 hoarder tab and connects with 200 (never 503)
+      const freshJudgeHead = await new Promise((resOpen, rejOpen) => {
+        const s = createConnection({ host: '127.0.0.1', port: addr.port }, () => {
+          s.write(
+            'GET /api/events/seed-event/stream HTTP/1.1\r\nHost: localhost\r\nX-Forwarded-For: 203.0.113.250\r\n\r\n'
+          );
+        });
+        openSockets.push(s);
+        s.once('data', buf => resOpen(buf.toString('utf8')));
+        s.once('error', rejOpen);
+      });
+      assert.match(freshJudgeHead, /^HTTP\/1\.1 200/);
+    } finally {
+      for (const s of openSockets) s.destroy();
+      if (prevTrustSse !== undefined) process.env.PS1_TRUST_PROXY = prevTrustSse;
+      else delete process.env.PS1_TRUST_PROXY;
+    }
   } finally {
     await app.close();
   }
